@@ -50,7 +50,7 @@ export async function GET() {
 
     // Uma chamada por coordenada, todas em paralelo e servidas do cache quando
     // dois spots repetem o mesmo par lat/lng arredondado.
-    const weather = await getManySpotsWeather(base, 5);
+    const weather = await getManySpotsWeather(base, 7);
 
     const favIds = new Set<string>();
     if (user) {

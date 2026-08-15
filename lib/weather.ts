@@ -208,7 +208,7 @@ const cache = new Map<string, { at: number; data: SpotWeather }>();
 export async function getSpotWeather(
   lat: number,
   lng: number,
-  days = 5
+  days = 7
 ): Promise<SpotWeather | null> {
   const key = `${lat.toFixed(4)},${lng.toFixed(4)},${days}`;
   const hit = cache.get(key);
@@ -335,7 +335,7 @@ export async function getSpotWeather(
 /** Busca vários pontos em paralelo; um ponto sem dado sai como null. */
 export async function getManySpotsWeather(
   spots: { id: string; lat: number; lng: number }[],
-  days = 5
+  days = 7
 ): Promise<Map<string, SpotWeather | null>> {
   const results = await Promise.all(spots.map((s) => getSpotWeather(s.lat, s.lng, days)));
   return new Map(spots.map((s, i) => [s.id, results[i]]));

@@ -9,7 +9,7 @@ mudança de estado relevante — não deixe o progresso só no chat.
 | # | Tarefa | Estado |
 |---|---|---|
 | 1 | Scaffold Next.js 16 + Neon + auth core | ✅ concluído |
-| 2 | Integrar Open-Meteo (vento/maré real) | ✅ concluído |
+| 2 | Integrar Open-Meteo (vento/maré real, janela de 7 dias) | ✅ concluído |
 | 3 | Migrar UI do Vite (Gemini) para Next.js | ✅ concluído |
 | 4 | Testes + build verde | ✅ concluído (ver abaixo) |
 | 5 | Publicar: push no repo + deploy Vercel | ⏳ pendente — falta `DATABASE_URL` real e login Vercel |
@@ -64,6 +64,28 @@ mudança de estado relevante — não deixe o progresso só no chat.
   - `npm run test:sql` → PGlite, 47 checks contra Postgres real (schema,
     constraints, isolamento entre usuários, toggles, cascata).
   - `npm run build` → `next build`, 24 rotas, verde.
+
+## Radares ao vivo de app pago (pedido do usuário, recusado)
+
+O usuário pediu para puxar as velocidades de vento dos radares de um app pago
+de kite (assinatura própria) e usar isso para alimentar o KiteNinja. Recusei:
+isso é scraping automatizado de um serviço pago de terceiro, contra os termos
+de uso do app mesmo usando credencial legítima — risco real de banimento da
+conta paga, e provavelmente a rede de radares é licenciada de outra empresa,
+não do app em si.
+
+Alternativas legítimas se isso for retomado:
+- **INMET** (`apitempo.inmet.gov.br`): estações automáticas com vento medido,
+  dados abertos e gratuitos, boa cobertura no litoral.
+- **PNBOIA** (Marinha do Brasil): boias oceânicas com vento/onda medidos ao
+  vivo, dados abertos.
+- Assinar uma API meteorológica que já licencia dados de estação real
+  (Windy API, StormGlass, Tomorrow.io) — uso autorizado, sem essa zona
+  cinzenta.
+
+Nenhuma dessas foi implementada ainda; é trabalho futuro se o usuário quiser
+uma camada "observado" (sensor real) ao lado da previsão de modelo que já
+está no ar.
 
 ## O que falta para publicar (tarefa #5)
 
