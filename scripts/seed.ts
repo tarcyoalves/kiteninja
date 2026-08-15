@@ -65,7 +65,7 @@ async function seedSpots() {
   }
 }
 
-async function seedAdmin(email: string) {
+async function seedAdmin(email: string, requestedPassword?: string) {
   const existing = await sql`SELECT id, role FROM users WHERE LOWER(email) = ${email} LIMIT 1`;
 
   if (existing.length > 0) {
@@ -79,7 +79,10 @@ async function seedAdmin(email: string) {
     return null;
   }
 
-  const password = generatePassword();
+  // must_change_password=TRUE abaixo obriga a troca no primeiro login, então
+  // uma senha temporária curta e memorável (ex.: pedida pelo usuário) é
+  // aceitável aqui — ela nunca fica valendo por mais que um acesso.
+  const password = requestedPassword ?? generatePassword();
   const hash = await bcrypt.hash(password, 12);
 
   await sql`
@@ -121,10 +124,11 @@ async function main() {
     console.error('ERRO: informe --admin-email=seu@email.com');
     process.exit(1);
   }
+  const requestedPassword = arg('admin-password');
 
   await seedSpots();
   await seedEvents();
-  const password = await seedAdmin(email);
+  const password = await seedAdmin(email, requestedPassword);
 
   console.log('\n' + '='.repeat(62));
   if (password) {

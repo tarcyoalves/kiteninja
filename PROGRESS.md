@@ -12,7 +12,7 @@ mudança de estado relevante — não deixe o progresso só no chat.
 | 2 | Integrar Open-Meteo (vento/maré real, janela de 7 dias) | ✅ concluído |
 | 3 | Migrar UI do Vite (Gemini) para Next.js | ✅ concluído |
 | 4 | Testes + build verde | ✅ concluído (ver abaixo) |
-| 5 | Publicar: push no repo + deploy Vercel | ⏳ pendente — falta `DATABASE_URL` real e login Vercel |
+| 5 | Publicar: push no repo + migrate/seed + deploy Vercel | 🔶 quase — código publicado e banco migrado; falta o deploy em si |
 
 ## O que já está pronto
 
@@ -87,26 +87,35 @@ Nenhuma dessas foi implementada ainda; é trabalho futuro se o usuário quiser
 uma camada "observado" (sensor real) ao lado da previsão de modelo que já
 está no ar.
 
-## O que falta para publicar (tarefa #5)
+## Tarefa #5 — status
 
-1. **`DATABASE_URL` pooled do Neon** — precisa ter `-pooler` no host. Sem
-   isso `npm run migrate` e `npm run seed` não têm o que rodar contra.
-2. Rodar, nessa ordem, contra o banco real:
-   ```bash
-   npm run migrate   # aplica lib/schema.sql
-   npm run seed      # cria spots + primeiro admin (senha impressa 1x)
-   npm run test:db   # scripts/verify-db.ts, testes de integração no banco real
-   ```
-3. `npx vercel login` (ou variável de ambiente de token da Vercel — o usuário
-   mencionou já ter posto o token do Neon nas env vars do projeto Vercel).
-4. `git init` neste diretório (ainda não é repo git local), commit, push para
-   `https://github.com/tarcyoalves/kiteninja` (repo já existe, autenticado via
-   `gh`, mas está vazio — sem branch padrão ainda).
-5. `vercel --prod` ou conectar o repo no dashboard da Vercel, com as env vars
-   `DATABASE_URL` e `APP_URL` configuradas lá.
-6. Depois do primeiro deploy: acessar `/admin` com o admin criado pelo seed,
-   gerar o primeiro convite, e validar o fluxo de aceite em
-   `/convite/[token]` na URL pública.
+- ✅ `git init` local, primeiro commit, push para
+  `https://github.com/tarcyoalves/kiteninja` (branch `master`).
+- ✅ Projeto Vercel `kiteninja` já existia e já tinha `DATABASE_URL` (pooled,
+  host `-pooler`) configurada em Preview/Production.
+- ✅ `npm run migrate` rodado contra o Neon real — as 12 tabelas existem.
+- ✅ `npm run seed` rodado — 12 spots + 3 eventos + admin
+  `tarcyo.alves@gmail.com`, senha temporária `1234` (`must_change_password =
+  TRUE`, troca obrigatória no primeiro login).
+- ✅ `npm run test:db` (scripts/verify-db.ts) — 31/31 passaram contra o Neon
+  real: schema, constraints, convite de uso único (inclusive corrida
+  concorrente), isolamento entre usuários, cascata.
+- ⏳ Falta: deploy de fato (`vercel --prod` ou push automático via integração
+  Git da Vercel) e validação do fluxo de convite na URL pública.
+
+### Bug crítico encontrado ao rodar migrate pela primeira vez
+
+`scripts/migrate.ts` dividia `lib/schema.sql` por `;` e depois descartava
+qualquer bloco cuja **primeira linha** fosse um comentário (`-- ...`). Como
+cada `CREATE TABLE` no schema é precedido por um comentário de seção na mesma
+"sentença" (sem `;` entre o comentário e o `CREATE TABLE`), o filtro apagava
+o comentário *e* a tabela junto — silenciosamente, sem erro até o primeiro
+`CREATE INDEX` que dependia da tabela descartada. Isso teria deixado
+`users`, `invites`, `auth_sessions`, `spots`, `favorites`, `sessions_log`,
+`posts` e `safety_alerts` (8 de 12 tabelas) sem serem criadas.
+Corrigido: agora os comentários são removidos com uma regex global antes do
+split por `;`, não usados para filtrar blocos inteiros. Confirmado rodando
+contra o Neon real (22 comandos, 12 tabelas).
 
 ## Decisões que valem registrar
 
