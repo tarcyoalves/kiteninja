@@ -12,7 +12,7 @@ mudança de estado relevante — não deixe o progresso só no chat.
 | 2 | Integrar Open-Meteo (vento/maré real, janela de 7 dias) | ✅ concluído |
 | 3 | Migrar UI do Vite (Gemini) para Next.js | ✅ concluído |
 | 4 | Testes + build verde | ✅ concluído (ver abaixo) |
-| 5 | Publicar: push no repo + migrate/seed + deploy Vercel | 🔶 quase — código publicado e banco migrado; falta o deploy em si |
+| 5 | Publicar: push no repo + migrate/seed + deploy Vercel | ✅ concluído — no ar em https://kiteninja.vercel.app |
 
 ## O que já está pronto
 
@@ -138,6 +138,27 @@ contra o Neon real (22 comandos, 12 tabelas).
   `scripts/verify-sql.ts` (PGlite, sem precisar de Neon) antes do deploy. Foi
   assim que os bugs acima foram encontrados — ler o código não bastou, três
   deles só quebraram ao executar de fato.
+
+## Deploy (16/08/2026) — site no ar
+
+- URL pública: **https://kiteninja.vercel.app**
+- `npx vercel --prod` publicou, mas a URL respondia 404 mesmo com build
+  verde. Causa: o projeto Vercel tinha `framework: null` (preset "Other"),
+  então a Vercel não sabia servir a saída do Next.js corretamente. Corrigido
+  via API (`PATCH /v9/projects/:id` com `framework: "nextjs"`).
+- Além disso o projeto tinha `ssoProtection: {"deploymentType":
+  "all_except_custom_domains"}` — como não há domínio customizado, isso
+  bloqueava *todo* acesso público (redirecionava para login da Vercel).
+  Removido (`ssoProtection: null`) porque o pedido explícito era deixar o
+  site acessível para teste sem exigir login na Vercel. Se algum dia quiser
+  reativar proteção de preview/produção, é essa mesma chave.
+- Após as duas correções, novo `vercel --prod` e validado direto na URL
+  pública: home 200, `/api/spots` devolvendo vento/onda/maré reais (não
+  mock), login do admin funcionando (`mustChangePassword: true`), `/admin`
+  retorna 200 autenticado e 307 (redirect) sem sessão.
+- Login do admin: `tarcyo.alves@gmail.com` / senha temporária `1234`
+  (`must_change_password = TRUE`, troca obrigatória no primeiro acesso).
+  Gere o primeiro convite em `/admin` e comece a trocar a senha por ali.
 
 ## Como continuar (se você é outro agente lendo isto)
 
