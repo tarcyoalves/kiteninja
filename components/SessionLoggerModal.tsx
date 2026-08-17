@@ -104,7 +104,7 @@ export const SessionLoggerModal: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-modal flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs overflow-y-auto">
       <div className="bg-[#0F172A] text-slate-100 rounded-3xl w-full max-w-lg overflow-hidden border border-slate-800 shadow-2xl my-6">
         {/* Header */}
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-4 flex items-center justify-between shadow-md">

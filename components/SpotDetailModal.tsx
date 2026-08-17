@@ -151,7 +151,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#0F172A]">
+    <div className="fixed inset-0 z-modal bg-[#0F172A]">
       <div
         ref={dialogRef}
         role="dialog"

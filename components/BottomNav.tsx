@@ -11,7 +11,7 @@ export const BottomNav: React.FC = () => {
 
   return (
     <nav
-      className={`fixed bottom-0 left-0 right-0 z-30 transition-colors border-t safe-area-pb ${
+      className={`fixed bottom-0 left-0 right-0 z-chrome transition-colors border-t safe-area-pb ${
         beachMode
           ? 'bg-[#020617]/95 border-slate-800 backdrop-blur text-slate-400'
           : 'bg-[#0F172A]/95 border-slate-800/90 backdrop-blur text-slate-400 shadow-2xl'

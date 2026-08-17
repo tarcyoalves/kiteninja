@@ -50,10 +50,68 @@ select {
   font-size: 16px;
 }
 
+/* ---------------------------------------------------------------------------
+   Escala de camadas do app.
+
+   O Leaflet cria os próprios contextos de empilhamento com z-index alto
+   (o painel de controles dele vai a 1000). Sem uma escala declarada, cada
+   componente escolhia um número solto e o mapa passava por cima do header,
+   do menu inferior e dos modais — o que fazia uma tela "vazar" sobre a outra.
+
+   Regra: nada de z-index cru fora desta escala.
+     mapa (tiles/controles) < conteúdo < header/nav < drawer < modal < lightbox
+   --------------------------------------------------------------------------- */
+:root {
+  --z-map: 0;
+  --z-map-ui: 400;
+  --z-content: 500;
+  --z-chrome: 600; /* header + menu inferior */
+  --z-drawer: 700;
+  --z-modal: 800;
+  --z-lightbox: 900;
+  --z-splash: 1000;
+}
+
+.z-map-ui { z-index: var(--z-map-ui); }
+.z-chrome { z-index: var(--z-chrome); }
+.z-drawer { z-index: var(--z-drawer); }
+.z-modal { z-index: var(--z-modal); }
+.z-lightbox { z-index: var(--z-lightbox); }
+.z-splash { z-index: var(--z-splash); }
+
 /* Leaflet marker custom styles - reset default leaflet-div-icon class */
 .leaflet-container {
   background-color: #090e1a;
   font-family: inherit;
+}
+
+/* O Leaflet fixa 1000 no painel de controles e 800 nos popups, o que estoura
+   qualquer chrome do app. Rebaixamos para dentro da nossa escala. */
+.leaflet-pane { z-index: var(--z-map); }
+.leaflet-top,
+.leaflet-bottom { z-index: var(--z-map-ui); }
+.leaflet-popup { z-index: var(--z-map-ui); }
+
+/* Altura real da viewport no mobile.
+
+   100vh no iOS conta a barra de endereço, então um elemento com 100vh nasce
+   mais alto que a área visível e o rodapé some atrás do chrome do navegador.
+   dvh acompanha a barra ao recolher; o vh fica como fallback para navegador
+   antigo (a ordem importa: quem entende dvh sobrescreve). */
+.app-viewport {
+  height: calc(100vh - 120px);
+  height: calc(100dvh - 120px);
+}
+
+/* Card do spot selecionado no mapa: acima do menu inferior (h-16 = 4rem) mais
+   a safe area do iPhone, senão nasce por baixo e aparece cortado. */
+.map-card-bottom {
+  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Conteúdo das telas roláveis precisa terminar acima do menu fixo. */
+.pb-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* Remove o padding padrão do DivIcon do Leaflet para permitir pins Tailwind */

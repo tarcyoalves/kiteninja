@@ -107,7 +107,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-60 bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
+      className="fixed inset-0 z-lightbox bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6"
     >
       <div
         ref={dialogRef}

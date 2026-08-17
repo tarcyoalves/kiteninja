@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import React from 'react';
 import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
@@ -47,7 +48,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
 
   return (
     <header
-      className={`sticky top-0 z-30 transition-colors shadow-lg ${
+      className={`sticky top-0 z-chrome transition-colors shadow-lg ${
         beachMode
           ? 'bg-[#020617] text-white border-b-2 border-emerald-500'
           : 'bg-gradient-to-r from-[#0B1220] to-[#12243B] text-white border-b border-cyan-500/25'
@@ -105,8 +106,19 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
             <Menu size={22} className="text-white" />
           </button>
 
-          <div className="flex items-center gap-1.5">
-            <span className="font-black text-xl tracking-wider uppercase drop-shadow-md text-white">
+          <div className="flex items-center gap-2">
+            {/* Placa branca: a logo é preta e o header é escuro. */}
+            <span className="w-8 h-8 rounded-full bg-white p-0.5 shrink-0 shadow-sm">
+              <Image
+                src="/brand/logo.png"
+                alt="KiteNinja"
+                width={64}
+                height={64}
+                priority
+                className="w-full h-full object-contain"
+              />
+            </span>
+            <span className="font-black text-xl tracking-wider uppercase drop-shadow-md text-white truncate">
               {getHeaderTitle()}
             </span>
           </div>

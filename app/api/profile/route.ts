@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
+import { HttpError, requireUser } from '@/lib/auth';
 import { num, oneOf, str } from '@/lib/validation';
 import type { Discipline, RiderLevel } from '@/types';
 
@@ -25,6 +25,18 @@ export async function PATCH(request: Request) {
     const bio = str(body, 'bio', { optional: true, max: 500 });
     const highestJumpM = num(body, 'highestJumpM', { min: 0, max: 40, optional: true });
 
+    /**
+     * Foto de perfil. Chega como data URL JPEG já comprimida no cliente
+     * (lib/imageCompress). O limite acompanha o do compressor: acima disso a
+     * Vercel recusa o corpo antes de a rota rodar.
+     */
+    const avatarUrl = str(body, 'avatarUrl', { optional: true, max: 1_500_000 });
+    if (avatarUrl && !/^data:image\/(jpeg|png|webp);base64,/.test(avatarUrl)) {
+      // Recusar URL externa evita que o campo se transforme em vetor de
+      // requisição a terceiros (ou de rastreio) a partir do avatar.
+      throw new HttpError(400, 'Formato de imagem não suportado.');
+    }
+
     const hasLevel = (body as Record<string, unknown>)?.riderLevel !== undefined;
     const riderLevel = hasLevel
       ? oneOf<RiderLevel>(body, 'riderLevel', LEVELS)
@@ -45,6 +57,7 @@ export async function PATCH(request: Request) {
         home_spot      = COALESCE(${homeSpot || null}, home_spot),
         bio            = COALESCE(${bio || null}, bio),
         highest_jump_m = COALESCE(${highestJumpM}, highest_jump_m),
+        avatar_url     = COALESCE(${avatarUrl || null}, avatar_url),
         rider_level    = COALESCE(${riderLevel}, rider_level),
         disciplines    = COALESCE(${disciplines && disciplines.length > 0 ? disciplines : null}, disciplines),
         updated_at     = NOW()

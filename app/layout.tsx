@@ -22,16 +22,49 @@ export const viewport: Viewport = {
   ],
 };
 
+/**
+ * Domínio real do app. Estava apontando para "kiteninja.app", que não é nosso —
+ * isso fazia as URLs absolutas de Open Graph nascerem erradas e a prévia do link
+ * quebrar quando o app é compartilhado no WhatsApp.
+ */
+const SITE_URL = process.env.APP_URL ?? "https://kiteninja.vercel.app";
+
 export const metadata: Metadata = {
   title: "KiteNinja",
   description:
     "Monitora condições de vento, marés e spots de kitesurf em tempo real. Descubra os melhores pontos do litoral, registre suas sessões e acompanhe alertas de segurança.",
-  metadataBase: new URL("https://kiteninja.app"),
+  metadataBase: new URL(SITE_URL),
+  applicationName: "KiteNinja",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/brand/logo-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    // O iOS ignora o manifest para o ícone do atalho e usa só este.
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
+  appleWebApp: {
+    capable: true,
+    title: "KiteNinja",
+    // O header do app já é escuro; translucent deixa a barra de status somar
+    // com ele em vez de criar uma faixa preta separada.
+    statusBarStyle: "black-translucent",
+  },
   openGraph: {
     title: "KiteNinja",
     description:
       "Monitora condições de vento, marés e spots de kitesurf em tempo real no Brasil.",
     type: "website",
+    siteName: "KiteNinja",
+    locale: "pt_BR",
+    images: [{ url: "/brand/og.png", width: 1200, height: 630, alt: "KiteNinja" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "KiteNinja",
+    images: ["/brand/og.png"],
   },
 };
 

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   Pin,
@@ -21,9 +21,11 @@ import {
   Shield,
   Camera,
   ChevronRight,
+  Loader2,
 } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { compressImage } from '../lib/imageCompress';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -40,7 +42,9 @@ export const SidebarDrawer: React.FC = () => {
   } = useKiteData();
 
   const { user, logout, openAuthModal, updateProfile } = useAuth();
-  const [isEditingPhoto, setIsEditingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
 
   if (!isSidebarOpen) return null;
 
@@ -49,19 +53,40 @@ export const SidebarDrawer: React.FC = () => {
     setIsSidebarOpen(false);
   };
 
-  const handleAvatarChange = () => {
-    const avatars = [
-      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=200&fit=crop',
-      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
-      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop',
-      'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=200&h=200&fit=crop',
-    ];
-    const nextIdx = Math.floor(Math.random() * avatars.length);
-    updateProfile({ avatarUrl: avatars[nextIdx] });
+  /**
+   * Antes isto sorteava uma foto do Unsplash: o velejador clicava em "Alterar
+   * Foto" e recebia o rosto de um desconhecido. Agora abre a câmera/galeria e
+   * envia a imagem de verdade, comprimida no cliente.
+   */
+  const handlePhotoPicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Zerar o value permite reescolher o MESMO arquivo depois de um erro.
+    e.target.value = '';
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setPhotoError('Escolha um arquivo de imagem.');
+      return;
+    }
+
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      // Avatar aparece em 56px; 512 já cobre telas retina com folga.
+      const dataUrl = await compressImage(file, 512, 0.8);
+      const res = await updateProfile({ avatarUrl: dataUrl });
+      if (res && res.ok === false) {
+        setPhotoError(res.error ?? 'Não foi possível salvar a foto.');
+      }
+    } catch (err) {
+      setPhotoError(err instanceof Error ? err.message : 'Falha ao processar a foto.');
+    } finally {
+      setPhotoBusy(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-drawer flex">
       {/* Dark Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
@@ -86,18 +111,40 @@ export const SidebarDrawer: React.FC = () => {
           {user ? (
             <div className="flex flex-col gap-3">
               {/* Alterar Foto Top Button + Flag */}
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 pr-10">
                 <button
-                  onClick={handleAvatarChange}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-[#0F172A] hover:bg-slate-900 border border-slate-700 text-xs font-bold text-slate-200 transition-colors shadow-xs"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={photoBusy}
+                  className="flex items-center gap-1.5 px-3 py-2 min-h-11 rounded-lg bg-[#0F172A] hover:bg-slate-900 border border-slate-700 text-xs font-bold text-slate-200 transition-colors shadow-xs disabled:opacity-60"
                 >
-                  <Camera size={13} className="text-cyan-400" />
-                  <span>Alterar Foto</span>
+                  {photoBusy ? (
+                    <Loader2 size={13} className="text-cyan-400 animate-spin" />
+                  ) : (
+                    <Camera size={13} className="text-cyan-400" />
+                  )}
+                  <span>{photoBusy ? 'Enviando...' : 'Alterar Foto'}</span>
                 </button>
-                <span className="text-2xl" title={user.nationality || 'Brasil'}>
+                <span className="text-2xl shrink-0" title={user.nationality || 'Brasil'}>
                   {user.countryFlag || '🇧🇷'}
                 </span>
               </div>
+
+              {/* capture="user" abre a câmera frontal direto no celular. */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                capture="user"
+                onChange={handlePhotoPicked}
+                className="hidden"
+                aria-label="Escolher foto de perfil"
+              />
+
+              {photoError && (
+                <p role="alert" className="text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2 py-1.5">
+                  {photoError}
+                </p>
+              )}
 
               {/* Avatar + Info */}
               <div className="flex items-center gap-3 mt-1">

@@ -45,6 +45,33 @@ function MapController({
     }
   }, [map, center, zoom]);
 
+  /**
+   * O Leaflet mede o container uma vez, na montagem. Aqui ele monta dentro de
+   * uma aba que acabou de aparecer e cuja altura ainda vai mudar (barra de
+   * endereço do mobile recolhendo, `dvh` reavaliando), então a medida inicial
+   * sai errada e os tiles ficam cinza — o mapa "vazio" que aparecia na tela.
+   * invalidateSize remede; o ResizeObserver cobre rotação e troca de aba.
+   */
+  useEffect(() => {
+    const remedir = () => map.invalidateSize({ animate: false });
+
+    // Depois do paint: no frame da montagem o container ainda tem altura 0.
+    const raf = requestAnimationFrame(remedir);
+    const t = setTimeout(remedir, 250);
+
+    const el = map.getContainer();
+    const ro = new ResizeObserver(remedir);
+    ro.observe(el);
+    window.addEventListener('orientationchange', remedir);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+      ro.disconnect();
+      window.removeEventListener('orientationchange', remedir);
+    };
+  }, [map]);
+
   return null;
 }
 
@@ -137,7 +164,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   return (
     <div className="flex flex-col h-full relative">
       {/* Layer Selector Controls */}
-      <div className="absolute top-3 left-3 right-3 z-[1000] flex items-center justify-between pointer-events-none">
+      <div className="absolute top-3 left-3 right-3 z-map-ui flex items-center justify-between pointer-events-none">
         <div className="flex items-center gap-1.5 bg-[#0F172A]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700/80 pointer-events-auto shadow-2xl text-xs font-black text-white">
           <button
             onClick={() => onLayerChange('vento')}
@@ -194,7 +221,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       </div>
 
       {/* Map Container */}
-      <div className="flex-1 w-full min-h-[400px] relative">
+      <div className="flex-1 w-full min-h-0 relative">
         <MapContainer
           center={[DEFAULT_CENTER.lat, DEFAULT_CENTER.lng]}
           zoom={DEFAULT_ZOOM}
@@ -240,7 +267,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
         {/* Locate Status Message */}
         {locateStatus !== 'idle' && (
-          <div className="absolute top-20 left-3 right-3 z-[1000]">
+          <div className="absolute top-20 left-3 right-3 z-map-ui">
             <div
               role="status"
               aria-live="polite"
@@ -266,7 +293,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-28 left-3 z-[1000] bg-[#0F172A]/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-700/80 text-[10px] text-white space-y-1 shadow-xl hidden sm:block">
+      <div className="absolute bottom-28 left-3 z-map-ui bg-[#0F172A]/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-700/80 text-[10px] text-white space-y-1 shadow-xl hidden sm:block">
         <span className="font-black block text-slate-400 uppercase text-[9px] tracking-wider">
           {activeLayer === 'vento' ? 'Vento (nós)' : activeLayer === 'rajadas' ? 'Rajada (nós)' : 'Ondas (m)'}
         </span>

@@ -52,8 +52,12 @@ const MainContent: React.FC = () => {
       {/* Mobile Header */}
       <Header />
 
-      {/* Main Active View Container */}
-      <main className="flex-1 w-full max-w-lg mx-auto">
+      {/*
+        O menu inferior é `fixed`, então sai do fluxo e não empurra nada. Sem
+        reservar a altura dele aqui (h-16 + safe area do iPhone), o fim de cada
+        tela ficava escondido atrás do menu — o "corte" nos cards.
+      */}
+      <main className="flex-1 w-full max-w-lg mx-auto pb-nav">
         {activeTab === "favoritos" && (
           <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
         )}

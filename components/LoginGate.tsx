@@ -1,7 +1,8 @@
 'use client';
 
+import Image from 'next/image';
 import React, { useState } from 'react';
-import { Lock, LogIn, Mail, Wind } from 'lucide-react';
+import { Lock, LogIn, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 /**
@@ -39,13 +40,19 @@ export const LoginGate: React.FC = () => {
     <div className="min-h-screen bg-[#0B1220] text-slate-100 flex flex-col items-center justify-center px-5 py-10">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-xl shadow-cyan-500/20">
-            <Wind size={30} className="text-slate-950" strokeWidth={2.5} />
+          {/* A arte da logo é preta e vive sobre fundo claro; aqui o fundo é
+              escuro, então a placa branca é o que mantém o ninja visível. */}
+          <div className="w-28 h-28 rounded-full bg-white p-1.5 shadow-xl shadow-cyan-500/20 ring-1 ring-cyan-400/30">
+            <Image
+              src="/brand/logo.png"
+              alt="KiteNinja"
+              width={224}
+              height={224}
+              priority
+              className="w-full h-full object-contain"
+            />
           </div>
-          <h1 className="mt-4 text-3xl font-black tracking-tight">
-            Kite<span className="text-cyan-400">Ninja</span>
-          </h1>
-          <p className="mt-1.5 text-sm text-slate-400 font-medium">
+          <p className="mt-4 text-sm text-slate-400 font-medium">
             Vento, maré e onda antes de montar o kite
           </p>
         </div>

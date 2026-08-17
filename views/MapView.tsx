@@ -88,14 +88,14 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
 
   if (spots.length === 0) {
     return (
-      <div className="flex flex-col h-[calc(100vh-120px)] items-center justify-center text-slate-400">
+      <div className="flex flex-col app-viewport items-center justify-center text-slate-400">
         <p className="text-sm font-bold">Nenhum spot disponível</p>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-120px)] relative overflow-hidden pb-16">
+    <div className="flex flex-col app-viewport relative overflow-hidden">
       {/* Leaflet Map with all functionality */}
       <Suspense
         fallback={
@@ -120,8 +120,11 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       </Suspense>
 
       {/* Selected Spot Bottom Floating Card */}
+      {/* map-card-bottom (globals.css) levanta o card acima do menu fixo + safe
+          area. O cálculo mora no CSS porque o ">" de env()/calc() dentro de uma
+          classe arbitrária do Tailwind quebra o parser de JSX. */}
       {selectedMapSpot && (
-        <div className="absolute bottom-2 left-3 right-3 z-[1000]">
+        <div className="absolute left-3 right-3 z-map-ui map-card-bottom">
           <div
             onClick={() => onSelectSpot(selectedMapSpot)}
             className="bg-[#1E293B]/95 backdrop-blur-md text-white p-3.5 rounded-2xl border border-slate-700 shadow-2xl flex items-center justify-between cursor-pointer hover:bg-slate-800 active:scale-99 transition-all"
