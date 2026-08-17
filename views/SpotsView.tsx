@@ -56,7 +56,8 @@ export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
           {searchQuery && (
             <button
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-white p-1"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400 hover:text-white min-w-11 min-h-11 flex items-center justify-center p-2"
+              aria-label="Limpar busca"
             >
               ✕
             </button>

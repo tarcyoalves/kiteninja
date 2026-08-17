@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     const content = str(body, 'content', { max: 5000 });
     const spotName = str(body, 'spotName', { optional: true, max: 200 });
     const spotLocation = str(body, 'spotLocation', { optional: true, max: 200 });
-    const photoUrl = str(body, 'photoUrl', { optional: true, max: 500 });
+    const photoUrl = str(body, 'photoUrl', { optional: true, max: 1_500_000 });
     const windKnots = num(body, 'windKnots', { optional: true, min: 0, max: 80 });
     const windKiteUsed = str(body, 'windKiteUsed', { optional: true, max: 100 });
     const windCondition = str(body, 'windCondition', { optional: true, max: 100 });

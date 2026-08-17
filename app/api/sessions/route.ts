@@ -136,7 +136,9 @@ export async function POST(request: Request) {
     const maxSpeedKnots = num(body, 'maxSpeedKnots', { optional: true, min: 0, max: 100 });
     const highestJumpM = num(body, 'highestJumpM', { optional: true, min: 0, max: 30 });
     const notes = str(body, 'notes', { optional: true, max: 2000 });
-    const photoUrl = str(body, 'photoUrl', { optional: true, max: 500 });
+    // Foto agora pode ser uma data URL base64 (upload comprimido no cliente),
+    // que passa de 500 caracteres facilmente — 2MB de string cobre isso com folga.
+    const photoUrl = str(body, 'photoUrl', { optional: true, max: 1_500_000 });
     const isPublic = bool(body, 'isPublic', true);
 
     const inserted = await sql`

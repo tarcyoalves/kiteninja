@@ -1,10 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Calendar, Clock, Wind, Waves, Star, Compass, Camera, Sparkles, Check, Gauge, ArrowUpCircle } from 'lucide-react';
+import { X, Calendar, Clock, Wind, Waves, Star, Compass, Camera, Sparkles, Gauge, ArrowUpCircle, ImagePlus, Loader2 } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
+import { compressImage } from '../lib/imageCompress';
+
+const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar, para não travar o navegador com arquivos gigantes
+const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
 export const SessionLoggerModal: React.FC = () => {
   const { isLoggerOpen, setIsLoggerOpen, spots, addSession, convertWind } = useKiteData();
@@ -28,7 +32,9 @@ export const SessionLoggerModal: React.FC = () => {
   const [maxSpeedKnots, setMaxSpeedKnots] = useState<number | ''>(26.8);
   const [highestJumpM, setHighestJumpM] = useState<number | ''>(9.2);
   const [notes, setNotes] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
   const [isPublic, setIsPublic] = useState(true);
 
   if (!isLoggerOpen) return null;
@@ -70,12 +76,32 @@ export const SessionLoggerModal: React.FC = () => {
     setIsLoggerOpen(false);
   };
 
-  const samplePhotos = [
-    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&q=80',
-    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-  ];
+  const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // permite selecionar o mesmo arquivo de novo depois de remover
+    if (!file) return;
+
+    setPhotoError('');
+
+    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+      setPhotoError('Formato inválido. Envie uma foto em JPEG, PNG, WEBP ou HEIC.');
+      return;
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      setPhotoError('Foto muito grande (máx. 12MB). Escolha outra ou tire uma nova foto.');
+      return;
+    }
+
+    setIsCompressingPhoto(true);
+    try {
+      const dataUrl = await compressImage(file, 1280, 0.75);
+      setPhotoUrl(dataUrl);
+    } catch {
+      setPhotoError('Não foi possível processar essa foto. Tente outra.');
+    } finally {
+      setIsCompressingPhoto(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs overflow-y-auto">
@@ -356,30 +382,58 @@ export const SessionLoggerModal: React.FC = () => {
             />
           </div>
 
-          {/* Photo URL Selector */}
+          {/* Foto real do velejo (opcional) */}
           <div>
-            <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1.5">
+            <label htmlFor="session-photo-input" className="block font-bold text-slate-300 mb-1 flex items-center gap-1.5">
               <Camera size={13} className="text-cyan-400" />
-              <span>Foto da Sessão</span>
+              <span>Foto da Sessão (opcional)</span>
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {samplePhotos.map((p, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => setPhotoUrl(p)}
-                  className={`relative aspect-video rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                    photoUrl === p ? 'border-cyan-400 scale-105 shadow-md shadow-cyan-500/30' : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
+
+            {photoUrl ? (
+              <div className="relative w-full max-w-[220px] aspect-video rounded-xl overflow-hidden border-2 border-cyan-400/60 shadow-md shadow-cyan-500/20">
+                <img src={photoUrl} alt="Pré-visualização da foto do velejo" className="w-full h-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhotoUrl('');
+                    setPhotoError('');
+                  }}
+                  aria-label="Remover foto selecionada"
+                  className="absolute top-1 right-1 p-1 rounded-full bg-black/70 hover:bg-black/90 text-white transition-colors"
                 >
-                  <img src={p} alt="Sample" className="w-full h-full object-cover" />
-                  {photoUrl === p && (
-                    <div className="absolute top-1 right-1 bg-cyan-400 rounded-full p-0.5 shadow-sm">
-                      <Check size={10} className="text-slate-950 stroke-[3]" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <label
+                htmlFor="session-photo-input"
+                className="flex items-center justify-center gap-2 w-full p-3 rounded-xl border border-dashed border-slate-600 bg-[#1E293B] text-slate-300 font-semibold cursor-pointer hover:bg-slate-800/80 hover:border-cyan-400/60 transition-colors"
+              >
+                {isCompressingPhoto ? (
+                  <>
+                    <Loader2 size={16} className="text-cyan-400 animate-spin" />
+                    <span>Processando foto...</span>
+                  </>
+                ) : (
+                  <>
+                    <ImagePlus size={16} className="text-cyan-400" />
+                    <span>Anexar foto (câmera ou galeria)</span>
+                  </>
+                )}
+              </label>
+            )}
+
+            <input
+              id="session-photo-input"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handlePhotoChange}
+              disabled={isCompressingPhoto}
+              className="sr-only"
+            />
+
+            {photoError && <p className="mt-1 text-[11px] font-semibold text-rose-400">{photoError}</p>}
           </div>
 
           {/* Submit */}

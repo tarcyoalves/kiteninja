@@ -104,7 +104,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       ? num(body, 'highestJumpM', { min: 0, max: 30 })
       : null;
     const notes = sent(body, 'notes') ? str(body, 'notes', { optional: true, max: 2000 }) : null;
-    const photoUrl = sent(body, 'photoUrl') ? str(body, 'photoUrl', { optional: true, max: 500 }) : null;
+    // Foto agora pode ser uma data URL base64 (upload comprimido no cliente),
+    // que passa de 500 caracteres facilmente — 2MB de string cobre isso com folga.
+    const photoUrl = sent(body, 'photoUrl') ? str(body, 'photoUrl', { optional: true, max: 1_500_000 }) : null;
     const isPublic = sent(body, 'isPublic')
       ? (body as Record<string, unknown>).isPublic === true
       : null;

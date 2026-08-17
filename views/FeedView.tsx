@@ -65,6 +65,24 @@ export const FeedView: React.FC = () => {
     <div className="flex flex-col min-h-full pb-24 relative">
       {/* Feed List matching Screenshot 3 */}
       <div className="space-y-4 max-w-lg mx-auto w-full pt-2">
+        {posts.length === 0 && (
+          /* Feed novo começa vazio: sem isso a primeira impressão é tela branca. */
+          <div className="mx-2 mt-6 p-7 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
+            <MessageCircle size={30} className="mx-auto text-cyan-400" />
+            <p className="mt-3 font-black text-slate-100">Nenhum relato ainda</p>
+            <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+              Velejou hoje? Conte como estava o vento. Seu relato ajuda quem chega
+              depois a decidir se vale montar o kite.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsNewPostOpen(true)}
+              className="mt-4 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-sm active:scale-95 transition-transform"
+            >
+              Publicar o primeiro relato
+            </button>
+          </div>
+        )}
         {posts.map(post => (
           <article
             key={post.id}
@@ -143,7 +161,7 @@ export const FeedView: React.FC = () => {
                   <div className="absolute bottom-3 left-3 bg-[#0F172A]/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-cyan-500/40 text-white flex items-center gap-2 text-xs shadow-xl">
                     <Wind size={13} className="text-cyan-400" />
                     <span className="font-black text-cyan-300">{post.windReport.knots} nós</span>
-                    <span className="text-slate-500">&bull;</span>
+                    <span className="text-slate-400">&bull;</span>
                     <span className="font-bold text-slate-200 text-[11px]">{post.windReport.kiteUsed}</span>
                   </div>
                 )}
@@ -180,8 +198,8 @@ export const FeedView: React.FC = () => {
                 {/* Share Button */}
                 <button
                   onClick={() => handleShare(post)}
-                  className="p-1 text-slate-400 hover:text-white transition-colors"
-                  title="Compartilhar"
+                  className="p-2 min-w-11 min-h-11 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors flex items-center justify-center"
+                  aria-label="Compartilhar relato"
                 >
                   <Share2 size={18} />
                 </button>

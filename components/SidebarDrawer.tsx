@@ -7,12 +7,10 @@ import {
   MapPin,
   Radar,
   Calendar,
-  ShoppingBag,
   Megaphone,
   Star,
   Users,
   AlertTriangle,
-  Radio,
   MessageSquare,
   Bell,
   Calculator,
@@ -42,7 +40,6 @@ export const SidebarDrawer: React.FC = () => {
   } = useKiteData();
 
   const { user, logout, openAuthModal, updateProfile } = useAuth();
-  const [radioActive, setRadioActive] = useState(false);
   const [isEditingPhoto, setIsEditingPhoto] = useState(false);
 
   if (!isSidebarOpen) return null;
@@ -206,17 +203,6 @@ export const SidebarDrawer: React.FC = () => {
             </span>
           </button>
 
-          {/* Lojas e Serviços */}
-          <button
-            onClick={() => {
-              alert('Diretório de Guarderias, Escolas IKO e Lojas de Kite ativas no Nordeste e Brasil.');
-            }}
-            className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
-          >
-            <ShoppingBag size={18} className="text-slate-400" />
-            <span className="flex-1">Lojas e Serviços</span>
-          </button>
-
           {/* Anúncios */}
           <button
             onClick={() => {
@@ -253,22 +239,6 @@ export const SidebarDrawer: React.FC = () => {
           >
             <AlertTriangle size={18} className="text-amber-400" />
             <span className="flex-1">Ocorrências</span>
-          </button>
-
-          {/* Radio Off / On */}
-          <button
-            onClick={() => setRadioActive(prev => !prev)}
-            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
-          >
-            <div className="flex items-center gap-3.5">
-              <Radio size={18} className={radioActive ? 'text-emerald-400 animate-pulse' : 'text-slate-400'} />
-              <span>{radioActive ? 'Radio VHF (Canal 16 ON)' : 'Radio Off'}</span>
-            </div>
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                radioActive ? 'bg-emerald-400 shadow-lg shadow-emerald-400/50' : 'bg-slate-600'
-              }`}
-            />
           </button>
 
           {/* Chat (badge 6) */}

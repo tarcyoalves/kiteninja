@@ -54,7 +54,8 @@ export const KiteCalculatorModal: React.FC = () => {
           </div>
           <button
             onClick={() => setIsCalculatorOpen(false)}
-            className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors"
+            className="p-2 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors min-w-11 min-h-11 flex items-center justify-center"
+            aria-label="Fechar calculadora"
           >
             <X size={18} />
           </button>

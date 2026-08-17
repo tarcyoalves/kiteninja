@@ -10,8 +10,12 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 export const viewport: Viewport = {
   width: "device-width",
+  // Minimum-scale=1 evita zoom acidental com duplo toque; maximum-scale=5
+  // mantém a acessibilidade (pessoas que precisam ampliar o texto conseguem).
+  // O viewportFit=cover é o que faz env(safe-area-inset-*) funcionar no iOS.
   initialScale: 1,
   maximumScale: 5,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#0F172A" },
     { media: "(prefers-color-scheme: dark)", color: "#0F172A" },

@@ -170,8 +170,8 @@ export const SessionsView: React.FC = () => {
                   </div>
                   <button
                     onClick={e => handleDelete(session.id, e)}
-                    className="p-1 rounded text-slate-400 hover:text-rose-500 transition-colors ml-2"
-                    title="Excluir sessão"
+                    className="p-2 min-w-11 min-h-11 rounded text-slate-400 hover:text-rose-500 transition-colors ml-2 flex items-center justify-center"
+                    aria-label="Excluir sessão"
                   >
                     <Trash2 size={15} />
                   </button>

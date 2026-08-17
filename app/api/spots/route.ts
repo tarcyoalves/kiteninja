@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
-import { getSessionUser } from '@/lib/auth';
+import { requireUser } from '@/lib/auth';
 import { getManySpotsWeather } from '@/lib/weather';
 
 /**
@@ -10,10 +10,15 @@ import { getManySpotsWeather } from '@/lib/weather';
  * que é condição vem da API a cada requisição, com cache de 10 min no módulo de
  * clima. Se a Open-Meteo estiver fora, o spot volta com os campos de condição
  * zerados e `isLiveObservation: false` — a UI mostra o local sem inventar vento.
+ *
+ * Exige sessão: o app é fechado por convite, então esconder a UI sem fechar a
+ * rota não protegeria nada — bastaria pedir /api/spots direto. Fechar aqui
+ * também evita que a chave-menos API de clima seja usada por terceiros através
+ * do nosso servidor.
  */
 export async function GET() {
   return handle(async () => {
-    const user = await getSessionUser();
+    const user = await requireUser();
 
     const rows = await sql`
       SELECT id, name, location, state, country, country_flag, lat, lng,
@@ -53,10 +58,8 @@ export async function GET() {
     const weather = await getManySpotsWeather(base, 7);
 
     const favIds = new Set<string>();
-    if (user) {
-      const favRows = await sql`SELECT spot_id FROM favorites WHERE user_id = ${user.id}`;
-      for (const r of favRows) favIds.add(String((r as Record<string, unknown>).spot_id));
-    }
+    const favRows = await sql`SELECT spot_id FROM favorites WHERE user_id = ${user.id}`;
+    for (const r of favRows) favIds.add(String((r as Record<string, unknown>).spot_id));
 
     const spots = base.map((s) => {
       const w = weather.get(s.id) ?? null;

@@ -192,6 +192,16 @@ export const EventsAndAlertsView: React.FC = () => {
           )}
 
           {/* List of Alerts */}
+          {safetyAlerts.length === 0 && (
+            /* Aqui o vazio é boa notícia, e dizer isso é melhor que espaço em branco. */
+            <div className="p-6 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
+              <p className="font-black text-emerald-400">Nenhum alerta ativo</p>
+              <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                Nenhum perigo relatado nos spots agora. Viu água-viva, corrente forte
+                ou entulho na areia? Registre acima para avisar a galera.
+              </p>
+            </div>
+          )}
           {safetyAlerts.map(alert => (
             <div
               key={alert.id}
@@ -239,6 +249,14 @@ export const EventsAndAlertsView: React.FC = () => {
       {/* SUB-TAB 2: EVENTOS E DOWNWINDS */}
       {activeSubTab === 'eventos' && (
         <div className="space-y-4">
+          {events.length === 0 && (
+            <div className="p-6 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
+              <p className="font-black text-slate-100">Nenhum evento marcado</p>
+              <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
+                Downwinds e encontros aparecem aqui quando forem publicados.
+              </p>
+            </div>
+          )}
           {events.map(event => (
             <div
               key={event.id}

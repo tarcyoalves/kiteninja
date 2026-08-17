@@ -187,7 +187,7 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
                   leitura é honesto e mais útil que um rótulo genérico. */}
               {spot.isLiveObservation ? `Atualizado ${spot.lastUpdated}` : 'Sem dados'}
             </span>
-            <span className="text-[10px] text-slate-500">&bull;</span>
+            <span className="text-[10px] text-slate-400">&bull;</span>
             <span className="text-[11px] text-slate-400 truncate">
               {spot.location}
             </span>
@@ -203,8 +203,8 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
               e.stopPropagation();
               toggleFavorite(spot.id);
             }}
-            className="p-1.5 rounded-full hover:bg-slate-800 text-slate-500 hover:text-amber-400 transition-all active:scale-125"
-            title={spot.isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+            className="p-2 rounded-full hover:bg-slate-800 text-slate-400 hover:text-amber-400 transition-all active:scale-125"
+            aria-label={spot.isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
           >
             <Star
               size={18}
@@ -219,8 +219,8 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
             e.stopPropagation();
             onSelect(spot);
           }}
-          className="w-8 h-8 rounded-full flex items-center justify-center border border-rose-500/50 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white active:scale-95 transition-all shadow-sm"
-          title="Ver previsão completa e marés"
+          className="w-8 h-8 rounded-full flex items-center justify-center border border-rose-500/50 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white active:scale-95 transition-all shadow-sm min-w-11 min-h-11"
+          aria-label="Ver previsão completa e marés"
         >
           <Compass size={17} className="stroke-[2.2]" />
         </button>

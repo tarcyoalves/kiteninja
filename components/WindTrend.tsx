@@ -128,7 +128,7 @@ export const WindTrend: React.FC<WindTrendProps> = ({ hours, currentHour }) => {
         )}
       </svg>
 
-      <div className="flex justify-between text-[10px] font-bold text-slate-500 mt-0.5">
+      <div className="flex justify-between text-[10px] font-bold text-slate-400 mt-0.5">
         {chart.labels.map((l) => (
           <span key={l.hour}>{l.hour}</span>
         ))}

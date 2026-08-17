@@ -31,7 +31,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
       case 'favoritos':
         return 'Favoritos';
       case 'mapa':
-        return 'Mapa & Radares';
+        return 'Mapa';
       case 'destaques':
         return 'Destaques';
       case 'sessoes':
@@ -50,14 +50,14 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
       className={`sticky top-0 z-30 transition-colors shadow-lg ${
         beachMode
           ? 'bg-[#020617] text-white border-b-2 border-emerald-500'
-          : 'bg-gradient-to-r from-[#e11d48] via-[#d61924] to-[#be123c] text-white border-b border-rose-900/60'
+          : 'bg-gradient-to-r from-[#0B1220] to-[#12243B] text-white border-b border-cyan-500/25'
       }`}
     >
       {/* Top micro bar with system status */}
       <div className="px-4 py-1.5 flex items-center justify-between text-[11px] font-medium border-b border-white/15 tracking-tight backdrop-blur-xs">
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
-          <span className="text-white/95 font-bold tracking-wider text-[10px]">VENTO AO VIVO &bull; RADAR ATIVO</span>
+          <span className="text-white/95 font-bold tracking-wider text-[10px]">PREVISÃO OPEN-METEO</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -126,7 +126,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
           {/* Fast Quick Action: Log Session button */}
           <button
             onClick={() => setIsLoggerOpen(true)}
-            className="flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-full bg-white text-[#d61924] hover:bg-white/95 active:scale-95 shadow-md transition-all hover:shadow-lg"
+            className="flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-full bg-white text-[#0B1220] hover:bg-white/95 active:scale-95 shadow-md transition-all hover:shadow-lg"
           >
             <Plus size={14} className="stroke-[3]" />
             <span className="hidden sm:inline">Velejo</span>

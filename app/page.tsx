@@ -17,6 +17,13 @@ import { FeedView } from "../views/FeedView";
 import { SessionsView } from "../views/SessionsView";
 import { EventsAndAlertsView } from "../views/EventsAndAlertsView";
 import { useKiteData } from "../context/KiteDataContext";
+import { useAuth } from "../context/AuthContext";
+import { LoginGate } from "../components/LoginGate";
+import {
+  SplashIntro,
+  introJaVista,
+  marcarIntroVista,
+} from "../components/SplashIntro";
 
 const MainContent: React.FC = () => {
   const {
@@ -81,12 +88,49 @@ const MainContent: React.FC = () => {
   );
 };
 
+/**
+ * Portão de acesso. O conteúdo do app só é montado com sessão válida — a
+ * proteção real está nas rotas de API, e aqui garantimos que quem não entrou
+ * não recebe nem o HTML das telas internas.
+ *
+ * A abertura animada roda só para visitante sem sessão, e só uma vez por aba:
+ * quem já está logado abre direto no vento, sem espera artificial.
+ */
+const Gate: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [introDone, setIntroDone] = React.useState(() => introJaVista());
+
+  // Enquanto verificamos o cookie não sabemos se é visitante ou velejador
+  // logado. Mostrar a intro aqui puniria quem já tem sessão.
+  if (isLoading) {
+    return <div className="min-h-screen bg-[#0B1220]" />;
+  }
+
+  if (!isAuthenticated) {
+    if (!introDone) {
+      return (
+        <SplashIntro
+          onDone={() => {
+            marcarIntroVista();
+            setIntroDone(true);
+          }}
+        />
+      );
+    }
+    return <LoginGate />;
+  }
+
+  return (
+    <KiteDataProvider>
+      <MainContent />
+    </KiteDataProvider>
+  );
+};
+
 export default function Page() {
   return (
     <AuthProvider>
-      <KiteDataProvider>
-        <MainContent />
-      </KiteDataProvider>
+      <Gate />
     </AuthProvider>
   );
 }

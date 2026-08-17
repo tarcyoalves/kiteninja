@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Camera, MapPin, Wind, Sparkles, Send, Check, Tag } from 'lucide-react';
+import { X, Camera, MapPin, Wind, Sparkles, Send, Tag, Loader2 } from 'lucide-react';
+import { compressImage } from '../lib/imageCompress';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -16,7 +17,9 @@ export const NewPostModal: React.FC = () => {
   const [kiteUsed, setKiteUsed] = useState('9m² Twintip');
   const [condition, setCondition] = useState('Side-Onshore Liso');
   const [tag, setTag] = useState('Relato de Velejo');
-  const [photoUrl, setPhotoUrl] = useState('https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80');
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [fotoErro, setFotoErro] = useState<string | null>(null);
+  const [processandoFoto, setProcessandoFoto] = useState(false);
 
   if (!isNewPostOpen) return null;
 
@@ -53,12 +56,33 @@ export const NewPostModal: React.FC = () => {
     setContent('');
   };
 
-  const samplePhotos = [
-    'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&q=80',
-    'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-  ];
+  const TIPOS_ACEITOS = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
+  const LIMITE_BYTES = 12 * 1024 * 1024;
+
+  async function selecionarFoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setFotoErro(null);
+
+    if (!TIPOS_ACEITOS.includes(file.type)) {
+      setFotoErro('Formato não aceito. Use JPG, PNG, WEBP ou HEIC.');
+      return;
+    }
+    if (file.size > LIMITE_BYTES) {
+      setFotoErro('Foto acima de 12MB. Escolha outra imagem.');
+      return;
+    }
+
+    setProcessandoFoto(true);
+    try {
+      setPhotoUrl(await compressImage(file));
+    } catch (err) {
+      setFotoErro(err instanceof Error ? err.message : 'Não foi possível processar a foto.');
+    } finally {
+      setProcessandoFoto(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/75 backdrop-blur-xs overflow-y-auto">
@@ -71,7 +95,8 @@ export const NewPostModal: React.FC = () => {
           </div>
           <button
             onClick={() => setIsNewPostOpen(false)}
-            className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors"
+            className="p-2 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors min-w-11 min-h-11 flex items-center justify-center"
+            aria-label="Fechar"
           >
             <X size={18} />
           </button>
@@ -174,30 +199,63 @@ export const NewPostModal: React.FC = () => {
             />
           </div>
 
-          {/* Photo Selector */}
+          {/* Foto real do velejo, tirada na hora ou da galeria */}
           <div>
-            <label className="block font-bold text-slate-300 mb-1 flex items-center gap-1">
+            <label
+              htmlFor="post-foto"
+              className="block font-bold text-slate-300 mb-1.5 flex items-center gap-1"
+            >
               <Camera size={13} className="text-cyan-400" />
-              <span>Foto do Velejo</span>
+              <span>Foto do velejo (opcional)</span>
             </label>
-            <div className="grid grid-cols-4 gap-2">
-              {samplePhotos.map((p, idx) => (
-                <div
-                  key={idx}
-                  onClick={() => setPhotoUrl(p)}
-                  className={`relative aspect-video rounded-xl overflow-hidden cursor-pointer border-2 transition-all ${
-                    photoUrl === p ? 'border-cyan-400 scale-105 shadow-md shadow-cyan-500/30' : 'border-transparent opacity-60 hover:opacity-100'
-                  }`}
+
+            {photoUrl ? (
+              <div className="relative rounded-xl overflow-hidden border border-slate-700">
+                <img src={photoUrl} alt="Foto escolhida para o relato" className="w-full max-h-52 object-cover" />
+                <button
+                  type="button"
+                  onClick={() => setPhotoUrl('')}
+                  aria-label="Remover foto selecionada"
+                  className="absolute top-2 right-2 min-w-11 min-h-11 flex items-center justify-center rounded-full bg-black/70 hover:bg-black/85 text-white"
                 >
-                  <img src={p} alt="Sample" className="w-full h-full object-cover" />
-                  {photoUrl === p && (
-                    <div className="absolute top-1 right-1 bg-cyan-400 rounded-full p-0.5 shadow-sm">
-                      <Check size={10} className="text-slate-950 stroke-[3]" />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  <X size={17} />
+                </button>
+              </div>
+            ) : (
+              <label
+                htmlFor="post-foto"
+                className="flex flex-col items-center justify-center gap-1.5 py-6 rounded-xl border-2 border-dashed border-slate-700 bg-[#1E293B] cursor-pointer hover:border-cyan-500/60 transition-colors"
+              >
+                {processandoFoto ? (
+                  <>
+                    <Loader2 size={22} className="text-cyan-400 animate-spin" />
+                    <span className="text-slate-300 font-bold">Preparando foto...</span>
+                  </>
+                ) : (
+                  <>
+                    <Camera size={22} className="text-cyan-400" />
+                    <span className="text-slate-300 font-bold">Tirar foto ou escolher da galeria</span>
+                    <span className="text-[11px] text-slate-400">JPG, PNG, WEBP ou HEIC até 12MB</span>
+                  </>
+                )}
+              </label>
+            )}
+
+            <input
+              id="post-foto"
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={selecionarFoto}
+              disabled={processandoFoto}
+              className="sr-only"
+            />
+
+            {fotoErro && (
+              <p role="alert" className="mt-2 text-rose-300 font-semibold">
+                {fotoErro}
+              </p>
+            )}
           </div>
 
           {/* Submit */}

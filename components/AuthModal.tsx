@@ -41,7 +41,8 @@ export const AuthModal: React.FC = () => {
           </div>
           <button
             onClick={closeAuthModal}
-            className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-slate-950 transition-colors"
+            className="p-2 rounded-full bg-black/20 hover:bg-black/40 text-slate-950 transition-colors min-w-11 min-h-11 flex items-center justify-center"
+            aria-label="Fechar"
           >
             <X size={18} />
           </button>

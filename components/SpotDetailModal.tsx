@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Spot, DayForecast, WindForecastHour } from '../types';
 import {
   ChevronLeft,
@@ -47,6 +47,52 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
 
   const [activeSubTab, setActiveSubTab] = useState<'previsao' | 'mares' | 'webcams' | 'info'>('previsao');
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (!spot) return;
+
+    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    closeButtonRef.current?.focus();
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+
+      // Prende o Tab dentro do modal: sem isso o foco escapa para a página
+      // atrás, que está visualmente coberta mas continua alcançável.
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusables = dialogRef.current.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused.current?.focus();
+    };
+  }, [spot, onClose]);
 
   if (!spot) return null;
 
@@ -105,50 +151,58 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0F172A] text-white overflow-hidden safe-area-inset">
-      {/* Vibrant Red Header Bar matching Screenshot 2 */}
+    <div className="fixed inset-0 z-50 bg-[#0F172A]">
       <div
-        className={`sticky top-0 z-20 flex items-center justify-between px-3 py-3 shadow-lg ${
-          beachMode
-            ? 'bg-[#020617] border-b border-slate-800'
-            : 'bg-gradient-to-r from-[#e11d48] via-[#d61924] to-[#be123c] border-b border-rose-900/60'
-        }`}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Previsão de vento em ${spot.name}`}
+        className="relative h-full max-h-[92dvh] flex flex-col rounded-t-3xl bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden safe-area-inset"
       >
-        <button
-          onClick={onClose}
-          className="p-1 -ml-1 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all flex items-center gap-1"
-          aria-label="Voltar"
+        {/* Vibrant Red Header Bar matching Screenshot 2 */}
+        <div
+          className={`sticky top-0 z-20 flex items-center justify-between px-3 py-3 shadow-lg ${
+            beachMode
+              ? 'bg-[#020617] border-b border-slate-800'
+              : 'bg-gradient-to-r from-[#e11d48] via-[#d61924] to-[#be123c] border-b border-rose-900/60'
+          }`}
         >
-          <ChevronLeft size={28} className="stroke-[2.5]" />
-        </button>
-
-        <h1 className="font-black text-lg sm:text-xl text-white tracking-tight truncate max-w-[220px] sm:max-w-xs text-center drop-shadow-sm">
-          {spot.name}
-        </h1>
-
-        <div className="flex items-center gap-2">
-          {/* Favorite button */}
           <button
-            onClick={() => toggleFavorite(spot.id)}
-            className="p-1.5 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all"
-            title="Favoritar"
+            ref={closeButtonRef}
+            onClick={onClose}
+            className="p-2 -ml-1 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all flex items-center gap-1 min-w-11 min-h-11"
+            aria-label="Voltar"
           >
-            <Star
-              size={20}
-              className={spot.isFavorite ? 'fill-yellow-300 text-yellow-300 drop-shadow-[0_0_6px_rgba(253,224,71,0.6)]' : 'text-white/80'}
-            />
+            <ChevronLeft size={28} className="stroke-[2.5]" />
           </button>
 
-          {/* Share Button */}
-          <button
-            onClick={handleShare}
-            className="p-1.5 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all"
-            title="Compartilhar spot"
-          >
-            <Share2 size={20} className="stroke-[2.2]" />
-          </button>
+          <h1 className="font-black text-lg sm:text-xl text-white tracking-tight truncate max-w-[220px] sm:max-w-xs text-center drop-shadow-sm">
+            {spot.name}
+          </h1>
+
+          <div className="flex items-center gap-2">
+            {/* Favorite button */}
+            <button
+              onClick={() => toggleFavorite(spot.id)}
+              className="p-2 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all min-w-11 min-h-11"
+              aria-label={spot.isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos'}
+            >
+              <Star
+                size={20}
+                className={spot.isFavorite ? 'fill-yellow-300 text-yellow-300 drop-shadow-[0_0_6px_rgba(253,224,71,0.6)]' : 'text-white/80'}
+              />
+            </button>
+
+            {/* Share Button */}
+            <button
+              onClick={handleShare}
+              className="p-2 rounded-full hover:bg-white/20 active:scale-95 text-white transition-all min-w-11 min-h-11"
+              aria-label="Compartilhar spot"
+            >
+              <Share2 size={20} className="stroke-[2.2]" />
+            </button>
+          </div>
         </div>
-      </div>
 
       {/* Sub-tabs Navigation Bar matching Screenshot 2 */}
       <div className="bg-[#b91c1c] border-t border-white/15 px-2 flex items-center justify-around overflow-x-auto text-xs font-black tracking-tight shadow-md">
@@ -218,7 +272,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
             </span>
             <button
               onClick={() => setActiveSubTab('info')}
-              className="flex items-center gap-1 text-xs font-bold text-cyan-400 hover:text-cyan-300"
+              className="flex items-center gap-1 text-xs font-bold text-cyan-400 hover:text-cyan-300 min-w-11 min-h-11 p-2 rounded-full hover:bg-slate-800/40 transition-colors"
+              aria-label="Abrir info do spot"
             >
               <span>Info</span>
               <Info size={14} />
@@ -256,7 +311,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                   <Navigation size={13} className="fill-current transform rotate-45" />
                 </div>
                 <span className="font-bold">{spot.windDirectionText} ({spot.windDirectionDeg}°)</span>
-                <span className="text-slate-500">&bull;</span>
+                <span className="text-slate-400">&bull;</span>
                 <span className="text-slate-400 text-[11px]">max {maxConverted.value}{maxConverted.unitStr}</span>
               </div>
             </div>
@@ -367,7 +422,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                 <span className="w-2 h-2 rounded-full bg-cyan-400" />
                 <span>{selectedDay.dateStr}</span>
               </h2>
-              <span className="text-[11px] text-slate-400 font-medium">
+                <span className="text-[11px] text-slate-400 font-medium">
                 Hora a hora
               </span>
             </div>
@@ -447,7 +502,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                         <div className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[11px] leading-tight shadow-xs">
                           {row.temperature}°C
                         </div>
-                        <span className="text-[9px] text-slate-400 font-mono mt-0.5">
+                <span className="text-[10px] text-slate-400 font-mono mt-0.5">
                           {row.pressureHpa}hPa
                         </span>
                       </div>
@@ -656,6 +711,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
           </div>
         )}
       </div>
+    </div>
     </div>
   );
 };
