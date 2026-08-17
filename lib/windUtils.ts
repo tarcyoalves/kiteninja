@@ -58,7 +58,19 @@ export function getWindColorClass(knots: number): {
   };
 }
 
-export function calculateKiteSize(weightKg: number, knots: number, discipline: Discipline = 'Kitesurf Twintip'): {
+/**
+ * Estabilidade do vento no ponto.
+ * `lagoa`: vento limpo e constante, sem obstáculo a barlavento.
+ * `rajado`: mar aberto, dunas ou vegetação gerando rajada — exige margem.
+ */
+export type WindStability = 'lagoa' | 'rajado';
+
+export function calculateKiteSize(
+  weightKg: number,
+  knots: number,
+  discipline: Discipline = 'Kitesurf Twintip',
+  stability: WindStability = 'lagoa'
+): {
   recommendedSize: number;
   minSize: number;
   maxSize: number;
@@ -81,14 +93,30 @@ export function calculateKiteSize(weightKg: number, knots: number, discipline: D
   if (discipline === 'Kitesurf Strapless Wave') baseFactor = 0.85;
   if (discipline === 'Big Air') baseFactor = 0.95;
 
-  // Formula: Standard 75kg rider in 20kts = ~9m kite
-  const ideal = (75 / weightKg) > 0 ? (weightKg / 75) * (180 / knots) * baseFactor : 9;
+  // Referência: velejador de 75kg com 20 nós usa ~9m². A área escala com o peso
+  // e inversamente com o vento.
+  // (Antes havia um `(75 / weightKg) > 0 ?` aqui: sempre verdadeiro para peso
+  // positivo, e com peso 0 daria Infinity em vez do fallback pretendido.)
+  const safeWeight = weightKg > 0 ? weightKg : 75;
+  // Vento rajado pede kite menor: dimensionar pela média deixa o velejador
+  // sobrepipado justamente no pico da rajada, que é quando o acidente ocorre.
+  // O fator só reduz — nunca aumenta a área recomendada.
+  const stabilityFactor = stability === 'rajado' ? 0.9 : 1;
+  const ideal = (safeWeight / 75) * (180 / knots) * baseFactor * stabilityFactor;
   const rounded = Math.round(ideal * 10) / 10;
   const clamped = Math.max(3, Math.min(21, rounded));
 
   let statusMessage = 'Condição ideal para este tamanho.';
-  if (knots >= 28) statusMessage = 'Vento extremo! Veleje apenas com experiência e kite pequeno.';
-  if (knots < 13 && discipline === 'Kitesurf Twintip') statusMessage = 'Vento limite para prancha twintip, prefira prancha grande ou foil.';
+  if (stability === 'rajado') {
+    statusMessage = 'Vento rajado: tamanho reduzido para não sobrepipar no pico.';
+  }
+  if (knots < 13 && discipline === 'Kitesurf Twintip') {
+    statusMessage = 'Vento limite para twintip, prefira prancha grande ou foil.';
+  }
+  // Vento extremo tem prioridade sobre as demais mensagens.
+  if (knots >= 28) {
+    statusMessage = 'Vento extremo! Veleje apenas com experiência e kite pequeno.';
+  }
 
   return {
     recommendedSize: Math.round(clamped * 2) / 2, // Round to nearest 0.5m
@@ -102,6 +130,23 @@ export function calculateKiteSize(weightKg: number, knots: number, discipline: D
 export function getWindDirectionArrow(deg: number): string {
   // Arrow rotation style
   return `rotate(${deg}deg)`;
+}
+
+const COMPASS_16 = [
+  'N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE',
+  'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW',
+] as const;
+
+/**
+ * Grau meteorológico para rosa dos ventos de 16 pontos, tolerando ângulo fora
+ * de 0..360 (a API pode devolver 360, e cálculos locais podem dar negativo).
+ *
+ * Existe em paralelo a `degToCompass` de lib/weather.ts porque aquele módulo é
+ * server-only: importá-lo num componente cliente quebraria o build.
+ */
+export function degToCompassSafe(deg: number): string {
+  const normalized = ((deg % 360) + 360) % 360;
+  return COMPASS_16[Math.round(normalized / 22.5) % 16];
 }
 
 export function getSafetyBadgeColor(safety: string): { bg: string; text: string; border: string } {

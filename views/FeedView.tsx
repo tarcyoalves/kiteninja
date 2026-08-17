@@ -18,6 +18,17 @@ import {
   User,
 } from 'lucide-react';
 import { CommunityPost } from '../types';
+import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
+
+/** Dados da foto aberta em tela cheia; null = lightbox fechado. */
+interface LightboxState {
+  imageUrl: string;
+  title?: string;
+  authorName?: string;
+  spotName?: string;
+  windKnots?: number;
+  date?: string;
+}
 
 export const FeedView: React.FC = () => {
   const { posts, toggleLikePost, addComment, setIsNewPostOpen, beachMode } = useKiteData();
@@ -25,6 +36,7 @@ export const FeedView: React.FC = () => {
 
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
+  const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
   const handleSendComment = (postId: string) => {
     if (!commentText.trim()) return;
@@ -102,11 +114,29 @@ export const FeedView: React.FC = () => {
             {/* Post Image */}
             {post.photoUrl && (
               <div className="relative aspect-4/3 sm:aspect-16/10 bg-black overflow-hidden">
-                <img
-                  src={post.photoUrl}
-                  alt={post.title}
-                  className="w-full h-full object-cover"
-                />
+                {/* Botão, não img com onClick: precisa de foco e Enter para
+                    quem navega por teclado. */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightbox({
+                      imageUrl: post.photoUrl!,
+                      title: post.title,
+                      authorName: post.authorName,
+                      spotName: post.spotName,
+                      windKnots: post.windReport?.knots,
+                      date: post.timestamp,
+                    })
+                  }
+                  className="block w-full h-full cursor-zoom-in"
+                  aria-label={`Ampliar foto: ${post.title}`}
+                >
+                  <img
+                    src={post.photoUrl}
+                    alt={post.title}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
 
                 {/* Wind Report Pill Tag if present */}
                 {post.windReport && (
@@ -233,6 +263,17 @@ export const FeedView: React.FC = () => {
           <span>Publicar Relato</span>
         </button>
       </div>
+
+      <PhotoLightboxModal
+        isOpen={lightbox !== null}
+        onClose={() => setLightbox(null)}
+        imageUrl={lightbox?.imageUrl ?? ''}
+        title={lightbox?.title}
+        authorName={lightbox?.authorName}
+        spotName={lightbox?.spotName}
+        windKnots={lightbox?.windKnots}
+        date={lightbox?.date}
+      />
     </div>
   );
 };

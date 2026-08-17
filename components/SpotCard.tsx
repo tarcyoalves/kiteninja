@@ -2,9 +2,64 @@
 
 import React from 'react';
 import { Spot } from '../types';
-import { Navigation, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudRain, Star, MapPin, Compass, ShieldAlert, ArrowUpRight } from 'lucide-react';
+import { Navigation, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudRain, Star, Compass, Sparkles, Flame, Zap, Waves } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { getWindColorClass } from '../lib/windUtils';
+
+/**
+ * Etiqueta de condição: resume num rótulo o que o velejador levaria alguns
+ * segundos lendo os números para concluir. Só um badge por card — competindo
+ * por atenção, dois deixariam de ser atalho.
+ *
+ * A ordem importa e é deliberada: risco antes de oportunidade. Rajada forte
+ * decide troca de kite (ou desistência), então vem antes de "vento perfeito".
+ * Todos os campos usados vêm da Open-Meteo via /api/spots — nada estimado aqui.
+ */
+function smartConditionBadge(spot: Spot) {
+  // Rajada muito acima do vento médio é o que arranca a pipa da mão.
+  // Proporcional, não limiar fixo: 7 nós de spread pesam muito mais com 12 de
+  // base do que com 30.
+  const spread = spot.maxKnots - spot.currentKnots;
+  if (spot.currentKnots >= 8 && spread >= Math.max(6, spot.currentKnots * 0.4)) {
+    return {
+      label: 'Rajadas Fortes',
+      icon: <Zap size={10} className="text-rose-300" />,
+      className: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      title: `Vento ${spot.currentKnots} nós com rajada de ${spot.maxKnots}: ${spread} nós de variação`,
+    };
+  }
+
+  if (spot.currentKnots >= 20 && spot.currentKnots <= 26) {
+    return {
+      label: 'Vento Perfeito',
+      icon: <Flame size={10} className="text-amber-300" />,
+      className: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+      title: 'Faixa de 20 a 26 nós: vento cheio e constante',
+    };
+  }
+
+  // Maré secando muda o banco de areia e a profundidade — só vale avisar se
+  // há vento suficiente para velejar de fato.
+  if (spot.currentTideTrend === 'descendo' && spot.currentKnots >= 12) {
+    return {
+      label: 'Maré Secando',
+      icon: <Waves size={10} className="text-teal-300" />,
+      className: 'bg-teal-500/20 text-teal-300 border-teal-500/40',
+      title: spot.nextTideInfo || 'Maré vazando',
+    };
+  }
+
+  if (/Flat|Lagoa/i.test(spot.waterCondition) && spot.currentKnots >= 12) {
+    return {
+      label: 'Flat Clássico',
+      icon: <Sparkles size={10} className="text-cyan-300" />,
+      className: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
+      title: `${spot.waterCondition} com ${spot.currentKnots} nós`,
+    };
+  }
+
+  return null;
+}
 
 interface SpotCardProps {
   spot: Spot;
@@ -18,6 +73,7 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
   const currentConverted = convertWind(spot.currentKnots);
   const maxConverted = convertWind(spot.maxKnots);
   const windColors = getWindColorClass(spot.currentKnots);
+  const smartBadge = smartConditionBadge(spot);
 
   const renderWeatherIcon = () => {
     const iconSize = 20;
@@ -96,9 +152,20 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
 
         {/* Spot Name & Location/Type */}
         <div className="flex-1 min-w-0 pr-1">
-          <h3 className="text-sm sm:text-base font-extrabold text-white truncate group-hover:text-cyan-300 transition-colors">
-            {spot.name}
-          </h3>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <h3 className="text-sm sm:text-base font-extrabold text-white truncate group-hover:text-cyan-300 transition-colors">
+              {spot.name}
+            </h3>
+            {smartBadge && (
+              <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black border uppercase tracking-wider ${smartBadge.className}`}
+                title={smartBadge.title}
+              >
+                {smartBadge.icon}
+                <span>{smartBadge.label}</span>
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span
               className={`text-[11px] tracking-tight ${
@@ -107,8 +174,18 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
                   : 'text-slate-400 font-medium'
               }`}
             >
-              {spot.isLiveObservation && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-ping inline-block" />}
-              {spot.isLiveObservation ? 'Ao Vivo (Sensor)' : 'Previsão'}
+              {/* Ping sobre um ponto sólido: o anel se expande e some, mas o
+                  ponto permanece visível — só o ping sozinho pisca e "apaga". */}
+              {spot.isLiveObservation && (
+                <span className="relative flex h-2 w-2" aria-hidden="true">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+                </span>
+              )}
+              {/* Não dizemos "sensor ao vivo": a fonte é modelo de previsão
+                  (Open-Meteo), não estação na praia. Mostrar a hora da última
+                  leitura é honesto e mais útil que um rótulo genérico. */}
+              {spot.isLiveObservation ? `Atualizado ${spot.lastUpdated}` : 'Sem dados'}
             </span>
             <span className="text-[10px] text-slate-500">&bull;</span>
             <span className="text-[11px] text-slate-400 truncate">

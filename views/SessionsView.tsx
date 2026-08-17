@@ -20,6 +20,7 @@ import {
   MapPin,
   Sparkles,
 } from 'lucide-react';
+import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
 import { SessionLog, Discipline } from '../types';
 
 export const SessionsView: React.FC = () => {
@@ -27,6 +28,13 @@ export const SessionsView: React.FC = () => {
   const { user } = useAuth();
 
   const [disciplineFilter, setDisciplineFilter] = useState<string>('ALL');
+  const [lightbox, setLightbox] = useState<{
+    imageUrl: string;
+    title?: string;
+    spotName?: string;
+    windKnots?: number;
+    date?: string;
+  } | null>(null);
 
   const filteredSessions = sessions.filter(s => {
     if (disciplineFilter === 'ALL') return true;
@@ -172,9 +180,26 @@ export const SessionsView: React.FC = () => {
 
               {/* Photo preview if present */}
               {session.photoUrl && (
-                <div className="relative aspect-video rounded-xl overflow-hidden bg-black ring-1 ring-slate-700">
-                  <img src={session.photoUrl} alt={session.spotName} className="w-full h-full object-cover" />
-                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setLightbox({
+                      imageUrl: session.photoUrl!,
+                      title: session.spotName,
+                      spotName: session.spotLocation,
+                      windKnots: session.avgWindKnots,
+                      date: session.date,
+                    })
+                  }
+                  className="relative block w-full aspect-video rounded-xl overflow-hidden bg-black ring-1 ring-slate-700 cursor-zoom-in"
+                  aria-label={`Ampliar foto da sessão em ${session.spotName}`}
+                >
+                  <img
+                    src={session.photoUrl}
+                    alt={session.spotName}
+                    className="w-full h-full object-cover"
+                  />
+                </button>
               )}
 
               {/* Session Metrics Bar */}
@@ -229,6 +254,17 @@ export const SessionsView: React.FC = () => {
           </div>
         )}
       </div>
+
+      <PhotoLightboxModal
+        isOpen={lightbox !== null}
+        onClose={() => setLightbox(null)}
+        imageUrl={lightbox?.imageUrl ?? ''}
+        title={lightbox?.title}
+        authorName={user?.name}
+        spotName={lightbox?.spotName}
+        windKnots={lightbox?.windKnots}
+        date={lightbox?.date}
+      />
     </div>
   );
 };

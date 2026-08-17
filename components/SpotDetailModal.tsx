@@ -33,6 +33,8 @@ import {
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { getWindColorClass, calculateKiteSize, getSafetyBadgeColor } from '../lib/windUtils';
+import { TideCurve } from './TideCurve';
+import { WindTrend } from './WindTrend';
 
 interface SpotDetailModalProps {
   spot: Spot | null;
@@ -58,6 +60,16 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const kiteRecommendation = calculateKiteSize(userWeight, spot.currentKnots, 'Kitesurf Twintip');
 
   const selectedDay: DayForecast = spot.daysForecast[selectedDayIndex] || spot.daysForecast[0];
+
+  // Hora local do velejador (fuso do Nordeste, mesmo do índice da série da
+  // API). Só marca "agora" no dia de hoje — nos próximos dias não existe agora.
+  const nowHour = Number(
+    new Date().toLocaleString('pt-BR', {
+      timeZone: 'America/Fortaleza',
+      hour: '2-digit',
+      hour12: false,
+    })
+  );
 
   const handleShare = () => {
     if (navigator.share) {
@@ -356,9 +368,16 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                 <span>{selectedDay.dateStr}</span>
               </h2>
               <span className="text-[11px] text-slate-400 font-medium">
-                Intervalo de 3 em 3 horas
+                Hora a hora
               </span>
             </div>
+
+            {/* Forma da curva antes da tabela: a rampa da térmica e a queda do
+                fim de tarde aparecem de relance, sem ler 24 linhas. */}
+            <WindTrend
+              hours={selectedDay.hours}
+              currentHour={selectedDayIndex === 0 ? nowHour : undefined}
+            />
 
             {/* Forecast Table matching screenshot 2 */}
             <div className="bg-[#1E293B] rounded-2xl border border-slate-700/80 overflow-hidden shadow-xl">
@@ -498,62 +517,15 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                 Fundamental para kite no Nordeste: praias com lagunas secas x maré cheia.
               </p>
 
-              {/* Tide graph visualization */}
-              <div className="relative h-44 w-full bg-[#0F172A] rounded-xl p-3 border border-cyan-500/30 flex flex-col justify-between overflow-hidden shadow-inner">
-                <div className="flex justify-between text-xs font-black text-cyan-300">
-                  <span>00:00</span>
-                  <span>06:00 (Pico 3.6m)</span>
-                  <span>12:00 (Seca 0.1m)</span>
-                  <span>18:00 (Pico 3.4m)</span>
-                  <span>24:00</span>
-                </div>
-
-                {/* Sine wave SVG representation */}
-                <svg className="w-full h-24 overflow-visible" viewBox="0 0 400 80" preserveAspectRatio="none">
-                  <path
-                    d="M 0,60 Q 100,0 200,70 T 400,10"
-                    fill="none"
-                    stroke="#06b6d4"
-                    strokeWidth="3.5"
-                    className="drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]"
-                  />
-                  {/* Current Position Marker */}
-                  <circle cx="280" cy="45" r="6" fill="#f43f5e" className="animate-ping opacity-75" />
-                  <circle cx="280" cy="45" r="5" fill="#f43f5e" />
-                </svg>
-
-                <div className="flex items-center justify-between text-xs font-bold text-slate-300">
-                  <span className="flex items-center gap-1.5">
-                    <Moon size={14} className="text-amber-400" />
-                    <span>Lua Nova (Maré de Sizígia)</span>
-                  </span>
-                  <span className="text-rose-400 font-extrabold">Agora: 1.8m (Vazando)</span>
-                </div>
-              </div>
-
-              {/* Tide summary milestones */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-4">
-                <div className="p-3 rounded-xl bg-[#0F172A] border border-slate-700 text-center">
-                  <span className="block text-[10px] text-slate-400 uppercase font-black">1ª Baixa-mar</span>
-                  <span className="text-base font-black text-white">11:37</span>
-                  <span className="block text-xs font-bold text-cyan-400">0.1 metros</span>
-                </div>
-                <div className="p-3 rounded-xl bg-[#0F172A] border border-slate-700 text-center">
-                  <span className="block text-[10px] text-slate-400 uppercase font-black">1ª Preia-mar</span>
-                  <span className="text-base font-black text-white">05:22</span>
-                  <span className="block text-xs font-bold text-emerald-400">3.6 metros</span>
-                </div>
-                <div className="p-3 rounded-xl bg-[#0F172A] border border-slate-700 text-center">
-                  <span className="block text-[10px] text-slate-400 uppercase font-black">2ª Preia-mar</span>
-                  <span className="text-base font-black text-white">17:48</span>
-                  <span className="block text-xs font-bold text-emerald-400">3.4 metros</span>
-                </div>
-                <div className="p-3 rounded-xl bg-[#0F172A] border border-slate-700 text-center">
-                  <span className="block text-[10px] text-slate-400 uppercase font-black">2ª Baixa-mar</span>
-                  <span className="text-base font-black text-white">23:45</span>
-                  <span className="block text-xs font-bold text-cyan-400">0.4 metros</span>
-                </div>
-              </div>
+              {/* Curva e marcos vêm das alturas horárias reais do dia
+                  selecionado. Antes havia horários e alturas fixos no código
+                  (05:22 / 3.6m etc.) que não correspondiam a nenhum spot. */}
+              <TideCurve
+                hours={selectedDay.hours}
+                currentHour={selectedDayIndex === 0 ? nowHour : undefined}
+                currentHeightM={selectedDayIndex === 0 ? spot.currentTideHeightM : undefined}
+                trend={selectedDayIndex === 0 ? spot.currentTideTrend : undefined}
+              />
             </div>
           </div>
         )}

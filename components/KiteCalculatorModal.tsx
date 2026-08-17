@@ -5,7 +5,7 @@ import { X, Calculator, Wind, Scale, Sparkles, ShieldCheck, AlertCircle } from '
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
-import { calculateKiteSize, getWindColorClass } from '../lib/windUtils';
+import { calculateKiteSize, getWindColorClass, type WindStability } from '../lib/windUtils';
 
 export const KiteCalculatorModal: React.FC = () => {
   const { isCalculatorOpen, setIsCalculatorOpen, windUnit, convertWind } = useKiteData();
@@ -14,10 +14,11 @@ export const KiteCalculatorModal: React.FC = () => {
   const [weightKg, setWeightKg] = useState(user?.weightKg || 78);
   const [knots, setKnots] = useState(20);
   const [discipline, setDiscipline] = useState<Discipline>('Kitesurf Twintip');
+  const [stability, setStability] = useState<WindStability>('lagoa');
 
   if (!isCalculatorOpen) return null;
 
-  const result = calculateKiteSize(weightKg, knots, discipline);
+  const result = calculateKiteSize(weightKg, knots, discipline, stability);
   const windColors = getWindColorClass(knots);
 
   const getBoardRecommendation = () => {
@@ -77,6 +78,37 @@ export const KiteCalculatorModal: React.FC = () => {
                   }`}
                 >
                   {d}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Estabilidade do vento: muda a recomendação de verdade, porque
+              dimensionar pela média em vento rajado deixa sobrepipado no pico. */}
+          <div>
+            <label className="block font-bold text-slate-300 mb-1.5">Condição do Vento</label>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(
+                [
+                  { key: 'lagoa' as const, label: 'Limpo / Lagoa', hint: 'constante' },
+                  { key: 'rajado' as const, label: 'Rajado / Mar aberto', hint: 'com margem' },
+                ]
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setStability(opt.key)}
+                  aria-pressed={stability === opt.key}
+                  className={`p-2.5 rounded-xl font-bold text-left transition-all border ${
+                    stability === opt.key
+                      ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-xs'
+                      : 'bg-[#1E293B] border-slate-700/80 text-slate-300 hover:bg-slate-700'
+                  }`}
+                >
+                  <span className="block">{opt.label}</span>
+                  <span className="block text-[10px] font-medium text-slate-400 mt-0.5">
+                    {opt.hint}
+                  </span>
                 </button>
               ))}
             </div>
