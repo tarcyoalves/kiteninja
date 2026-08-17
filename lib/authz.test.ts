@@ -125,6 +125,8 @@ describe('autorização das rotas de API', () => {
       'remove a conta órfã que a própria requisição criou ao perder a corrida do convite',
     'alerts/[id]/route.ts::UPDATE safety_alerts':
       'resolver alerta é ação de moderação; a rota exige requireAdmin',
+    'chat/messages/[id]/route.ts::DELETE FROM chat_messages':
+      'moderação de sala pública: o ramo sem filtro é alcançável apenas com role admin, e o ramo do autor comum filtra por user_id',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -140,6 +142,38 @@ describe('autorização das rotas de API', () => {
         if (`${r.rel}::${verbo}` in MUTACOES_JUSTIFICADAS) continue;
         falhas.push(`${r.rel}::${verbo}`);
       }
+    }
+    expect(falhas).toEqual([]);
+  });
+
+  /**
+   * Uma exceção declarada não pode virar porta aberta: se um dia alguém remover
+   * a checagem de papel e deixar a linha na lista de justificadas, o filtro
+   * desaparece silenciosamente. Toda rota que dispensa `user_id` precisa provar
+   * que exige admin.
+   */
+  it('mutação sem user_id só existe atrás de checagem de admin', () => {
+    const falhas: string[] = [];
+    for (const chave of Object.keys(MUTACOES_JUSTIFICADAS)) {
+      const rel = chave.split('::')[0];
+      const r = rotas.find((x) => x.rel === rel);
+      if (!r) continue;
+
+      /*
+       * Casos que não dependem de papel, mas ainda precisam de alvo único: a
+       * mutação atinge uma linha identificada por id, e esse id é a própria
+       * conta autenticada (`${user.id}` no change-password) ou a conta órfã que
+       * a própria requisição criou (`${userId}` no accept). O que importa é
+       * existir `WHERE id = ${...}` — sem isso o UPDATE varreria a tabela.
+       */
+      if (rel === 'auth/change-password/route.ts' || rel === 'invites/accept/route.ts') {
+        expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);
+        continue;
+      }
+
+      const exigeAdmin =
+        /requireAdmin/.test(r.src) || /role\s*===\s*['"]admin['"]/.test(r.src);
+      if (!exigeAdmin) falhas.push(rel);
     }
     expect(falhas).toEqual([]);
   });

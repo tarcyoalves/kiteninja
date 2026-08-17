@@ -171,3 +171,108 @@ export interface KiteEvent {
   participantsCount: number;
   isRegistered?: boolean;
 }
+
+// ------------------------------------------------------------- marketplace
+export type ListingCategory =
+  | 'Kite'
+  | 'Prancha'
+  | 'Barra'
+  | 'Trapézio'
+  | 'Foil'
+  | 'Wing'
+  | 'Neoprene'
+  | 'Acessório'
+  | 'Outro';
+
+export type ListingCondition = 'Novo' | 'Semi-novo' | 'Usado' | 'Bem usado' | 'Para reparo';
+
+export type ListingStatus = 'Ativo' | 'Reservado' | 'Vendido' | 'Removido';
+
+export type ListingSort = 'recent' | 'price_asc' | 'price_desc';
+
+/**
+ * Anúncio do marketplace.
+ *
+ * `priceCents` é inteiro em centavos, espelhando a coluna do banco. A conversão
+ * para reais acontece só na formatação — nenhuma conta de dinheiro usa float.
+ */
+export interface Listing {
+  id: string;
+  userId: string;
+  title: string;
+  description: string;
+  category: ListingCategory;
+  condition: ListingCondition;
+  priceCents: number;
+  negotiable: boolean;
+  brand?: string;
+  model?: string;
+  yearManufactured?: number;
+  sizeM2?: number;
+  sizeCm?: number;
+  city: string;
+  state: string;
+  status: ListingStatus;
+  viewsCount: number;
+  createdAt: string;
+  updatedAt: string;
+  /** Primeira foto no feed; no detalhe vem a lista completa em `photos`. */
+  coverPhoto?: string;
+  photos?: string[];
+  sellerName: string;
+  sellerAvatar?: string;
+  sellerRiderId?: string;
+  favoritesCount: number;
+  isFavorite: boolean;
+  isOwner: boolean;
+}
+
+/** Filtros do feed do marketplace. `null` = filtro não aplicado. */
+export interface ListingFilters {
+  category: ListingCategory | null;
+  condition: ListingCondition | null;
+  state: string | null;
+  /** Em centavos, para casar com a coluna sem conversão intermediária. */
+  minPriceCents: number | null;
+  maxPriceCents: number | null;
+  minSize: number | null;
+  maxSize: number | null;
+  q: string;
+  sort: ListingSort;
+  mine: boolean;
+  favorites: boolean;
+}
+
+// ------------------------------------------------ chat de velejadores online
+
+/** Mensagem do chat como a API devolve. `createdAt` é sempre ISO em UTC. */
+export interface ChatMessage {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  userRiderId: string;
+  text: string;
+  createdAt: string;
+}
+
+/**
+ * Um velejador visto recentemente. Não existe campo `isOnline`: a presença é
+ * derivada de `lastSeenAt` contra a janela (ver PRESENCE_WINDOW_MS em
+ * lib/chat.ts), porque o celular fecha o app sem avisar e um booleano ficaria
+ * preso em `true`.
+ */
+export interface OnlineRider {
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  userRiderId: string;
+  userLevel: string;
+  countryFlag: string;
+  /** Sala onde a pessoa está com o chat aberto, se estiver em alguma. */
+  room?: string;
+  /** Spot que o velejador marcou como "estou aqui". */
+  atSpotId?: string;
+  atSpotName?: string;
+  lastSeenAt: string;
+}

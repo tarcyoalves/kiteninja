@@ -4,6 +4,22 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline } from '../types';
 import { useAuth } from './AuthContext';
 
+/**
+ * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
+ * adicionar uma aba exigia lembrar de todos — o nome dá um ponto único de
+ * mudança e o TypeScript cobra o resto.
+ */
+export type ActiveTab =
+  | 'favoritos'
+  | 'mapa'
+  | 'destaques'
+  | 'sessoes'
+  | 'alertas'
+  | 'anuncios'
+  | 'chat'
+  | 'perfil'
+  | 'mais';
+
 interface KiteDataContextType {
   spots: Spot[];
   selectedSpot: Spot | null;
@@ -50,8 +66,19 @@ interface KiteDataContextType {
   setIsNewPostOpen: (open: boolean) => void;
   isNewAlertOpen: boolean;
   setIsNewAlertOpen: (open: boolean) => void;
-  activeTab: 'favoritos' | 'mapa' | 'destaques' | 'sessoes' | 'alertas' | 'perfil' | 'mais';
-  setActiveTab: (tab: 'favoritos' | 'mapa' | 'destaques' | 'sessoes' | 'alertas' | 'perfil' | 'mais') => void;
+  isNewListingOpen: boolean;
+  setIsNewListingOpen: (open: boolean) => void;
+  activeTab: ActiveTab;
+  setActiveTab: (tab: ActiveTab) => void;
+
+  /**
+   * Marketplace. Os anúncios NÃO vivem no contexto: a lista depende de filtros e
+   * paginação que só a tela conhece, e duplicar isso aqui criaria duas fontes de
+   * verdade. O contexto só carrega um contador que a view observa para recarregar
+   * quando um anúncio é criado ou alterado de fora dela.
+   */
+  listingsVersion: number;
+  refreshListings: () => void;
 
   // Atualização das condições
   refreshWindData: () => void;
@@ -60,6 +87,8 @@ interface KiteDataContextType {
 }
 
 const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined);
+
+const TAB_INICIAL: ActiveTab = 'favoritos';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 
@@ -96,7 +125,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'favoritos' | 'mapa' | 'destaques' | 'sessoes' | 'alertas' | 'perfil' | 'mais'>('favoritos');
+  const [isNewListingOpen, setIsNewListingOpen] = useState(false);
+  const [listingsVersion, setListingsVersion] = useState(0);
+  const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -311,6 +342,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     loadSpots().finally(() => setIsRefreshing(false));
   };
 
+  const refreshListings = useCallback(() => {
+    setListingsVersion((v) => v + 1);
+  }, []);
+
   return (
     <KiteDataContext.Provider
       value={{
@@ -348,6 +383,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsNewPostOpen,
         isNewAlertOpen,
         setIsNewAlertOpen,
+        isNewListingOpen,
+        setIsNewListingOpen,
+        listingsVersion,
+        refreshListings,
         activeTab,
         setActiveTab,
         refreshWindData,

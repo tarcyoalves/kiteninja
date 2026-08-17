@@ -10,12 +10,15 @@ import { SpotDetailModal } from "../components/SpotDetailModal";
 import { SessionLoggerModal } from "../components/SessionLoggerModal";
 import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
 import { NewPostModal } from "../components/NewPostModal";
+import { NewListingModal } from "../components/NewListingModal";
 import { AuthModal } from "../components/AuthModal";
 import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
 import { SessionsView } from "../views/SessionsView";
 import { EventsAndAlertsView } from "../views/EventsAndAlertsView";
+import { MarketplaceView } from "../views/MarketplaceView";
+import { ChatView } from "../views/ChatView";
 import { useKiteData } from "../context/KiteDataContext";
 import { useAuth } from "../context/AuthContext";
 import { LoginGate } from "../components/LoginGate";
@@ -42,22 +45,24 @@ const MainContent: React.FC = () => {
   }
 
   return (
+    /*
+     * Shell de altura exata da viewport: header e menu são fixos por serem
+     * irmãos flex que não encolhem, e só o miolo rola. Sem `fixed` e sem
+     * subtrair pixels, o layout fica correto tanto na aba do navegador quanto
+     * instalado como web app.
+     */
     <div
-      className={`min-h-screen font-sans flex flex-col antialiased transition-colors ${
+      className={`app-shell font-sans flex flex-col antialiased transition-colors ${
         beachMode
           ? "bg-[#020617] text-white"
           : "bg-[#0F172A] text-slate-100"
       }`}
     >
-      {/* Mobile Header */}
+      {/* Header — shrink-0 no próprio componente, sempre visível */}
       <Header />
 
-      {/*
-        O menu inferior é `fixed`, então sai do fluxo e não empurra nada. Sem
-        reservar a altura dele aqui (h-16 + safe area do iPhone), o fim de cada
-        tela ficava escondido atrás do menu — o "corte" nos cards.
-      */}
-      <main className="flex-1 w-full max-w-lg mx-auto pb-nav">
+      {/* Único elemento que rola no app. Ver .app-scroll em globals.css. */}
+      <main className="app-scroll w-full max-w-lg mx-auto">
         {activeTab === "favoritos" && (
           <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
         )}
@@ -66,6 +71,8 @@ const MainContent: React.FC = () => {
         )}
         {activeTab === "destaques" && <FeedView />}
         {activeTab === "sessoes" && <SessionsView />}
+        {activeTab === "chat" && <ChatView />}
+        {activeTab === "anuncios" && <MarketplaceView />}
         {(activeTab === "alertas" || activeTab === "mais") && (
           <EventsAndAlertsView />
         )}
@@ -87,6 +94,7 @@ const MainContent: React.FC = () => {
       <SessionLoggerModal />
       <KiteCalculatorModal />
       <NewPostModal />
+      <NewListingModal />
       <AuthModal />
     </div>
   );

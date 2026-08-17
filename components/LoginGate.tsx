@@ -42,7 +42,7 @@ export const LoginGate: React.FC = () => {
         <div className="flex flex-col items-center text-center mb-8">
           {/* A arte da logo é preta e vive sobre fundo claro; aqui o fundo é
               escuro, então a placa branca é o que mantém o ninja visível. */}
-          <div className="w-28 h-28 rounded-full bg-white p-1.5 shadow-xl shadow-cyan-500/20 ring-1 ring-cyan-400/30">
+          <div className="w-[8.4rem] h-[8.4rem] rounded-full bg-white p-1.5 shadow-xl shadow-cyan-500/20 ring-1 ring-cyan-400/30">
             <Image
               src="/brand/logo.png"
               alt="KiteNinja"

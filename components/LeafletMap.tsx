@@ -9,6 +9,7 @@ import L from 'leaflet';
 import { Spot } from '@/types';
 import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
+import { WindParticleLayer } from './WindParticleLayer';
 import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2 } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
 
@@ -142,6 +143,10 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   locateStatus,
   nearestSpotInfo,
 }) => {
+  /* Animação ligada por padrão: é o principal ganho de leitura do mapa. Fica
+     desligável porque partícula em canvas custa bateria, e na praia isso pesa. */
+  const [windAnim, setWindAnim] = useState(true);
+
   const mapRef = useRef<L.Map | null>(null);
   const [mapCenter, setMapCenter] = useState<LatLng | null>(null);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
@@ -204,6 +209,21 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           </button>
         </div>
 
+        {/* Liga/desliga a animação de vento */}
+        <button
+          onClick={() => setWindAnim((v) => !v)}
+          aria-pressed={windAnim}
+          className={`p-2.5 rounded-2xl backdrop-blur-md border pointer-events-auto active:scale-95 shadow-xl transition-all ${
+            windAnim
+              ? 'bg-emerald-500/90 border-emerald-400 text-slate-950'
+              : 'bg-[#0F172A]/90 border-slate-700/80 text-slate-400 hover:text-white'
+          }`}
+          title={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
+          aria-label={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
+        >
+          <Wind size={18} />
+        </button>
+
         {/* Locate Me Button */}
         <button
           onClick={onLocateUser}
@@ -229,8 +249,15 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           ref={mapRef}
           zoomControl={false}
         >
+          {/*
+            attribution vazio: o banner branco do Leaflet no canto inferior
+            quebrava a estética do app e roubava espaço numa tela de celular. O
+            crédito de OpenStreetMap/CARTO exigido pela licença continua no app,
+            movido para "Informação do Spot" — cumpre a atribuição sem poluir o
+            mapa. Não remova o crédito do app: a licença ODbL exige.
+          */}
           <TileLayer
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            attribution=""
             url={
               useDarkTiles
                 ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
@@ -239,6 +266,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           />
 
           <MapController center={mapCenter} zoom={mapZoom} />
+
+          {/* Partículas seguindo a direção real de cada spot (Open-Meteo).
+              Só na camada de vento/rajadas: sobre "ondas" competiria com a
+              informação que o usuário escolheu ver. */}
+          {activeLayer !== 'ondas' && (
+            <WindParticleLayer spots={spots} paused={!windAnim} />
+          )}
 
           {/* Spot Markers */}
           {spots.map((spot) => (

@@ -39,6 +39,10 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
         return 'Meu Logbook';
       case 'alertas':
         return 'Alertas & Eventos';
+      case 'chat':
+        return 'Chat';
+      case 'anuncios':
+        return 'Anúncios';
       case 'perfil':
         return 'Perfil do Rider';
       default:
@@ -47,8 +51,10 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
   };
 
   return (
+    /* `shrink-0` em vez de `sticky`: como irmão flex do miolo rolável, o header
+       fica fixo no topo sem sair do fluxo nem depender de altura calculada. */
     <header
-      className={`sticky top-0 z-chrome transition-colors shadow-lg ${
+      className={`shrink-0 z-chrome transition-colors shadow-lg ${
         beachMode
           ? 'bg-[#020617] text-white border-b-2 border-emerald-500'
           : 'bg-gradient-to-r from-[#0B1220] to-[#12243B] text-white border-b border-cyan-500/25'
@@ -108,7 +114,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
 
           <div className="flex items-center gap-2">
             {/* Placa branca: a logo é preta e o header é escuro. */}
-            <span className="w-8 h-8 rounded-full bg-white p-0.5 shrink-0 shadow-sm">
+            <span className="w-[2.4rem] h-[2.4rem] rounded-full bg-white p-0.5 shrink-0 shadow-sm">
               <Image
                 src="/brand/logo.png"
                 alt="KiteNinja"

@@ -10,8 +10,15 @@ export const BottomNav: React.FC = () => {
   const activeAlertsCount = safetyAlerts.filter(a => a.status === 'Ativo').length;
 
   return (
+    /*
+     * `shrink-0` e não `fixed`: o menu agora é um irmão do conteúdo dentro de um
+     * shell flex de altura 100dvh. Isso elimina a aritmética de altura que
+     * quebrava no modo web app instalado — antes cada tela subtraía 120px
+     * chumbados de 100vh, número que só valia no Safari com barra de endereço.
+     * Sendo parte do fluxo, o menu reserva o próprio espaço sozinho.
+     */
     <nav
-      className={`fixed bottom-0 left-0 right-0 z-chrome transition-colors border-t safe-area-pb ${
+      className={`shrink-0 z-chrome transition-colors border-t safe-area-pb ${
         beachMode
           ? 'bg-[#020617]/95 border-slate-800 backdrop-blur text-slate-400'
           : 'bg-[#0F172A]/95 border-slate-800/90 backdrop-blur text-slate-400 shadow-2xl'

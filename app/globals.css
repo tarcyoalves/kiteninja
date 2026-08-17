@@ -92,26 +92,57 @@ select {
 .leaflet-bottom { z-index: var(--z-map-ui); }
 .leaflet-popup { z-index: var(--z-map-ui); }
 
-/* Altura real da viewport no mobile.
+/* ALTURA DO APP — decidida uma vez, no shell.
 
-   100vh no iOS conta a barra de endereço, então um elemento com 100vh nasce
-   mais alto que a área visível e o rodapé some atrás do chrome do navegador.
-   dvh acompanha a barra ao recolher; o vh fica como fallback para navegador
-   antigo (a ordem importa: quem entende dvh sobrescreve). */
+   Instalado na tela de início (display: standalone) não existe barra de
+   endereço; no Safari em aba ela recolhe ao rolar. Qualquer conta do tipo
+   `100vh - 120px` acerta num caso e erra no outro — era isso que deixava o app
+   "não totalmente compatível" como web app: sobrava faixa morta embaixo ou o
+   conteúdo passava da tela.
+
+   A correção é não fazer conta. O shell tem a altura exata da viewport (dvh,
+   que acompanha a barra) e header/conteúdo/menu se distribuem por flex; só o
+   miolo rola. vh fica como fallback para navegador sem dvh (a ordem importa:
+   quem entende dvh sobrescreve). */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+  /* Segura a rolagem elástica do iOS no shell; o scroll real é no miolo. */
+  overflow: hidden;
+}
+
+/* Área central rolável, entre header e menu. `min-height: 0` é obrigatório:
+   sem isso um filho flex se recusa a encolher e estoura o shell. */
+.app-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+/* Telas que ocupam a área central sem rolagem própria (o mapa). */
 .app-viewport {
-  height: calc(100vh - 120px);
-  height: calc(100dvh - 120px);
+  height: 100%;
+  min-height: 0;
 }
 
-/* Card do spot selecionado no mapa: acima do menu inferior (h-16 = 4rem) mais
-   a safe area do iPhone, senão nasce por baixo e aparece cortado. */
+/* O menu já não é sobreposto, então o card do mapa só precisa de uma folga. */
 .map-card-bottom {
-  bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  bottom: 0.5rem;
 }
 
-/* Conteúdo das telas roláveis precisa terminar acima do menu fixo. */
-.pb-nav {
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+/* Modais em tela cheia param no topo do menu inferior, para o menu continuar
+   acessível em todo o app (h-16 = 4rem + safe area do iPhone). */
+.bottom-nav-gap {
+  bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* O Leaflet injeta o container de atribuição no DOM mesmo com attribution="",
+   e ele aparece como uma tarja branca no canto. Esconde o container; o crédito
+   OpenStreetMap/CARTO exigido pela licença ODbL vive em "Informação do Spot". */
+.leaflet-control-attribution {
+  display: none !important;
 }
 
 /* Remove o padding padrão do DivIcon do Leaflet para permitir pins Tailwind */

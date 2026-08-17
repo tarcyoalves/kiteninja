@@ -151,20 +151,35 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   };
 
   return (
-    <div className="fixed inset-0 z-modal bg-[#0F172A]">
+    /*
+       `bottom-nav-gap` deixa o menu inferior à vista em vez de cobri-lo: o
+       usuário pediu o menu fixo em TODO o app, e antes o modal de previsão
+       tomava a tela inteira, obrigando a voltar para trocar de aba. O modal
+       ocupa da borda de cima até o topo do menu.
+
+       max-h-[92dvh] saiu junto: com o shell flex a altura já vem do inset, e o
+       92% criava uma faixa morta embaixo.
+    */
+    <div className="fixed inset-0 bottom-nav-gap z-modal bg-[#0F172A]">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`Previsão de vento em ${spot.name}`}
-        className="relative h-full max-h-[92dvh] flex flex-col rounded-t-3xl bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden safe-area-inset"
+        className="relative h-full flex flex-col rounded-t-3xl bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden"
       >
-        {/* Vibrant Red Header Bar matching Screenshot 2 */}
+        {/*
+          Era um degradê vermelho, a única superfície do app fora da paleta: no
+          resto o vermelho significa perigo (alerta de segurança, live de webcam,
+          erro), então usá-lo como cor de cabeçalho de um spot normal dava um
+          falso sinal de alarme. Agora segue o mesmo azul-escuro das outras
+          barras, com o acento ciano marcando a aba ativa.
+        */}
         <div
-          className={`sticky top-0 z-20 flex items-center justify-between px-3 py-3 shadow-lg ${
+          className={`shrink-0 flex items-center justify-between px-3 py-3 shadow-lg border-b ${
             beachMode
-              ? 'bg-[#020617] border-b border-slate-800'
-              : 'bg-gradient-to-r from-[#e11d48] via-[#d61924] to-[#be123c] border-b border-rose-900/60'
+              ? 'bg-[#020617] border-slate-800'
+              : 'bg-[#0F172A] border-slate-800/90'
           }`}
         >
           <button
@@ -204,8 +219,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
           </div>
         </div>
 
-      {/* Sub-tabs Navigation Bar matching Screenshot 2 */}
-      <div className="bg-[#b91c1c] border-t border-white/15 px-2 flex items-center justify-around overflow-x-auto text-xs font-black tracking-tight shadow-md">
+      {/* Abas internas: mesmo tom das superfícies elevadas do app (#1E293B). */}
+      <div className="shrink-0 bg-[#1E293B] border-b border-slate-800/90 px-2 flex items-center justify-around overflow-x-auto text-xs font-black tracking-tight shadow-md">
         <button
           onClick={() => setActiveSubTab('previsao')}
           className={`py-2.5 px-3 whitespace-nowrap transition-all border-b-2 ${

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import {
   X,
   Pin,
@@ -23,7 +23,7 @@ import {
   ChevronRight,
   Loader2,
 } from 'lucide-react';
-import { useKiteData } from '../context/KiteDataContext';
+import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 
@@ -46,9 +46,42 @@ export const SidebarDrawer: React.FC = () => {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  /**
+   * Contagem real de velejadores online, para o badge do Chat.
+   *
+   * Antes era um "6" fixo no JSX. Badge com número inventado é pior que badge
+   * nenhum: o velejador abre o chat esperando seis pessoas, encontra a sala
+   * vazia e passa a ignorar todos os badges do app.
+   *
+   * Busca só quando o menu abre (não em intervalo): o drawer é efêmero e o
+   * número vale para a decisão de tocar em "Chat", não para acompanhar em tempo
+   * real. Fica antes do early return abaixo porque hook não pode ser condicional.
+   */
+  const [onlineCount, setOnlineCount] = useState(0);
+
+  useEffect(() => {
+    if (!isSidebarOpen) return;
+
+    let ativo = true;
+    fetch('/api/chat/presence', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        // `ativo` evita setState depois de o menu fechar (o fetch pode voltar
+        // com o componente já desmontado).
+        if (ativo && body) setOnlineCount(Number(body.count) || 0);
+      })
+      .catch(() => {
+        // Sem rede o badge simplesmente não aparece — melhor que um número velho.
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [isSidebarOpen]);
+
   if (!isSidebarOpen) return null;
 
-  const navigateTo = (tabName: 'favoritos' | 'mapa' | 'destaques' | 'sessoes' | 'alertas' | 'perfil') => {
+  const navigateTo = (tabName: ActiveTab) => {
     setActiveTab(tabName);
     setIsSidebarOpen(false);
   };
@@ -129,15 +162,20 @@ export const SidebarDrawer: React.FC = () => {
                 </span>
               </div>
 
-              {/* capture="user" abre a câmera frontal direto no celular. */}
+              {/*
+                Sem o atributo `capture`: com ele o celular abre DIRETO a câmera
+                e a galeria fica inacessível. Sem ele, o sistema mostra o próprio
+                seletor com as duas opções (Câmera / Fototeca / Arquivos), que é
+                o comportamento esperado para foto de perfil.
+                heic/heif no accept: é o formato padrão do iPhone.
+              */}
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
-                capture="user"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
                 onChange={handlePhotoPicked}
                 className="hidden"
-                aria-label="Escolher foto de perfil"
+                aria-label="Escolher foto de perfil da câmera ou galeria"
               />
 
               {photoError && (
@@ -250,15 +288,18 @@ export const SidebarDrawer: React.FC = () => {
             </span>
           </button>
 
-          {/* Anúncios */}
+          {/* Anúncios — marketplace de equipamento usado da comunidade */}
           <button
-            onClick={() => {
-              alert('Classificados de pipas usadas, pranchas e foils da comunidade.');
-            }}
-            className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
+            onClick={() => navigateTo('anuncios')}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
-            <Megaphone size={18} className="text-slate-400" />
-            <span className="flex-1">Anúncios</span>
+            <div className="flex items-center gap-3.5">
+              <Megaphone size={18} className="text-emerald-400" />
+              <span>Anúncios</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
+              Novo
+            </span>
           </button>
 
           {/* Favoritos */}
@@ -288,20 +329,23 @@ export const SidebarDrawer: React.FC = () => {
             <span className="flex-1">Ocorrências</span>
           </button>
 
-          {/* Chat (badge 6) */}
+          {/* Chat — badge mostra quantos velejadores estão online de verdade. */}
           <button
-            onClick={() => {
-              alert('Chat ao vivo com velejadores na água nos spots favoritos.');
-            }}
+            onClick={() => navigateTo('chat')}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <div className="flex items-center gap-3.5">
-              <MessageSquare size={18} className="text-slate-400" />
+              <MessageSquare size={18} className="text-cyan-400" />
               <span>Chat</span>
             </div>
-            <span className="w-5 h-5 rounded-full bg-amber-400 text-slate-950 text-xs font-black flex items-center justify-center shadow-xs">
-              6
-            </span>
+            {onlineCount > 0 && (
+              <span
+                className="min-w-5 h-5 px-1.5 rounded-full bg-emerald-400 text-slate-950 text-xs font-black flex items-center justify-center shadow-xs"
+                title={`${onlineCount} velejador(es) online agora`}
+              >
+                {onlineCount}
+              </span>
+            )}
           </button>
 
           {/* Notificações */}

@@ -191,3 +191,107 @@ CREATE TABLE IF NOT EXISTS event_registrations (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (event_id, user_id)
 );
+
+-- ------------------------------------------- marketplace de equipamento usado
+-- Classificados da comunidade: kite, prancha, barra, trapézio, foil, wing.
+--
+-- `price_cents` é BIGINT em centavos, nunca NUMERIC/float: preço de equipamento
+-- é dinheiro, e float acumula erro em soma/comparação (0,1 + 0,2 ≠ 0,3). Todo o
+-- app converte para reais só na hora de exibir.
+CREATE TABLE IF NOT EXISTS listings (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title             TEXT NOT NULL,
+  description       TEXT NOT NULL,
+  category          TEXT NOT NULL CHECK (category IN (
+                      'Kite', 'Prancha', 'Barra', 'Trapézio', 'Foil',
+                      'Wing', 'Neoprene', 'Acessório', 'Outro')),
+  condition         TEXT NOT NULL CHECK (condition IN (
+                      'Novo', 'Semi-novo', 'Usado', 'Bem usado', 'Para reparo')),
+  price_cents       BIGINT NOT NULL CHECK (price_cents >= 0),
+  negotiable        BOOLEAN NOT NULL DEFAULT TRUE,
+  brand             TEXT,
+  model             TEXT,
+  year_manufactured SMALLINT,
+  -- Tamanho depende da categoria: kite/wing/foil vendem em m², prancha em cm.
+  size_m2           NUMERIC(4,1),
+  size_cm           SMALLINT,
+  city              TEXT NOT NULL,
+  state             TEXT NOT NULL,
+  -- 'Removido' em vez de DELETE: quem já negociou pelo anúncio mantém o
+  -- histórico, e o velejador consegue reativar sem recadastrar tudo.
+  status            TEXT NOT NULL DEFAULT 'Ativo' CHECK (status IN (
+                      'Ativo', 'Reservado', 'Vendido', 'Removido')),
+  views_count       INTEGER NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- O feed padrão é "ativos, mais recentes primeiro": índice composto cobre a
+-- ordenação sem sort em disco.
+CREATE INDEX IF NOT EXISTS idx_listings_status_created ON listings (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_listings_category ON listings (category);
+CREATE INDEX IF NOT EXISTS idx_listings_state ON listings (state);
+CREATE INDEX IF NOT EXISTS idx_listings_user ON listings (user_id);
+
+-- Fotos em tabela separada porque são até 6 por anúncio e cada data URL pesa
+-- centenas de KB: manter no listings faria o feed carregar tudo em cada linha.
+CREATE TABLE IF NOT EXISTS listing_photos (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  listing_id UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  data_url   TEXT NOT NULL,
+  position   SMALLINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_listing_photos_order ON listing_photos (listing_id, position);
+
+-- Chave composta e sem coluna `id`, igual a favorites/post_likes: a existência
+-- da linha é o próprio estado do favorito, o que torna o toggle atômico.
+CREATE TABLE IF NOT EXISTS listing_favorites (
+  listing_id UUID NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (listing_id, user_id)
+);
+
+-- ------------------------------------------------ chat de velejadores online
+-- Uma sala geral mais uma sala por spot. `room` guarda 'geral' ou 'spot:<id>'
+-- em vez de uma FK para spots: a sala geral não tem spot, e um spot removido do
+-- catálogo não deve apagar a conversa de quem velejou lá. Em troca, o formato
+-- do nome é validado na rota (lib/chat.ts) — sem isso, qualquer texto viraria
+-- uma sala fantasma que ninguém encontra.
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  room       TEXT NOT NULL,
+  -- O CHECK repete o limite da validação de propósito: a rota pode ter bug, o
+  -- banco não. 1000 caracteres é recado de praia, não artigo.
+  text       TEXT NOT NULL CHECK (char_length(text) BETWEEN 1 AND 1000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- A leitura do chat é sempre "últimas N desta sala" e o polling incremental
+-- ainda filtra por created_at: o índice composto cobre as duas sem sort.
+CREATE INDEX IF NOT EXISTS idx_chat_messages_room ON chat_messages (room, created_at DESC);
+
+-- Presença é DERIVADA de `last_seen_at`, nunca um booleano `is_online`.
+--
+-- O navegador do celular fecha sem avisar: o velejador perde sinal ao entrar na
+-- água, a tela apaga, o iOS mata a aba em background. Nenhum desses casos gera
+-- um evento de "saída" que possamos gravar, então um flag ficaria travado em
+-- TRUE para sempre e a lista de "quem está na água" encheria de fantasmas.
+-- Com timestamp, ausência de heartbeat já significa offline:
+--   online = last_seen_at > NOW() - INTERVAL '2 minutes'
+-- A janela de 2 min está em PRESENCE_WINDOW_MS (lib/chat.ts) e dá margem para
+-- uma batida de 30s perdida no 3G sem manter ninguém a mais na lista.
+CREATE TABLE IF NOT EXISTS user_presence (
+  user_id      UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  room         TEXT,
+  -- "estou neste spot" declarado pelo velejador. ON DELETE SET NULL porque a
+  -- saída de um spot do catálogo não deve derrubar a presença de quem está lá.
+  at_spot_id   TEXT REFERENCES spots(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_presence_seen ON user_presence (last_seen_at DESC);
