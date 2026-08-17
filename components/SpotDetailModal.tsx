@@ -567,7 +567,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
             {/* Forma da curva antes da tabela: a rampa da térmica e a queda do
                 fim de tarde aparecem de relance, sem ler 24 linhas. */}
             <WindTrend
-              hours={selectedDay.hours}
+              hours={chartHours}
               currentHour={selectedDayIndex === 0 ? nowHour : undefined}
             />
 
@@ -585,15 +585,23 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
 
               {/* Rows */}
               <div className="divide-y divide-slate-800">
-                {selectedDay.hours.map((row, hIdx) => {
+                {filteredHours.map((row, hIdx) => {
                   const rowKnots = convertWind(row.knots);
                   const rowGusts = convertWind(row.gustKnots);
                   const rowWindColors = getWindColorClass(row.knots);
+                  // Destaca o bloco de 3h que contém a hora atual, para o
+                  // velejador achar "agora" sem contar linhas na praia.
+                  const isNow = hIdx === currentHourBlockIdx;
 
                   return (
                     <div
                       key={hIdx}
-                      className="grid grid-cols-6 items-center py-2.5 text-center text-xs hover:bg-slate-700/30 transition-colors"
+                      aria-current={isNow ? 'time' : undefined}
+                      className={`grid grid-cols-6 items-center py-2.5 text-center text-xs transition-colors ${
+                        isNow
+                          ? 'bg-cyan-500/10 ring-1 ring-inset ring-cyan-400/40'
+                          : 'hover:bg-slate-700/30'
+                      }`}
                     >
                       {/* Col 1: Tempo / Hora in pill */}
                       <div className="flex justify-center">
@@ -713,7 +721,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                   selecionado. Antes havia horários e alturas fixos no código
                   (05:22 / 3.6m etc.) que não correspondiam a nenhum spot. */}
               <TideCurve
-                hours={selectedDay.hours}
+                hours={chartHours}
                 currentHour={selectedDayIndex === 0 ? nowHour : undefined}
                 currentHeightM={selectedDayIndex === 0 ? spot.currentTideHeightM : undefined}
                 trend={selectedDayIndex === 0 ? spot.currentTideTrend : undefined}
