@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Spot, DayForecast, WindForecastHour } from '../types';
+import { filterHoursBy3, resolveCurrentHourBlock, getPreparedHours } from '../lib/forecastGrid';
 import {
   ChevronLeft,
   Share2,
@@ -46,11 +47,108 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const { user } = useAuth();
 
   const [activeSubTab, setActiveSubTab] = useState<'previsao' | 'mares' | 'webcams' | 'info'>('previsao');
+  // selectedDayIndex: atalho direto pelos botões de dia
+  // scrolledDayIndex: dia que o scroll revelou (para manter em sync)
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [scrolledDayIndex, setScrolledDayIndex] = useState(0);
+
+  // Estado para prefers-reduced-motion
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
+
+  // Refs para scroll snap: container central e elementos de cada dia
+  const forecastScrollRef = useRef<HTMLDivElement>(null);
+  const daySectionRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Detecta prefers-reduced-motion uma vez ao montar
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setPrefersReducedMotion(media.matches);
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    media.addEventListener('change', handler);
+    return () => media.removeEventListener('change', handler);
+  }, []);
+
+  // Sincroniza selectedDayIndex com scrolledDayIndex quando este muda via scroll
+  // Isso mantém os botões de dia highlightados conforme o usuário scrolla
+  const syncDayFromScroll = useCallback((visibleIdx: number) => {
+    setScrolledDayIndex(visibleIdx);
+    if (visibleIdx !== selectedDayIndex) {
+      setSelectedDayIndex(visibleIdx);
+    }
+  }, [selectedDayIndex]);
+
+  // Quando o usuário clica num botão de dia, rolar até esse dia
+  const scrollToDay = useCallback((dayIdx: number) => {
+    const section = daySectionRefs.current.get(dayIdx);
+    if (!section || !forecastScrollRef.current) return;
+
+    // Se o idx é o mesmo, não precisa rolar
+    if (dayIdx === scrolledDayIndex) return;
+
+    section.scrollIntoView({
+      behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  }, [scrolledDayIndex, prefersReducedMotion]);
+
+  // Atualiza o índice selecionado quando o usuário clica num botão de dia
+  const handleDayButtonClick = useCallback((dayIdx: number) => {
+    setSelectedDayIndex(dayIdx);
+    scrollToDay(dayIdx);
+  }, [scrollToDay]);
+
+  // IntersectionObserver para detectar qual dia está visível durante o scroll.
+  // Isso permite que o usuário navegue entre dias scrollando E os botões de dia
+  // se atualizem para refletir a posição atual.
+  useEffect(() => {
+    const container = forecastScrollRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Encontra o dia mais visível (com maior área visível)
+        let maxVisible = 0;
+        let mostVisibleIdx = 0;
+
+        entries.forEach((entry) => {
+          const dayIdx = Number(entry.target.getAttribute('data-day-index'));
+          if (isNaN(dayIdx)) return;
+
+          // Calcula quanto do elemento está visível
+          const rect = entry.boundingClientRect;
+          const containerRect = container.getBoundingClientRect();
+          const visibleHeight = Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top);
+          const visibleRatio = visibleHeight / rect.height;
+
+          if (visibleRatio > maxVisible) {
+            maxVisible = visibleRatio;
+            mostVisibleIdx = dayIdx;
+          }
+        });
+
+        // Só atualiza se a mudança for significativa (mais de 30% visível)
+        if (maxVisible > 0.3) {
+          syncDayFromScroll(mostVisibleIdx);
+        }
+      },
+      {
+        root: container,
+        rootMargin: '0px',
+        threshold: [0, 0.25, 0.5, 0.75, 1],
+      }
+    );
+
+    // Registra todos os elementos de dia como observáveis
+    daySectionRefs.current.forEach((section) => {
+      observer.observe(section);
+    });
+
+    return () => observer.disconnect();
+  }, [spot?.daysForecast, syncDayFromScroll]);
 
   useEffect(() => {
     if (!spot) return;
@@ -94,7 +192,37 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
     };
   }, [spot, onClose]);
 
-  if (!spot) return null;
+  // Hora local do velejador (fuso do Nordeste, mesmo do índice da série da
+  // API). Só marca "agora" no dia de hoje — nos próximos dias não existe agora.
+  const nowHour = Number(
+    new Date().toLocaleString('pt-BR', {
+      timeZone: 'America/Fortaleza',
+      hour: '2-digit',
+      hour12: false,
+    })
+  );
+
+  // ATENÇÃO: todo hook precisa vir ANTES do `if (!spot) return null` abaixo.
+  // O modal monta com spot === null e só recebe o spot no clique; se um hook
+  // ficar depois do early return, a contagem muda entre renders e o React
+  // derruba a árvore com "Rendered more hooks than during the previous render".
+  const selectedDay: DayForecast | null = spot
+    ? spot.daysForecast[selectedDayIndex] || spot.daysForecast[0] || null
+    : null;
+
+  // Filtra horas para passo de 3h (00h, 03h, 06h...) para caber um dia na tela.
+  // Aplica em todas as tabs que mostram horas: WindTrend, tabela e TideCurve.
+  const filteredHours = useMemo(
+    () => (selectedDay ? getPreparedHours(selectedDay.hours) : []),
+    [selectedDay]
+  );
+  // Resolve qual bloco de 3h contém a hora atual (ex: 16h -> bloco 15h)
+  const currentHourBlockIdx = useMemo(
+    () => (selectedDayIndex === 0 ? resolveCurrentHourBlock(filteredHours, nowHour) : -1),
+    [filteredHours, nowHour, selectedDayIndex]
+  );
+
+  if (!spot || !selectedDay) return null;
 
   const currentConverted = convertWind(spot.currentKnots);
   const maxConverted = convertWind(spot.maxKnots);
@@ -105,17 +233,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const userWeight = user?.weightKg || 78;
   const kiteRecommendation = calculateKiteSize(userWeight, spot.currentKnots, 'Kitesurf Twintip');
 
-  const selectedDay: DayForecast = spot.daysForecast[selectedDayIndex] || spot.daysForecast[0];
-
-  // Hora local do velejador (fuso do Nordeste, mesmo do índice da série da
-  // API). Só marca "agora" no dia de hoje — nos próximos dias não existe agora.
-  const nowHour = Number(
-    new Date().toLocaleString('pt-BR', {
-      timeZone: 'America/Fortaleza',
-      hour: '2-digit',
-      hour12: false,
-    })
-  );
+  // Prepara as horas para os gráficos (WindTrend e TideCurve).
+  // Mantemos a curva com todos os dados originais para suavidade —
+  // a filtragem de 3h é só para a tabela de linhas.
+  const chartHours = selectedDay.hours;
 
   const handleShare = () => {
     if (navigator.share) {
@@ -266,9 +387,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
         </button>
       </div>
 
-      {/* Content Area with custom scrollbar */}
+      {/* Content Area with scroll snap para navegar entre dias */}
       <div
-        className={`flex-1 overflow-y-auto ${
+        ref={forecastScrollRef}
+        className={`flex-1 overflow-y-auto snap-y snap-mandatory ${
           beachMode ? 'bg-[#020617] text-white' : 'bg-[#0F172A] text-slate-100'
         }`}
       >

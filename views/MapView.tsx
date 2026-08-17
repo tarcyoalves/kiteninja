@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useCallback, useEffect, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, Suspense, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { useKiteData } from '../context/KiteDataContext';
 import { Spot } from '../types';
 import { ChevronRight, Loader2 } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
-import { MapLayer } from '@/components/LeafletMap';
+import { MapLayer, UserPosition } from '@/components/LeafletMap';
 
 // Carregar Leaflet apenas no cliente (SSR = false) — Leaflet depende de window
 const LeafletMap = dynamic(
@@ -34,6 +34,9 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
   const [locateStatus, setLocateStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
   const [nearestSpotInfo, setNearestSpotInfo] = useState<{ spot: Spot; distanceKm: number } | null>(null);
+  const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
+  // Referência para o watch ID - precisa existir para limpar no unmount
+  const watchIdRef = useRef<number | null>(null);
 
   const handleLayerChange = useCallback((layer: MapLayer) => {
     setActiveLayer(layer);
@@ -44,38 +47,101 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     onSelectSpot(spot);
   }, [onSelectSpot]);
 
+  // Cleanup do watch de geolocalização: evita vazamento de GPS que drena bateria.
+  // Executa quando o componente desmonta OU quando a aba vai para segundo plano.
+  useEffect(() => {
+    const limparWatch = () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+
+    // Limpar quando o componente desmonta
+    window.addEventListener('beforeunload', limparWatch);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) limparWatch();
+    });
+
+    return () => {
+      limparWatch();
+      window.removeEventListener('beforeunload', limparWatch);
+      document.removeEventListener('visibilitychange', () => {
+        if (document.hidden) limparWatch();
+      });
+    };
+  }, []);
+
+  /**
+   * Inicia o rastreamento da posição do usuário usando watchPosition.
+   * Segue o velejador em tempo real enquanto ele se move na praia.
+   * O cleanup é feito no useEffect acima.
+   */
   const handleLocateUser = useCallback(() => {
     if (!navigator.geolocation) {
       setLocateStatus('error');
       return;
     }
 
+    // Já está rastreando? Não iniciar outro watch.
+    if (watchIdRef.current !== null) {
+      return;
+    }
+
     setLocateStatus('loading');
     setNearestSpotInfo(null);
+    setUserPosition(null);
 
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const result = nearestSpot(latitude, longitude, spots);
+    // Sucesso: atualiza posição e encontra spot mais próximo
+    const onSuccess = (position: GeolocationPosition) => {
+      const { latitude, longitude, accuracy } = position.coords;
 
-        if (result) {
-          setNearestSpotInfo(result);
-          setLocateStatus('success');
-          // O mapa vai centralizar no spot mais próximo automaticamente
-        } else {
-          setLocateStatus('error');
-        }
-      },
-      (error) => {
-        if (error.code === error.PERMISSION_DENIED) {
-          setLocateStatus('denied');
-        } else {
-          setLocateStatus('error');
-        }
-      },
+      // Guardar a posição real do usuário para desenhar no mapa
+      setUserPosition({ lat: latitude, lng: longitude, accuracy });
+
+      // Calcular o spot mais próximo
+      const result = nearestSpot(latitude, longitude, spots);
+      if (result) {
+        setNearestSpotInfo(result);
+      }
+      setLocateStatus('success');
+    };
+
+    // Erro: traduzir código de erro em mensagem útil
+    const onError = (error: GeolocationPositionError) => {
+      if (error.code === error.PERMISSION_DENIED) {
+        setLocateStatus('denied');
+      } else if (error.code === error.TIMEOUT) {
+        setLocateStatus('error');
+      } else {
+        // PERMISSION_DENIED, POSITION_UNAVAILABLE, TIMEOUT
+        setLocateStatus('error');
+      }
+    };
+
+    // Iniciar watchPosition para seguir o usuário em tempo real.
+    // timeout: 10s - tempo razoável para GPS fixer inicial.
+    // maximumAge: 0 - sempre pega posição fresca, sem cache.
+    // enableHighAccuracy: true - GPS do celular, não localização por IP.
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      onSuccess,
+      onError,
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   }, [spots]);
+
+  /**
+   * Para o rastreamento quando o usuário sai da tela de mapa.
+   * Este efeito roda quando o componente é desmontado.
+   */
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    };
+  }, []);
 
   /**
    * Os spots chegam da API depois da primeira renderização, então o estado
@@ -116,6 +182,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
           onLocateUser={handleLocateUser}
           locateStatus={locateStatus}
           nearestSpotInfo={nearestSpotInfo}
+          userPosition={userPosition}
         />
       </Suspense>
 

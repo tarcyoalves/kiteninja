@@ -4,6 +4,8 @@
  * isso não aparece olhando a tela — as partículas se movem de qualquer jeito.
  */
 
+import { getWindRgbaColor, getWindBand } from './windScale';
+
 /**
  * Converte a direção meteorológica no vetor de deslocamento em TELA.
  *
@@ -29,15 +31,11 @@ export function vetorVento(grauDeOndeVem: number): { vx: number; vy: number } {
 }
 
 /**
- * Cor da partícula pela intensidade, na mesma escala usada no resto do app
- * (ver getWindColorClass): ciano fraco, esmeralda ideal, âmbar forte, rosa
- * perigoso. rgba direto porque o canvas não entende classe do Tailwind.
+ * Cor da partícula pela intensidade, derivada da escala única em windScale.ts.
+ * rgba direto porque o canvas não entende classe do Tailwind.
  */
 export function corPorForca(knots: number): string {
-  if (knots < 12) return 'rgba(34,211,238,0.55)';
-  if (knots < 20) return 'rgba(52,211,153,0.62)';
-  if (knots < 28) return 'rgba(251,191,36,0.66)';
-  return 'rgba(244,114,182,0.7)';
+  return getWindRgbaColor(knots);
 }
 
 /**

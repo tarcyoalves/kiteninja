@@ -80,12 +80,13 @@ describe('calculateKiteSize — invariantes de segurança', () => {
 });
 
 describe('getWindColorClass', () => {
-  it('sobe de faixa conforme o vento aumenta', () => {
-    expect(getWindColorClass(8).text).toContain('sky');
-    expect(getWindColorClass(15).text).toContain('cyan');
+  it('sobe de faixa conforme o vento aumenta (novos limites: 0-8 sky, 8-12 cyan, 12-22 emerald, 22-30 amber, 30+ rose)', () => {
+    expect(getWindColorClass(5).text).toContain('sky');
+    expect(getWindColorClass(8).text).toContain('cyan');
+    expect(getWindColorClass(12).text).toContain('emerald');
     expect(getWindColorClass(20).text).toContain('emerald');
-    expect(getWindColorClass(25).text).toContain('amber');
-    expect(getWindColorClass(35).text).toContain('rose');
+    expect(getWindColorClass(22).text).toContain('amber');
+    expect(getWindColorClass(30).text).toContain('rose');
   });
 
   it('sempre devolve todas as classes que a UI consome', () => {

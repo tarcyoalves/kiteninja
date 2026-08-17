@@ -1,5 +1,10 @@
 import { Discipline } from '../types';
+import { getWindBand, getWindTailwindColor } from './windScale';
 
+/**
+ * Obtém as classes de cor do Tailwind para uma intensidade de vento.
+ * Deriva da escala única em windScale.ts para manter consistência no app.
+ */
 export function getWindColorClass(knots: number): {
   bg: string;
   text: string;
@@ -8,54 +13,61 @@ export function getWindColorClass(knots: number): {
   border: string;
   glow: string;
 } {
-  if (knots < 12) {
-    return {
+  const color = getWindTailwindColor(knots);
+  const colorNum = color === 'sky' ? '500' : ''; // sky não tem tone 500 como base
+
+  // Mapeia a cor base da escala para as variações necessárias na UI
+  const variations: Record<string, {
+    bg: string;
+    text: string;
+    badge: string;
+    gradient: string;
+    border: string;
+    glow: string;
+  }> = {
+    sky: {
       bg: 'bg-sky-500',
       text: 'text-sky-400',
       badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40',
       gradient: 'from-sky-500/35 via-sky-500/10 to-transparent',
       border: 'border-sky-500/40',
       glow: 'shadow-sky-500/30',
-    };
-  }
-  if (knots < 17) {
-    return {
+    },
+    cyan: {
       bg: 'bg-cyan-500',
       text: 'text-cyan-400',
       badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40',
       gradient: 'from-cyan-500/35 via-cyan-500/10 to-transparent',
       border: 'border-cyan-500/40',
       glow: 'shadow-cyan-500/30',
-    };
-  }
-  if (knots < 23) {
-    return {
+    },
+    emerald: {
       bg: 'bg-emerald-500',
       text: 'text-emerald-400',
       badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
       gradient: 'from-emerald-500/45 via-emerald-500/15 to-transparent',
       border: 'border-emerald-500/40',
       glow: 'shadow-emerald-500/40',
-    };
-  }
-  if (knots < 28) {
-    return {
+    },
+    amber: {
       bg: 'bg-amber-500',
       text: 'text-amber-400',
       badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40',
       gradient: 'from-amber-500/45 via-amber-500/15 to-transparent',
       border: 'border-amber-500/40',
       glow: 'shadow-amber-500/40',
-    };
-  }
-  return {
-    bg: 'bg-rose-500',
-    text: 'text-rose-400',
-    badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
-    gradient: 'from-rose-500/45 via-rose-500/15 to-transparent',
-    border: 'border-rose-500/40',
-    glow: 'shadow-rose-500/40',
+    },
+    rose: {
+      bg: 'bg-rose-500',
+      text: 'text-rose-400',
+      badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40',
+      gradient: 'from-rose-500/45 via-rose-500/15 to-transparent',
+      border: 'border-rose-500/40',
+      glow: 'shadow-rose-500/40',
+    },
   };
+
+  return variations[color] || variations.sky;
 }
 
 /**

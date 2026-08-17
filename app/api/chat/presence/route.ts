@@ -1,5 +1,5 @@
 import { sql } from '@/lib/db';
-import { handle, readJson } from '@/lib/api';
+import { handle, readOptionalJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { PRESENCE_WINDOW_MS, isValidRoomName, presenceCutoff } from '@/lib/chat';
 import { touchPresence } from '@/lib/presence';
@@ -14,7 +14,8 @@ import { touchPresence } from '@/lib/presence';
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
-    const body = await readJson(request);
+    // Heartbeat sem corpo é válido: todos os campos aqui são opcionais.
+    const body = await readOptionalJson(request);
     const payload = (body ?? {}) as Record<string, unknown>;
 
     // Sala é opcional no heartbeat: quem está na aba "Online" não está em sala

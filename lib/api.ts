@@ -26,3 +26,21 @@ export async function readJson(request: Request): Promise<unknown> {
     throw new HttpError(400, 'Corpo da requisição deve ser JSON válido.');
   }
 }
+
+/**
+ * Igual ao readJson, mas corpo ausente vale como objeto vazio.
+ *
+ * Serve para POST em que todo campo é opcional — o heartbeat de presença é o
+ * caso: "estou com o app aberto" é a mensagem inteira, e exigir `{}` só para
+ * satisfazer o parser gastaria bytes no 4G da praia. Corpo presente e
+ * malformado continua sendo erro: aí é bug de cliente, não economia.
+ */
+export async function readOptionalJson(request: Request): Promise<unknown> {
+  const raw = await request.text();
+  if (raw.trim() === '') return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new HttpError(400, 'Corpo da requisição deve ser JSON válido.');
+  }
+}

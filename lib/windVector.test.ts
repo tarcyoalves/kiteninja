@@ -62,15 +62,21 @@ describe('vetorVento', () => {
 });
 
 describe('corPorForca', () => {
-  it('segue a mesma escala do resto do app', () => {
-    expect(corPorForca(8)).toContain('34,211,238'); // ciano: fraco
-    expect(corPorForca(16)).toContain('52,211,153'); // esmeralda: ideal
-    expect(corPorForca(24)).toContain('251,191,36'); // âmbar: forte
-    expect(corPorForca(35)).toContain('244,114,182'); // rosa: perigoso
+  it('segue a mesma escala do resto do app (novos limites: 0-8 sky, 8-12 cyan, 12-22 emerald, 22-30 amber, 30+ rose)', () => {
+    // 5 nós = sky (sem vento)
+    expect(corPorForca(5)).toContain('233'); // rgb de sky
+    // 10 nós = cyan (fraco)
+    expect(corPorForca(10)).toContain('182'); // cyan-500
+    // 16 nós = emerald (bom)
+    expect(corPorForca(16)).toContain('129'); // emerald-500
+    // 25 nós = amber (forte)
+    expect(corPorForca(25)).toContain('11'); // amber-500
+    // 35 nós = rose (perigoso)
+    expect(corPorForca(35)).toContain('94'); // rose-500
   });
 
   it('não deixa faixa sem cor, inclusive em zero e valores extremos', () => {
-    for (const k of [0, 11.9, 12, 19.9, 20, 27.9, 28, 60]) {
+    for (const k of [0, 7.9, 8, 11.9, 12, 21.9, 22, 29.9, 30, 60]) {
       expect(corPorForca(k)).toMatch(/^rgba\(/);
     }
   });

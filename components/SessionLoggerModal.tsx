@@ -426,8 +426,10 @@ export const SessionLoggerModal: React.FC = () => {
             <input
               id="session-photo-input"
               type="file"
-              accept="image/*"
-              capture="environment"
+              /* Sem `capture`: com ele o celular abre direto a câmera e o
+                 velejador não consegue escolher a foto do velejo que já tirou.
+                 heic/heif explícitos porque é o formato padrão do iPhone. */
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
               onChange={handlePhotoChange}
               disabled={isCompressingPhoto}
               className="sr-only"

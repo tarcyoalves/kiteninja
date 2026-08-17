@@ -4,16 +4,24 @@
 import 'leaflet/dist/leaflet.css';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, CircleMarker, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { Spot } from '@/types';
 import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
+import { formatDistance } from '@/lib/geoFormat';
 import { WindParticleLayer } from './WindParticleLayer';
 import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2 } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
 
 export type MapLayer = 'vento' | 'rajadas' | 'ondas';
+
+/** Posição do usuário obtida via Geolocation API */
+export interface UserPosition {
+  lat: number;
+  lng: number;
+  accuracy: number; // metros
+}
 
 // Centro aproximado da região dos spots (litoral RN/CE)
 const DEFAULT_CENTER: LatLng = { lat: -4.5, lng: -37.5 };
@@ -28,6 +36,7 @@ interface LeafletMapProps {
   onLocateUser: () => void;
   locateStatus: 'idle' | 'loading' | 'success' | 'error' | 'denied';
   nearestSpotInfo: { spot: Spot; distanceKm: number } | null;
+  userPosition: UserPosition | null;
 }
 
 /** Componente interno para controllable center (usado pelo botão Localizar) */
@@ -116,12 +125,19 @@ function createSpotIcon(spot: Spot, layer: MapLayer): L.DivIcon {
   });
 }
 
-/** Criar ícone para o spot encontrado via geolocalização */
-function createUserLocationIcon(): L.DivIcon {
+/** Criar ícone para o spot encontrado via geolocalização.
+ *  O marcador é visualmente diferente dos pins de spot (ponto azul com halo de pulso)
+ *  para que o usuário não confunda sua posição com um spot de kite.
+ *  Respeita prefers-reduced-motion: se o usuário solicitou menos animação,
+ *  removes o efeito de pulso para economizar bateria e evitar incômodo. */
+function createUserLocationIcon(reduceMotion: boolean): L.DivIcon {
+  const pulseClass = reduceMotion ? '' : 'animate-pulse';
+  const pingClass = reduceMotion ? '' : 'animate-ping';
+
   const html = `
     <div class="relative">
-      <div class="w-5 h-5 rounded-full bg-cyan-500 border-2 border-white shadow-lg animate-pulse"></div>
-      <div class="absolute -inset-2 rounded-full bg-cyan-500/30 animate-ping"></div>
+      <div class="w-5 h-5 rounded-full bg-cyan-500 border-2 border-white shadow-lg ${pulseClass}"></div>
+      <div class="absolute -inset-2 rounded-full bg-cyan-500/30 ${pingClass}"></div>
     </div>
   `;
 
@@ -142,6 +158,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   onLocateUser,
   locateStatus,
   nearestSpotInfo,
+  userPosition,
 }) => {
   /* Animação ligada por padrão: é o principal ganho de leitura do mapa. Fica
      desligável porque partícula em canvas custa bateria, e na praia isso pesa. */
@@ -151,13 +168,41 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [mapCenter, setMapCenter] = useState<LatLng | null>(null);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
 
-  // Atualizar center quando nearestSpotInfo mudar (após geolocalização)
+  // Quando o usuário é localizado, enquadrar mapa mostrando usuário E spot mais próximo juntos.
+  // fitBounds com padding garante que ambos fiquem visíveis na tela.
   useEffect(() => {
-    if (locateStatus === 'success' && nearestSpotInfo) {
-      setMapCenter({ lat: nearestSpotInfo.spot.lat, lng: nearestSpotInfo.spot.lng });
-      setMapZoom(12);
+    if (locateStatus === 'success' && userPosition && nearestSpotInfo && mapRef.current) {
+      const map = mapRef.current;
+      const userLatLng: L.LatLngTuple = [userPosition.lat, userPosition.lng];
+      const spotLatLng: L.LatLngTuple = [nearestSpotInfo.spot.lat, nearestSpotInfo.spot.lng];
+
+      // Criar bounds com os dois pontos
+      const bounds = L.latLngBounds([userLatLng, spotLatLng]);
+
+      // Padding para não colar nas bordas - 15% em cada lado
+      const padding: L.PointTuple = [
+        window.innerWidth * 0.15,
+        window.innerHeight * 0.15,
+      ];
+
+      // Ajustar zoom e centro para mostrar os dois pontos
+      map.fitBounds(bounds, {
+        padding,
+        maxZoom: 14, // Zoom máximo para não perder contexto
+        animate: true,
+      });
     }
-  }, [locateStatus, nearestSpotInfo]);
+  }, [locateStatus, userPosition, nearestSpotInfo]);
+
+  // Estado para controlar se o usuário já foi localizado (para não re-enquadrar em cada atualização)
+  const [hasInitiallyLocated, setHasInitiallyLocated] = useState(false);
+
+  // Após a primeira localização, apenas atualizar a posição do marcador (sem re-enquadrar)
+  useEffect(() => {
+    if (locateStatus === 'success' && userPosition && !hasInitiallyLocated) {
+      setHasInitiallyLocated(true);
+    }
+  }, [locateStatus, userPosition, hasInitiallyLocated]);
 
   const handleMarkerClick = useCallback((spot: Spot) => {
     onSelectSpot(spot);
@@ -165,6 +210,18 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
   // Ajustar tile para modo escuro (Carto Dark) vs OSM padrão
   const useDarkTiles = true; // Tema escuro como padrão
+
+  // Detectar preferência de movimento reduzido para desativar animações
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    setReduceMotion(mq.matches);
+
+    const listener = (e: MediaQueryListEvent) => setReduceMotion(e.matches);
+    mq.addEventListener('change', listener);
+    return () => mq.removeEventListener('change', listener);
+  }, []);
 
   return (
     <div className="flex flex-col h-full relative">
@@ -286,16 +343,32 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
             />
           ))}
 
-          {/* User Location Marker (when located) */}
-          {locateStatus === 'success' && nearestSpotInfo && (
-            <Marker
-              position={[
-                nearestSpotInfo.spot.lat,
-                nearestSpotInfo.spot.lng,
-              ]}
-              icon={createUserLocationIcon()}
-              zIndexOffset={1000}
-            />
+          {/* User Location Marker and Accuracy Circle (when located) */}
+          {locateStatus === 'success' && userPosition && (
+            <>
+              {/* Círculo translúcido representando a precisão do GPS.
+                  Raio igual à precisão em metros (GPS bom: ~10-30m, GPS ruim: >1km).
+                  Cor muda conforme a qualidade: verde=excelente, amarelo=razoável, vermelho=ruim. */}
+              <CircleMarker
+                center={[userPosition.lat, userPosition.lng]}
+                radius={Math.max(10, userPosition.accuracy / 5)}
+                pathOptions={{
+                  color: userPosition.accuracy <= 50 ? '#22c55e' :
+                         userPosition.accuracy <= 1000 ? '#eab308' : '#ef4444',
+                  fillColor: userPosition.accuracy <= 50 ? '#22c55e' :
+                            userPosition.accuracy <= 1000 ? '#eab308' : '#ef4444',
+                  fillOpacity: 0.15,
+                  weight: 1.5,
+                }}
+              />
+              {/* Pino do usuário: ponto azul com animação de pulso para ser visível e
+                  diferente dos pinos de spot. Z-index alto para ficar acima dos spots. */}
+              <Marker
+                position={[userPosition.lat, userPosition.lng]}
+                icon={createUserLocationIcon(reduceMotion)}
+                zIndexOffset={1000}
+              />
+            </>
           )}
         </MapContainer>
 
@@ -316,11 +389,23 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               }`}
             >
               {locateStatus === 'loading' && 'Localizando...'}
-              {locateStatus === 'success' && nearestSpotInfo && (
-                <>Spot mais próximo: {nearestSpotInfo.spot.name} ({nearestSpotInfo.distanceKm.toFixed(1)} km)</>
+              {locateStatus === 'success' && nearestSpotInfo && userPosition && (
+                <div className="flex flex-col gap-1">
+                  <span>
+                    Você está a {formatDistance(nearestSpotInfo.distanceKm)} de {nearestSpotInfo.spot.name}
+                  </span>
+                  {/* Mostrar precisão apenas se for ruim (> 100m), para não poluir a tela */}
+                  {userPosition.accuracy > 100 && (
+                    <span className="text-[10px] opacity-75">
+                      Precisão: {userPosition.accuracy > 1000
+                        ? `~${(userPosition.accuracy / 1000).toFixed(1)} km`
+                        : `~${Math.round(userPosition.accuracy)} m`}
+                    </span>
+                  )}
+                </div>
               )}
-              {locateStatus === 'denied' && 'Permissão de localização negada. Ative o GPS.'}
-              {locateStatus === 'error' && 'Erro ao obter localização. Tente novamente.'}
+              {locateStatus === 'denied' && 'Permissão negada. Ative nas configurações do navegador.'}
+              {locateStatus === 'error' && 'Não foi possível obter sua localização. Verifique o GPS.'}
             </div>
           </div>
         )}
