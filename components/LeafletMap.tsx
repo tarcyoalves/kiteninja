@@ -11,10 +11,11 @@ import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
 import { WindParticleLayer } from './WindParticleLayer';
-import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2 } from 'lucide-react';
+import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
 
 export type MapLayer = 'vento' | 'rajadas' | 'ondas';
+export type MapStyle = 'oceanico' | 'satelite' | 'escuro';
 
 /** Posição do usuário obtida via Geolocation API */
 export interface UserPosition {
@@ -208,8 +209,8 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     onSelectSpot(spot);
   }, [onSelectSpot]);
 
-  // Ajustar tile para modo escuro (Carto Dark) vs OSM padrão
-  const useDarkTiles = true; // Tema escuro como padrão
+  // Estilo do mapa: oceânico claro por padrão (Voyager), com opção de satélite e noturno
+  const [mapStyle, setMapStyle] = useState<MapStyle>('oceanico');
 
   // Detectar preferência de movimento reduzido para desativar animações
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -226,7 +227,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   return (
     <div className="flex flex-col h-full relative">
       {/* Layer Selector Controls */}
-      <div className="absolute top-3 left-3 right-3 z-map-ui flex items-center justify-between pointer-events-none">
+      <div className="absolute top-3 left-3 right-3 z-map-ui flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap">
         <div className="flex items-center gap-1.5 bg-[#0F172A]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700/80 pointer-events-auto shadow-2xl text-xs font-black text-white">
           <button
             onClick={() => onLayerChange('vento')}
@@ -266,35 +267,54 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           </button>
         </div>
 
-        {/* Liga/desliga a animação de vento */}
-        <button
-          onClick={() => setWindAnim((v) => !v)}
-          aria-pressed={windAnim}
-          className={`p-2.5 rounded-2xl backdrop-blur-md border pointer-events-auto active:scale-95 shadow-xl transition-all ${
-            windAnim
-              ? 'bg-emerald-500/90 border-emerald-400 text-slate-950'
-              : 'bg-[#0F172A]/90 border-slate-700/80 text-slate-400 hover:text-white'
-          }`}
-          title={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
-          aria-label={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
-        >
-          <Wind size={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Alterna estilo do mapa (Oceânico Claro / Satélite / Noturno) */}
+          <button
+            onClick={() => {
+              setMapStyle((prev) => (prev === 'oceanico' ? 'satelite' : prev === 'satelite' ? 'escuro' : 'oceanico'));
+            }}
+            className="p-2.5 rounded-2xl bg-[#0F172A]/90 backdrop-blur-md border border-slate-700/80 text-cyan-300 pointer-events-auto hover:bg-slate-800 active:scale-95 shadow-xl transition-all flex items-center gap-1 text-xs font-bold"
+            title={`Alternar estilo do mapa (Atual: ${
+              mapStyle === 'oceanico' ? 'Oceânico Claro' : mapStyle === 'satelite' ? 'Satélite' : 'Noturno'
+            })`}
+            aria-label="Alternar estilo do mapa"
+          >
+            <Layers size={17} />
+            <span className="hidden sm:inline text-[11px] font-bold text-slate-200">
+              {mapStyle === 'oceanico' ? 'Claro' : mapStyle === 'satelite' ? 'Satélite' : 'Escuro'}
+            </span>
+          </button>
 
-        {/* Locate Me Button */}
-        <button
-          onClick={onLocateUser}
-          disabled={locateStatus === 'loading'}
-          className="p-2.5 rounded-2xl bg-[#0F172A]/90 backdrop-blur-md border border-slate-700/80 text-white pointer-events-auto hover:bg-slate-800 active:scale-95 shadow-xl disabled:opacity-50"
-          title="Minha localização"
-          aria-label="Localizar minha posição"
-        >
-          {locateStatus === 'loading' ? (
-            <Loader2 size={18} className="text-cyan-400 animate-spin" />
-          ) : (
-            <MapPin size={18} className="text-cyan-400" />
-          )}
-        </button>
+          {/* Liga/desliga a animação de vento */}
+          <button
+            onClick={() => setWindAnim((v) => !v)}
+            aria-pressed={windAnim}
+            className={`p-2.5 rounded-2xl backdrop-blur-md border pointer-events-auto active:scale-95 shadow-xl transition-all ${
+              windAnim
+                ? 'bg-emerald-500/90 border-emerald-400 text-slate-950'
+                : 'bg-[#0F172A]/90 border-slate-700/80 text-slate-400 hover:text-white'
+            }`}
+            title={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
+            aria-label={windAnim ? 'Desligar animação de vento' : 'Ligar animação de vento'}
+          >
+            <Wind size={18} />
+          </button>
+
+          {/* Locate Me Button */}
+          <button
+            onClick={onLocateUser}
+            disabled={locateStatus === 'loading'}
+            className="p-2.5 rounded-2xl bg-[#0F172A]/90 backdrop-blur-md border border-slate-700/80 text-white pointer-events-auto hover:bg-slate-800 active:scale-95 shadow-xl disabled:opacity-50"
+            title="Minha localização"
+            aria-label="Localizar minha posição"
+          >
+            {locateStatus === 'loading' ? (
+              <Loader2 size={18} className="text-cyan-400 animate-spin" />
+            ) : (
+              <MapPin size={18} className="text-cyan-400" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Map Container */}
@@ -311,18 +331,20 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           zoomControl={false}
         >
           {/*
-            attribution vazio: o banner branco do Leaflet no canto inferior
-            quebrava a estética do app e roubava espaço numa tela de celular. O
-            crédito de OpenStreetMap/CARTO exigido pela licença continua no app,
-            movido para "Informação do Spot" — cumpre a atribuição sem poluir o
-            mapa. Não remova o crédito do app: a licença ODbL exige.
+            Tile layer dinâmico:
+            - oceanico: CartoDB Voyager (mapa claro, com oceano azul, praias e relevo perfeitos)
+            - satelite: Esri World Imagery (satélite em alta definição)
+            - escuro: CartoDB Dark Matter
           */}
           <TileLayer
+            key={mapStyle}
             attribution=""
             url={
-              useDarkTiles
-                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-                : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+              mapStyle === 'oceanico'
+                ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
+                : mapStyle === 'satelite'
+                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
             }
             noWrap={false}
           />
