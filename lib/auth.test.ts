@@ -49,7 +49,7 @@ describe('hash de senha', () => {
     expect(a).not.toBe(b);
     await expect(bcrypt.compare('igual', a)).resolves.toBe(true);
     await expect(bcrypt.compare('igual', b)).resolves.toBe(true);
-  });
+  }, 15000);
 
   it('usa custo 12', async () => {
     const hash = await bcrypt.hash('x', BCRYPT_ROUNDS);

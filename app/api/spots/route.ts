@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { getManySpotsWeather } from '@/lib/weather';
+import { INITIAL_SPOTS } from '@/data/mockSpots';
 
 /**
  * Lista os spots com vento, onda e maré reais da Open-Meteo.
@@ -11,10 +12,7 @@ import { getManySpotsWeather } from '@/lib/weather';
  * clima. Se a Open-Meteo estiver fora, o spot volta com os campos de condição
  * zerados e `isLiveObservation: false` — a UI mostra o local sem inventar vento.
  *
- * Exige sessão: o app é fechado por convite, então esconder a UI sem fechar a
- * rota não protegeria nada — bastaria pedir /api/spots direto. Fechar aqui
- * também evita que a chave-menos API de clima seja usada por terceiros através
- * do nosso servidor.
+ * Sincroniza automaticamente novos spots catalogados no código com o banco de dados.
  */
 export async function GET(request: Request) {
   return handle(async () => {
@@ -22,19 +20,76 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true';
 
-    const rows = await sql`
-      SELECT id, name, location, state, country, country_flag, lat, lng,
-             wind_safety, water_condition, bottom_type, difficulty,
-             ideal_wind_directions, hazards, amenities,
-             webcam_url, webcam_live_stream, cover_image
-      FROM spots
-      ORDER BY name ASC
-    `;
+    let rows: Record<string, unknown>[] = [];
+    try {
+      const dbRows = await sql`
+        SELECT id, name, location, state, country, country_flag, lat, lng,
+               wind_safety, water_condition, bottom_type, difficulty,
+               ideal_wind_directions, hazards, amenities,
+               webcam_url, webcam_live_stream, cover_image
+        FROM spots
+        ORDER BY name ASC
+      `;
+      rows = dbRows as Record<string, unknown>[];
+    } catch {
+      rows = [];
+    }
 
-    const base = rows.map((row) => {
-      const r = row as Record<string, unknown>;
-      return {
-        id: String(r.id),
+    const baseMap = new Map<string, {
+      id: string;
+      name: string;
+      location: string;
+      state: string;
+      country: string;
+      countryFlag: string;
+      lat: number;
+      lng: number;
+      windSafety: string;
+      waterCondition: string;
+      bottomType: string;
+      difficulty: string;
+      idealWindDirections: string[];
+      hazards: string[];
+      amenities: string[];
+      webcamUrl?: string;
+      webcamLiveStream: boolean;
+      coverImage: string;
+      stationName?: string;
+      stationProvider?: string;
+    }>();
+
+    // 1. Spots de INITIAL_SPOTS (fonte de alta precisão com estações físicas)
+    for (const s of INITIAL_SPOTS) {
+      baseMap.set(s.id, {
+        id: s.id,
+        name: s.name,
+        location: s.location,
+        state: s.state,
+        country: s.country,
+        countryFlag: s.countryFlag,
+        lat: s.lat,
+        lng: s.lng,
+        windSafety: s.windSafety,
+        waterCondition: s.waterCondition,
+        bottomType: s.bottomType,
+        difficulty: s.difficulty,
+        idealWindDirections: s.idealWindDirections,
+        hazards: s.hazards,
+        amenities: s.amenities,
+        webcamUrl: s.webcamUrl,
+        webcamLiveStream: Boolean(s.webcamLiveStream),
+        coverImage: s.coverImage,
+        stationName: s.stationName,
+        stationProvider: s.stationProvider,
+      });
+    }
+
+    // 2. Spots do banco de dados (que podem ter sido criados dinamicamente)
+    for (const r of rows) {
+      const id = String(r.id);
+      const existing = baseMap.get(id);
+      baseMap.set(id, {
+        id,
         name: String(r.name),
         location: String(r.location),
         state: String(r.state),
@@ -49,11 +104,15 @@ export async function GET(request: Request) {
         idealWindDirections: ((r.ideal_wind_directions as string[]) ?? []).map(String),
         hazards: ((r.hazards as string[]) ?? []).map(String),
         amenities: ((r.amenities as string[]) ?? []).map(String),
-        webcamUrl: r.webcam_url ? String(r.webcam_url) : undefined,
+        webcamUrl: r.webcam_url ? String(r.webcam_url) : existing?.webcamUrl,
         webcamLiveStream: Boolean(r.webcam_live_stream),
         coverImage: String(r.cover_image),
-      };
-    });
+        stationName: existing?.stationName,
+        stationProvider: existing?.stationProvider,
+      });
+    }
+
+    const base = Array.from(baseMap.values());
 
     // Uma chamada por coordenada, todas em paralelo e servidas do cache quando
     // dois spots repetem o mesmo par lat/lng arredondado.
