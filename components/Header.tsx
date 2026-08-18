@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import React from 'react';
-import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus, Shield } from 'lucide-react';
+import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus, Shield, Bell } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -21,7 +21,12 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
     refreshWindData,
     isRefreshing,
     activeTab,
+    setActiveTab,
+    selectedSpot,
+    setSelectedSpot,
     setIsLoggerOpen,
+    unreadChatCount,
+    safetyAlerts,
   } = useKiteData();
 
   const { user, isAdmin, openAuthModal } = useAuth();
@@ -167,6 +172,32 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
           >
             <Plus size={14} className="stroke-[3]" />
             <span className="hidden sm:inline">Velejo</span>
+          </button>
+
+          {/* Sininho de Notificações com badge */}
+          <button
+            onClick={() => {
+              if (selectedSpot) setSelectedSpot(null);
+              if (unreadChatCount > 0) {
+                setActiveTab('chat');
+              } else {
+                setActiveTab('alertas');
+              }
+            }}
+            className="relative w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all"
+            title={
+              unreadChatCount > 0
+                ? `${unreadChatCount} nova(s) mensagem(ns) no chat`
+                : 'Notificações e Alertas'
+            }
+            aria-label="Notificações e Alertas"
+          >
+            <Bell size={16} className={unreadChatCount > 0 ? 'text-cyan-300' : 'text-white'} />
+            {unreadChatCount > 0 && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-[#0B1220] animate-bounce">
+                {unreadChatCount}
+              </span>
+            )}
           </button>
 
           {/* User Profile Avatar */}

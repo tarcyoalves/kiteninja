@@ -1,7 +1,7 @@
 'use client';
 
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline } from '../types';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 
@@ -54,6 +54,13 @@ interface KiteDataContextType {
   convertWind: (knots: number) => { value: number; unitStr: string };
   beachMode: boolean; // Modo alto-contraste para sol forte na praia
   setBeachMode: (enabled: boolean | ((prev: boolean) => boolean)) => void;
+
+  // Notificações e Chat Global
+  unreadChatCount: number;
+  setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
+  latestIncomingMessage: ChatMessage | null;
+  setLatestIncomingMessage: (msg: ChatMessage | null) => void;
+  clearUnreadChat: () => void;
 
   // Modals & Drawers
   isSidebarOpen: boolean;
@@ -130,6 +137,88 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  // Chat Notifications & Unread Counters
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [latestIncomingMessage, setLatestIncomingMessage] = useState<ChatMessage | null>(null);
+  const lastChatCheckRef = useRef<string>(new Date().toISOString());
+
+  const clearUnreadChat = useCallback(() => {
+    setUnreadChatCount(0);
+    setLatestIncomingMessage(null);
+  }, []);
+
+  // Quando o usuário entra na aba chat, zera o contador de não lidas
+  useEffect(() => {
+    if (activeTab === 'chat') {
+      clearUnreadChat();
+    }
+  }, [activeTab, clearUnreadChat]);
+
+  // Background watcher para novas mensagens no chat geral
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelado = false;
+
+    const checkBackgroundMessages = async () => {
+      if (document.hidden) {
+        timeoutId = setTimeout(checkBackgroundMessages, 15000);
+        return;
+      }
+
+      try {
+        const since = lastChatCheckRef.current;
+        const res = await fetch(
+          `/api/chat/messages?room=geral&since=${encodeURIComponent(since)}`,
+          { cache: 'no-store' }
+        );
+        if (res.ok) {
+          const body = await res.json().catch(() => null);
+          const novas = (body?.messages ?? []) as ChatMessage[];
+          if (novas.length > 0) {
+            lastChatCheckRef.current = body.latestAt || new Date().toISOString();
+            // Se o usuário não está na aba chat, notifica
+            if (activeTab !== 'chat') {
+              setUnreadChatCount((c) => c + novas.length);
+              const ultima = novas[novas.length - 1];
+              setLatestIncomingMessage(ultima);
+
+              // Dispara notificação push do navegador se autorizado
+              if (
+                typeof window !== 'undefined' &&
+                'Notification' in window &&
+                Notification.permission === 'granted'
+              ) {
+                try {
+                  new Notification(`KiteNinja • ${ultima.userName}`, {
+                    body: ultima.text,
+                    icon: ultima.userAvatar || '/brand/logo.png',
+                  });
+                } catch {
+                  // Fallback silencioso
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignora oscilações de rede
+      }
+
+      if (!cancelado) {
+        timeoutId = setTimeout(checkBackgroundMessages, 8000);
+      }
+    };
+
+    timeoutId = setTimeout(checkBackgroundMessages, 6000);
+
+    return () => {
+      cancelado = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated, activeTab]);
 
   const loadSpots = useCallback(async (forceRefresh = false) => {
     try {
@@ -415,6 +504,11 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         convertWind,
         beachMode,
         setBeachMode,
+        unreadChatCount,
+        setUnreadChatCount,
+        latestIncomingMessage,
+        setLatestIncomingMessage,
+        clearUnreadChat,
         isSidebarOpen,
         setIsSidebarOpen,
         isLoggerOpen,

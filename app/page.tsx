@@ -11,7 +11,8 @@ import { SessionLoggerModal } from "../components/SessionLoggerModal";
 import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
 import { NewPostModal } from "../components/NewPostModal";
 import { NewListingModal } from "../components/NewListingModal";
-import { AuthModal } from "../components/AuthModal";
+import { FloatingChatButton } from "../components/FloatingChatButton";
+import { InAppPushToast } from "../components/InAppPushToast";
 import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
@@ -93,7 +94,12 @@ const MainContent: React.FC = () => {
       <KiteCalculatorModal />
       <NewPostModal />
       <NewListingModal />
-      <AuthModal />
+
+      {/* Floating Quick Chat Button */}
+      <FloatingChatButton />
+
+      {/* In-App Push Notification Toast */}
+      <InAppPushToast />
     </div>
   );
 };
