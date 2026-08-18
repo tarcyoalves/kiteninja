@@ -6,6 +6,7 @@ import {
   ArrowDown,
   Check,
   CheckCheck,
+  ChevronLeft,
   Compass,
   Copy,
   Flame,
@@ -81,7 +82,7 @@ function formatDayDivider(isoDate: string): string {
 }
 
 export const ChatView: React.FC = () => {
-  const { spots, beachMode } = useKiteData();
+  const { spots, beachMode, setActiveTab } = useKiteData();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>('conversa');
@@ -386,8 +387,18 @@ export const ChatView: React.FC = () => {
     <div className="h-full flex flex-col overflow-hidden max-w-lg mx-auto w-full bg-[#0B1220]">
       {/* 1. Header Fixo: Abas e Seletor de Sala */}
       <div className="shrink-0 bg-[#0F172A] border-b border-slate-800/90 px-3 pt-2 pb-2 space-y-2 z-10 shadow-xs">
-        {/* Toggle Conversa vs Online */}
+        {/* Topo com botão Voltar e Toggle Conversa vs Online */}
         <div className="flex items-center gap-2" role="tablist" aria-label="Seções do chat">
+          <button
+            type="button"
+            onClick={() => setActiveTab('favoritos')}
+            className="h-10 px-2.5 rounded-xl bg-[#1E293B] border border-slate-700/80 text-slate-300 hover:text-white flex items-center justify-center transition-all active:scale-95 shrink-0"
+            title="Voltar aos Spots"
+            aria-label="Voltar para Spots"
+          >
+            <ChevronLeft size={20} className="stroke-[2.5]" />
+          </button>
+
           <button
             type="button"
             role="tab"

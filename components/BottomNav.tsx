@@ -54,6 +54,9 @@ export const BottomNav: React.FC = () => {
 
   const isTabActive = (tab: ActiveTab) => activeTab === tab && !selectedSpot;
 
+  // Quando o usuário está na tela de chat, o BottomNav é ocultado para dar 100% de espaço ao campo de digitação e histórico
+  if (activeTab === 'chat') return null;
+
   return (
     /* Barra Flutuante estilo Instagram (Pill Glassmorphism) */
     <div className="fixed bottom-4 inset-x-0 z-chrome pointer-events-none flex justify-center px-4 safe-area-pb">
