@@ -79,9 +79,42 @@ describe('filterHoursBy3', () => {
     expect(filterHoursBy3(null as unknown as WindForecastHour[])).toEqual([]);
   });
 
-  it('array com menos de 8 horas retorna como está', () => {
-    const shortDay = [hourRow('00h'), hourRow('03h'), hourRow('06h')];
-    expect(filterHoursBy3(shortDay)).toEqual(shortDay);
+  it('herda pico de maré que ocorre dentro da janela de 3 horas', () => {
+    const dayWithPeak: WindForecastHour[] = Array.from({ length: 24 }, (_, i) =>
+      hourRow(`${String(i).padStart(2, '0')}h`)
+    );
+
+    // Às 01h houve uma maré baixa às 01:09 com 0.5m
+    dayWithPeak[1] = {
+      ...dayWithPeak[1],
+      tideTrend: 'peak_low',
+      tidePeakTime: '01:09',
+      tidePeakHeight: '0.5m',
+      tideHeightM: 0.5,
+    };
+
+    const filtered = filterHoursBy3(dayWithPeak);
+    const block00 = filtered.find((h) => h.hour === '00h');
+
+    expect(block00).toBeDefined();
+    expect(block00?.tideTrend).toBe('peak_low');
+    expect(block00?.tidePeakTime).toBe('01:09');
+    expect(block00?.tidePeakHeight).toBe('0.5m');
+  });
+
+  it('herda a rajada máxima que ocorre na janela de 3 horas', () => {
+    const dayWithGust: WindForecastHour[] = Array.from({ length: 24 }, (_, i) =>
+      hourRow(`${String(i).padStart(2, '0')}h`)
+    );
+
+    dayWithGust[0].gustKnots = 20;
+    dayWithGust[1].gustKnots = 31; // pico de rajada na hora 01h
+    dayWithGust[2].gustKnots = 25;
+
+    const filtered = filterHoursBy3(dayWithGust);
+    const block00 = filtered.find((h) => h.hour === '00h');
+
+    expect(block00?.gustKnots).toBe(31);
   });
 });
 

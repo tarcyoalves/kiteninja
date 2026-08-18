@@ -141,14 +141,19 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       for (const p of particulasRef.current) {
         const { vx, vy, forca } = campo(p.x, p.y);
 
+        // Garante velocidade visível mesmo com vento leve
+        const forcaEfetiva = Math.max(forca, 10);
+        const vxEfetivo = vx === 0 && vy === 0 ? -0.9 : vx; // fallback direção ESE/E
+        const vyEfetivo = vx === 0 && vy === 0 ? 0.3 : vy;
+
         // Escala: 25 nós ≈ 2.6 px/frame. Rápido o bastante para ler a direção,
         // lento o bastante para não virar chuvisco.
-        const vel = 0.5 + (forca / 25) * 2.1;
-        const nx = p.x + vx * vel;
-        const ny = p.y + vy * vel;
+        const vel = 0.6 + (forcaEfetiva / 25) * 2.0;
+        const nx = p.x + vxEfetivo * vel;
+        const ny = p.y + vyEfetivo * vel;
 
         // Escala de cor idêntica ao resto do app (lib/windVector).
-        const cor = corPorForca(forca);
+        const cor = corPorForca(forca || 15);
 
         ctx!.strokeStyle = cor;
         ctx!.beginPath();
@@ -204,14 +209,15 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     }
     reprojetarRef.current = reprojetar;
 
-    /* Durante arrasto/zoom as coordenadas de tela dos spots mudam a cada frame;
-       animar nisso mostra vento em lugar errado e desperdiça CPU. Congela e
-       reprojeta ao terminar. */
     function aoMover() {
-      parar();
+      // Durante o movimento do mapa, apenas atualiza as projeções dos spots em pixels
+      // sem interromper a animação nem zerar o canvas.
+      projetarSpots();
     }
+
     function aoTerminarMover() {
-      if (!paused && !document.hidden && !semMovimento.matches) {
+      projetarSpots();
+      if (!isRodando && !paused && !document.hidden && !semMovimento.matches) {
         iniciar();
       }
     }
@@ -223,8 +229,8 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       else if (!paused && !semMovimento.matches) iniciar();
     }
 
-    map.on('movestart', aoMover);
-    map.on('zoomstart', aoMover);
+    map.on('move', aoMover);
+    map.on('zoom', aoMover);
     map.on('moveend', aoTerminarMover);
     map.on('zoomend', aoTerminarMover);
     map.on('resize', aoTerminarMover);

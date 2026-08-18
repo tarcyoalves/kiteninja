@@ -64,7 +64,15 @@ export const AuthModal: React.FC = () => {
           </div>
 
           <div>
-            <label className="block font-bold text-slate-300 mb-1">Senha</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block font-bold text-slate-300">Senha</label>
+              <a
+                href="/recuperar-senha"
+                className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                Esqueceu a senha?
+              </a>
+            </div>
             <input
               type="password"
               value={password}

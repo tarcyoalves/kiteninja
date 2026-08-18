@@ -46,12 +46,41 @@ export function filterHoursBy3(hours: WindForecastHour[]): WindForecastHour[] {
   // Ordena e pega os disponíveis
   multiplesOf3.sort((a, b) => a - b);
 
-  // Mapeia de volta para os objetos originais
+  // Mapeia de volta para os blocos agregando picos de maré e rajadas máximas da janela de 3h
   return multiplesOf3.map((h) => {
-    const found = hours.find((row) => extractHourNumeric(row.hour) === h);
-    return found!;
+    const baseHour = hours.find((row) => extractHourNumeric(row.hour) === h);
+    if (!baseHour) return hours[0];
+
+    // Janela de 3h: [h, h+1, h+2]
+    const windowHours = hours.filter((row) => {
+      const hn = extractHourNumeric(row.hour);
+      return hn >= h && hn < h + 3;
+    });
+
+    // Pega a rajada máxima na janela de 3 horas
+    const maxGust = windowHours.reduce((acc, row) => Math.max(acc, row.gustKnots || 0), baseHour.gustKnots);
+
+    // Procura se ocorreu pico de maré nesta janela de 3 horas
+    const peakHour = windowHours.find((row) => row.tideTrend === 'peak_high' || row.tideTrend === 'peak_low');
+
+    if (peakHour && peakHour.tidePeakTime) {
+      return {
+        ...baseHour,
+        gustKnots: maxGust,
+        tideTrend: peakHour.tideTrend,
+        tidePeakTime: peakHour.tidePeakTime,
+        tidePeakHeight: peakHour.tidePeakHeight,
+        tideHeightM: peakHour.tideHeightM,
+      };
+    }
+
+    return {
+      ...baseHour,
+      gustKnots: maxGust,
+    };
   });
 }
+
 
 /**
  * Resolve qual índice da grade de 3h contém a hora atual.

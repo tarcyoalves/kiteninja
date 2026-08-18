@@ -82,9 +82,17 @@ export const LoginGate: React.FC = () => {
           </div>
 
           <div>
-            <label htmlFor="gate-senha" className="block text-xs font-bold text-slate-300 mb-1.5">
-              Senha
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label htmlFor="gate-senha" className="block text-xs font-bold text-slate-300">
+                Senha
+              </label>
+              <a
+                href="/recuperar-senha"
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+              >
+                Esqueceu a senha?
+              </a>
+            </div>
             <div className="relative">
               <Lock
                 size={16}

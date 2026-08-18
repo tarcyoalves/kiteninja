@@ -404,10 +404,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
         </button>
       </div>
 
-      {/* Content Area with scroll snap para navegar entre dias */}
+      {/* Content Area com rolagem vertical contínua e suave para todos os dias */}
       <div
         ref={forecastScrollRef}
-        className={`flex-1 overflow-y-auto snap-y snap-mandatory ${
+        className={`flex-1 overflow-y-auto scroll-smooth overscroll-y-contain ${
           beachMode ? 'bg-[#020617] text-white' : 'bg-[#0F172A] text-slate-100'
         }`}
       >

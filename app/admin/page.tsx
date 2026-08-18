@@ -1,8 +1,8 @@
 import { redirect } from 'next/navigation';
 import { getSessionUser } from '@/lib/auth';
-import { InviteManager } from './InviteManager';
+import { AdminDashboard } from './AdminDashboard';
 
-export const metadata = { title: 'Convites | KiteNinja' };
+export const metadata = { title: 'Painel de Controle | KiteNinja' };
 
 export default async function AdminPage() {
   const user = await getSessionUser();
@@ -11,5 +11,6 @@ export default async function AdminPage() {
   if (!user) redirect('/');
   if (user.role !== 'admin') redirect('/');
 
-  return <InviteManager adminName={user.name} />;
+  return <AdminDashboard adminName={user.name} />;
 }
+
