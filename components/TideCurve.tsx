@@ -216,7 +216,7 @@ export const TideCurve: React.FC<TideCurveProps> = ({
       )}
 
       <p className="text-[11px] text-slate-400 leading-relaxed">
-        Altura do nível do mar (MSL) modelada pela Open-Meteo Marine, por hora.
+        Altura do nível do mar em metros (m), modelada pela Open-Meteo Marine, por hora.
         Para navegação use a tábua oficial da Marinha do Brasil (DHN).
       </p>
     </div>
