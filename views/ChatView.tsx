@@ -4,11 +4,18 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDown,
+  Check,
+  CheckCheck,
+  Compass,
+  Copy,
+  Flame,
+  Globe,
   Loader2,
   MapPin,
   MessageSquare,
   Radio,
   Send,
+  Sparkles,
   Trash2,
   User,
   Users,
@@ -28,19 +35,50 @@ import {
 } from '../lib/chat';
 import { ChatMessage, OnlineRider } from '../types';
 
-/** Busca mensagens a cada 5s. Chat sem tempo real precisa parecer vivo. */
-const POLL_MS = 5_000;
+/** Busca mensagens a cada 4s para conversa fluida */
+const POLL_MS = 4_000;
 
-/**
- * Heartbeat a cada 30s, contra uma janela de presença de 2 min: cabem quatro
- * batidas na janela, então perder uma no 3G da praia não tira ninguém da lista.
- */
-const HEARTBEAT_MS = 30_000;
+/** Heartbeat de presença a cada 25s */
+const HEARTBEAT_MS = 25_000;
 
-/** Tolerância para considerar que o velejador está "no fim" da conversa. */
-const BOTTOM_SLACK_PX = 80;
+/** Tolerância para considerar que o velejador está no fim da conversa */
+const BOTTOM_SLACK_PX = 90;
 
 type Tab = 'conversa' | 'online';
+
+/** Atalhos rápidos de kitesurf para envio com 1 toque */
+const QUICK_KITE_SHORTCUTS = [
+  { label: '💨 Vento top!', text: '💨 Vento tá muito top por aqui! Alguém na água?' },
+  { label: '🪁 Partiu velejar!', text: '🪁 Montando o kite agora! Partiu velejar!' },
+  { label: '🌊 Maré subindo', text: '🌊 Maré subindo rápido, condição ficando perfeita.' },
+  { label: '🤙 Bora pro mar!', text: '🤙 Bora pro mar galera!' },
+  { label: '⚠️ Alerta no pico', text: '⚠️ Atenção galera: vento com rajadas fortes e mar mexido.' },
+  { label: '🏄 Downwind', text: '🏄 Quem topa um downwind hoje?' },
+  { label: '☀️ Clima perfeito', text: '☀️ Solzão e terral constante!' },
+];
+
+/** Formata data para o divisor de dia no chat */
+function formatDayDivider(isoDate: string): string {
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return '';
+  const now = new Date();
+  
+  const isToday =
+    d.getDate() === now.getDate() &&
+    d.getMonth() === now.getMonth() &&
+    d.getFullYear() === now.getFullYear();
+  if (isToday) return 'Hoje';
+
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  const isYesterday =
+    d.getDate() === yesterday.getDate() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getFullYear() === yesterday.getFullYear();
+  if (isYesterday) return 'Ontem';
+
+  return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+}
 
 export const ChatView: React.FC = () => {
   const { spots, beachMode } = useKiteData();
@@ -60,17 +98,12 @@ export const ChatView: React.FC = () => {
   const [draft, setDraft] = useState('');
   const [atSpotId, setAtSpotId] = useState<string>('');
   const [unread, setUnread] = useState(0);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * Refs em vez de state para o que o polling lê.
-   *
-   * O intervalo é registrado uma vez; se ele dependesse de `messages` ou de
-   * `atBottom` via closure, cada mensagem nova recriaria o timer — e um
-   * `setInterval` recriado a cada 5s nunca chega a disparar de forma estável.
-   */
   const sinceRef = useRef<string | null>(null);
   const roomRef = useRef<string>(GENERAL_ROOM);
   const atSpotRef = useRef<string>('');
@@ -87,12 +120,14 @@ export const ChatView: React.FC = () => {
   const nowTick = useNowTick();
 
   const scrollToEnd = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    endRef.current?.scrollIntoView({ behavior, block: 'end' });
-    atBottomRef.current = true;
-    setUnread(0);
+    if (endRef.current) {
+      endRef.current.scrollIntoView({ behavior, block: 'end' });
+      atBottomRef.current = true;
+      setUnread(0);
+    }
   }, []);
 
-  /** Marca se o velejador está no fim; é o que autoriza o auto-scroll. */
+  /** Marca se o velejador está no fim; autoriza o auto-scroll */
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -102,11 +137,7 @@ export const ChatView: React.FC = () => {
     if (noFim) setUnread(0);
   }, []);
 
-  /**
-   * Carga inicial da sala (sem `since`): traz as últimas mensagens e ancora no
-   * fim. Trocar de sala precisa zerar o cursor, senão o `since` da sala antiga
-   * filtraria a nova e a conversa apareceria vazia.
-   */
+  /** Carga inicial da sala */
   const loadRoom = useCallback(async (target: string) => {
     setLoading(true);
     setError(null);
@@ -131,10 +162,7 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
-  /**
-   * Busca incremental. Só o que é novo desde `sinceRef` — é o que mantém o
-   * payload pequeno o suficiente para rodar a cada 5s no 3G.
-   */
+  /** Busca incremental de mensagens */
   const pollMessages = useCallback(async () => {
     const target = roomRef.current;
     const since = sinceRef.current;
@@ -149,26 +177,19 @@ export const ChatView: React.FC = () => {
       const body = await res.json().catch(() => null);
       if (!body) return;
 
-      // A resposta pode chegar depois de o velejador trocar de sala: descartar
-      // evita mensagens da sala antiga aparecerem na nova.
       if (roomRef.current !== target) return;
 
       const novas = (body.messages ?? []) as ChatMessage[];
       if (novas.length === 0) return;
 
       setMessages((prev) => {
-        // Dedup por id: o próprio POST já inseriu a mensagem na lista, e sem
-        // isso ela apareceria duplicada quando o polling a trouxesse de volta.
         const vistos = new Set(prev.map((m) => m.id));
-        const merge = [...prev, ...novas.filter((m) => !vistos.has(m.id))];
-        return merge;
+        return [...prev, ...novas.filter((m) => !vistos.has(m.id))];
       });
 
       if (body.latestAt) sinceRef.current = body.latestAt;
 
-      // Se o velejador subiu para ler o histórico, não arrastamos a tela dele.
       if (atBottomRef.current) {
-        // rAF para o scroll acontecer depois do React pintar as novas linhas.
         requestAnimationFrame(() => scrollToEnd('smooth'));
       } else {
         const deOutros = novas.filter((m) => m.userId !== user?.id).length;
@@ -177,8 +198,7 @@ export const ChatView: React.FC = () => {
 
       setError(null);
     } catch {
-      // Falha de polling é silenciosa: o sinal cai e volta na praia, e um erro
-      // vermelho piscando a cada 5s seria pior que a lacuna momentânea.
+      // Ignora falhas temporárias de rede
     }
   }, [scrollToEnd, user?.id]);
 
@@ -189,7 +209,7 @@ export const ChatView: React.FC = () => {
       const body = await res.json().catch(() => null);
       if (body) setOnline((body.online ?? []) as OnlineRider[]);
     } catch {
-      // Idem: mantém a última lista conhecida em vez de esvaziar a tela.
+      // Ignora falhas de presença
     }
   }, []);
 
@@ -204,45 +224,31 @@ export const ChatView: React.FC = () => {
         }),
       });
     } catch {
-      // Heartbeat perdido só significa aparecer offline por um ciclo.
+      // Ignora falhas de heartbeat
     }
   }, []);
 
-  // Troca de sala: recarrega do zero e ancora no fim.
+  // Troca de sala
   useEffect(() => {
     loadRoom(room).then(() => {
       requestAnimationFrame(() => scrollToEnd('auto'));
     });
   }, [room, loadRoom, scrollToEnd]);
 
-  /**
-   * Polling e heartbeat.
-   *
-   * Pausa quando `document.hidden`: na praia, com 3G e bateria contada, uma aba
-   * em background buscando a cada 5s só queima dados e energia sem ninguém para
-   * ler o resultado. No `visibilitychange` de volta, buscamos na hora (para não
-   * esperar o próximo tick) e religamos os timers.
-   *
-   * Todos os timers e o listener são removidos no unmount — deixar um interval
-   * vivo aqui manteria a aba fazendo fetch depois de sair da tela do chat.
-   */
+  // Polling e heartbeat sincronizados com a visibilidade da tela
   useEffect(() => {
     let pollId: ReturnType<typeof setInterval> | null = null;
     let beatId: ReturnType<typeof setInterval> | null = null;
 
     const stop = () => {
-      if (pollId !== null) {
-        clearInterval(pollId);
-        pollId = null;
-      }
-      if (beatId !== null) {
-        clearInterval(beatId);
-        beatId = null;
-      }
+      if (pollId !== null) clearInterval(pollId);
+      if (beatId !== null) clearInterval(beatId);
+      pollId = null;
+      beatId = null;
     };
 
     const start = () => {
-      stop(); // nunca acumular dois intervalos do mesmo tipo
+      stop();
       pollId = setInterval(() => {
         pollMessages();
         loadOnline();
@@ -254,7 +260,6 @@ export const ChatView: React.FC = () => {
       if (document.hidden) {
         stop();
       } else {
-        // Recupera o atraso acumulado enquanto estava em background.
         pollMessages();
         loadOnline();
         sendHeartbeat();
@@ -276,16 +281,13 @@ export const ChatView: React.FC = () => {
     };
   }, [pollMessages, loadOnline, sendHeartbeat]);
 
-  // Marcar/desmarcar o spot precisa refletir na lista dos outros na hora, sem
-  // esperar até 30s pelo próximo heartbeat.
   useEffect(() => {
     sendHeartbeat().then(loadOnline);
   }, [atSpotId, sendHeartbeat, loadOnline]);
 
-  const handleSend = async () => {
-    // Validamos aqui com a MESMA função do servidor: o botão desabilitado é
-    // cortesia, a garantia continua sendo a rota.
-    const clean = sanitizeMessageText(draft);
+  const handleSend = async (customText?: string) => {
+    const textToSend = customText ?? draft;
+    const clean = sanitizeMessageText(textToSend);
     if (!clean.ok) {
       setSendError(clean.error);
       return;
@@ -294,6 +296,9 @@ export const ChatView: React.FC = () => {
 
     setSending(true);
     setSendError(null);
+
+    // Otimista: limpa o rascunho de imediato
+    if (!customText) setDraft('');
 
     try {
       const res = await fetch('/api/chat/messages', {
@@ -304,15 +309,11 @@ export const ChatView: React.FC = () => {
       const body = await res.json().catch(() => null);
 
       if (!res.ok) {
-        // 429 é o rate limit: a mensagem do servidor já explica a espera.
-        setSendError(body?.error ?? 'Não foi possível enviar.');
+        setSendError(body?.error ?? 'Não foi possível enviar a mensagem.');
+        if (!customText) setDraft(textToSend);
         return;
       }
 
-      setDraft('');
-
-      // O POST devolve só id/createdAt; nome e avatar do próprio autor já estão
-      // na sessão do cliente, então montamos o balão sem outro round-trip.
       const enviada = body.message as { id: string; userId: string; text: string; createdAt: string };
       const local: ChatMessage = {
         id: enviada.id,
@@ -325,11 +326,11 @@ export const ChatView: React.FC = () => {
       };
 
       setMessages((prev) => (prev.some((m) => m.id === local.id) ? prev : [...prev, local]));
-      // Quem acabou de escrever quer ver o que escreveu, mesmo tendo rolado antes.
       if (enviada.createdAt > (sinceRef.current ?? '')) sinceRef.current = enviada.createdAt;
       requestAnimationFrame(() => scrollToEnd('smooth'));
     } catch {
-      setSendError('Falha de conexão. Tente de novo.');
+      setSendError('Falha de conexão. Tente novamente.');
+      if (!customText) setDraft(textToSend);
     } finally {
       setSending(false);
     }
@@ -338,7 +339,6 @@ export const ChatView: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (!confirm('Apagar esta mensagem?')) return;
 
-    // Otimista: o balão sai na hora e volta se o servidor recusar.
     const anterior = messages;
     setMessages((prev) => prev.filter((m) => m.id !== id));
 
@@ -347,6 +347,16 @@ export const ChatView: React.FC = () => {
       if (!res.ok) setMessages(anterior);
     } catch {
       setMessages(anterior);
+    }
+  };
+
+  const handleCopy = (text: string, id: string) => {
+    try {
+      navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // Fallback silencioso
     }
   };
 
@@ -363,42 +373,52 @@ export const ChatView: React.FC = () => {
 
   const cardBg = beachMode ? 'bg-[#020617] border-slate-800' : 'bg-[#1E293B] border-slate-700/80';
 
+  // Lista dos principais spots para troca rápida de sala no carrossel horizontal
+  const quickRooms = useMemo(() => {
+    const list = [{ id: GENERAL_ROOM, name: 'Geral', icon: '🌍' }];
+    for (const s of spots.slice(0, 8)) {
+      list.push({ id: spotRoomName(s.id), name: s.name, icon: '🏖️' });
+    }
+    return list;
+  }, [spots]);
+
   return (
-    <div className="flex flex-col app-viewport max-w-lg mx-auto w-full">
-      {/* Abas + seletor de sala */}
-      <div className={`shrink-0 border-b ${beachMode ? 'border-slate-800' : 'border-slate-800'} px-3 pt-2 pb-2.5 space-y-2`}>
+    <div className="h-full flex flex-col overflow-hidden max-w-lg mx-auto w-full bg-[#0B1220]">
+      {/* 1. Header Fixo: Abas e Seletor de Sala */}
+      <div className="shrink-0 bg-[#0F172A] border-b border-slate-800/90 px-3 pt-2 pb-2 space-y-2 z-10 shadow-xs">
+        {/* Toggle Conversa vs Online */}
         <div className="flex items-center gap-2" role="tablist" aria-label="Seções do chat">
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'conversa'}
             onClick={() => setTab('conversa')}
-            className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-colors ${
+            className={`flex-1 h-10 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
               tab === 'conversa'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                : 'bg-[#1E293B] text-slate-300 border border-slate-700 hover:text-white'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25 scale-[1.01]'
+                : 'bg-[#1E293B] text-slate-300 border border-slate-700/80 hover:text-white hover:bg-slate-700/50'
             }`}
           >
-            <MessageSquare size={15} />
-            <span>Conversa</span>
+            <MessageSquare size={15} className="shrink-0" />
+            <span>Chat ({roomLabel})</span>
           </button>
           <button
             type="button"
             role="tab"
             aria-selected={tab === 'online'}
             onClick={() => setTab('online')}
-            className={`flex-1 min-h-11 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-colors ${
+            className={`flex-1 h-10 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
               tab === 'online'
-                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                : 'bg-[#1E293B] text-slate-300 border border-slate-700 hover:text-white'
+                ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/25 scale-[1.01]'
+                : 'bg-[#1E293B] text-slate-300 border border-slate-700/80 hover:text-white hover:bg-slate-700/50'
             }`}
           >
-            <Radio size={15} />
-            <span>Online</span>
+            <Radio size={15} className="shrink-0" />
+            <span>Na Água</span>
             {onlineCount > 0 && (
               <span
-                className={`ml-0.5 px-1.5 rounded-full text-[10px] font-black ${
-                  tab === 'online' ? 'bg-slate-950/25 text-slate-950' : 'bg-emerald-500 text-slate-950'
+                className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  tab === 'online' ? 'bg-slate-950/25 text-slate-950' : 'bg-emerald-500 text-slate-950 animate-pulse'
                 }`}
               >
                 {onlineCount}
@@ -407,63 +427,82 @@ export const ChatView: React.FC = () => {
           </button>
         </div>
 
-        <label className="block">
-          <span className="sr-only">Escolher sala do chat</span>
-          <select
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            className="w-full min-h-11 px-3 rounded-xl bg-[#0F172A] border border-slate-700 text-slate-100 font-bold focus:outline-hidden focus:border-cyan-400"
-          >
-            <option value={GENERAL_ROOM}>Sala Geral — todos os velejadores</option>
-            {spots.map((s) => (
-              <option key={s.id} value={spotRoomName(s.id)}>
-                {s.name} — {s.location}
-              </option>
-            ))}
-          </select>
-        </label>
+        {/* Carrossel de Pílulas Rápidas de Salas */}
+        {tab === 'conversa' && (
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-0.5">
+            {quickRooms.map((qr) => {
+              const isSelected = room === qr.id;
+              return (
+                <button
+                  key={qr.id}
+                  type="button"
+                  onClick={() => setRoom(qr.id)}
+                  className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.2 transition-all ${
+                    isSelected
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 shadow-xs'
+                      : 'bg-slate-800/80 text-slate-400 border border-slate-700/60 hover:text-slate-200'
+                  }`}
+                >
+                  <span>{qr.icon}</span>
+                  <span>{qr.name}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
+      {/* 2. Conteúdo Principal */}
       {tab === 'conversa' ? (
         <>
-          {/* Lista de mensagens */}
+          {/* Lista de Mensagens */}
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1.5"
+            className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1"
             aria-live="polite"
             aria-label={`Mensagens da sala ${roomLabel}`}
           >
             {loading && (
-              <div className="flex items-center justify-center gap-2 py-10 text-slate-400 text-xs font-bold">
-                <Loader2 size={16} className="animate-spin text-cyan-400" />
-                <span>Carregando a conversa...</span>
+              <div className="flex items-center justify-center gap-2 py-12 text-slate-400 text-xs font-bold">
+                <Loader2 size={18} className="animate-spin text-cyan-400" />
+                <span>Carregando mensagens da sala...</span>
               </div>
             )}
 
             {!loading && error && (
-              <div className={`mt-6 p-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-center`}>
+              <div className="mt-6 p-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-center">
                 <AlertTriangle size={26} className="mx-auto text-rose-400" />
-                <p className="mt-2.5 font-black text-slate-100 text-sm">Sem conexão com a sala</p>
+                <p className="mt-2.5 font-black text-slate-100 text-sm">Sem conexão com o chat</p>
                 <p className="mt-1 text-xs text-slate-300">{error}</p>
                 <button
                   type="button"
                   onClick={() => loadRoom(room)}
-                  className="mt-3.5 px-5 min-h-11 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs active:scale-95 transition-transform"
+                  className="mt-3.5 px-5 h-10 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs active:scale-95 transition-transform"
                 >
-                  Tentar de novo
+                  Tentar novamente
                 </button>
               </div>
             )}
 
             {!loading && !error && messages.length === 0 && (
-              <div className={`mt-6 p-6 rounded-2xl border text-center ${cardBg}`}>
-                <Wind size={28} className="mx-auto text-cyan-400" />
-                <p className="mt-2.5 font-black text-slate-100 text-sm">Silêncio na sala {roomLabel}</p>
-                <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
-                  Diga como está o vento por aí. Quem estiver decidindo se monta o
-                  kite vai agradecer.
+              <div className={`mt-8 p-6 rounded-2xl border text-center ${cardBg}`}>
+                <div className="w-12 h-12 mx-auto rounded-full bg-cyan-500/10 border border-cyan-400/30 flex items-center justify-center text-cyan-400">
+                  <Wind size={24} />
+                </div>
+                <p className="mt-3 font-black text-slate-100 text-sm">Sala {roomLabel} aberta!</p>
+                <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
+                  Compartilhe as condições de vento, maré e tamanho de kite agora mesmo com os outros velejadores.
                 </p>
+                <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSend('💨 Vento constante e maré subindo por aqui!')}
+                    className="px-3 py-1.5 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-bold hover:bg-cyan-500/25 transition-colors"
+                  >
+                    💨 Relatar vento agora
+                  </button>
+                </div>
               </div>
             )}
 
@@ -471,91 +510,141 @@ export const ChatView: React.FC = () => {
               !error &&
               messages.map((m, i) => {
                 const mine = m.userId === user?.id;
-                const grouped = shouldGroupWithPrevious(messages[i - 1], m);
-                const podeApagar = mine;
+                const prev = messages[i - 1];
+                const grouped = shouldGroupWithPrevious(prev, m);
+                const showDayDivider =
+                  !prev ||
+                  new Date(m.createdAt).toDateString() !== new Date(prev.createdAt).toDateString();
 
                 return (
-                  <div
-                    key={m.id}
-                    className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'} ${
-                      grouped ? 'mt-0.5' : 'mt-3'
-                    }`}
-                  >
-                    {/* Avatar só na primeira do bloco, à esquerda dos outros. */}
-                    {!mine && (
-                      <div className="w-8 h-8 shrink-0">
-                        {!grouped && (
-                          <div className="w-8 h-8 rounded-full bg-slate-800 ring-2 ring-cyan-400/70 overflow-hidden flex items-center justify-center">
-                            {m.userAvatar ? (
-                              <img src={m.userAvatar} alt={m.userName} className="w-full h-full object-cover" />
-                            ) : (
-                              <User size={15} className="text-slate-300" />
-                            )}
-                          </div>
-                        )}
+                  <React.Fragment key={m.id}>
+                    {/* Divisor de Dia */}
+                    {showDayDivider && (
+                      <div className="flex items-center justify-center my-3">
+                        <span className="px-3 py-1 rounded-full bg-slate-800/90 border border-slate-700/80 text-[10px] font-black text-slate-300 tracking-wide uppercase shadow-xs">
+                          {formatDayDivider(m.createdAt)}
+                        </span>
                       </div>
                     )}
 
-                    <div className={`max-w-[78%] min-w-0 ${mine ? 'items-end' : 'items-start'} flex flex-col`}>
-                      {!grouped && (
-                        <span
-                          className={`text-[11px] font-black mb-0.5 px-1 ${
-                            mine ? 'text-cyan-300' : 'text-emerald-300'
-                          }`}
-                        >
-                          {mine ? 'Você' : m.userName}
-                        </span>
+                    <div
+                      className={`flex items-end gap-2 group ${
+                        mine ? 'justify-end' : 'justify-start'
+                      } ${grouped ? 'mt-0.5' : 'mt-2.5'}`}
+                    >
+                      {/* Avatar do Autor (apenas em mensagens de outros) */}
+                      {!mine && (
+                        <div className="w-8 h-8 shrink-0 mb-0.5">
+                          {!grouped ? (
+                            <div className="w-8 h-8 rounded-full bg-slate-800 ring-2 ring-cyan-400/60 overflow-hidden flex items-center justify-center shadow-xs">
+                              {m.userAvatar ? (
+                                <img
+                                  src={m.userAvatar}
+                                  alt={m.userName}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <User size={14} className="text-slate-300" />
+                              )}
+                            </div>
+                          ) : (
+                            <div className="w-8" />
+                          )}
+                        </div>
                       )}
 
+                      {/* Balão de Mensagem */}
                       <div
-                        className={`px-3 py-2 rounded-2xl border shadow-md ${
-                          mine
-                            ? 'bg-cyan-500/20 border-cyan-500/40 text-slate-50 rounded-br-sm'
-                            : `${cardBg} text-slate-100 rounded-bl-sm`
+                        className={`max-w-[82%] min-w-[90px] flex flex-col ${
+                          mine ? 'items-end' : 'items-start'
                         }`}
                       >
-                        {/* Texto puro no JSX: o React escapa, e é assim que
-                            conteúdo de outro velejador entra na tela em
-                            segurança. Nunca dangerouslySetInnerHTML aqui. */}
-                        <p className="text-sm leading-snug whitespace-pre-wrap break-words">{m.text}</p>
+                        {!grouped && !mine && (
+                          <div className="flex items-center gap-1.5 mb-0.5 px-1">
+                            <span className="text-[11px] font-black text-emerald-300">
+                              {m.userName}
+                            </span>
+                            {m.userRiderId && (
+                              <span className="text-[9px] font-mono font-bold text-slate-400 bg-slate-800/80 px-1.5 py-0.2 rounded-md">
+                                #{m.userRiderId}
+                              </span>
+                            )}
+                          </div>
+                        )}
 
-                        <div className="mt-1 flex items-center justify-end gap-2">
-                          <span
-                            className="text-[10px] text-slate-400 font-mono"
-                            title={formatRelativeTime(m.createdAt, nowTick)}
-                          >
-                            {formatClockTime(m.createdAt)}
-                          </span>
-                          {podeApagar && (
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(m.id)}
-                              className="min-w-11 min-h-11 -my-2.5 -mr-1.5 flex items-center justify-center text-slate-500 hover:text-rose-400 transition-colors"
-                              aria-label="Apagar minha mensagem"
+                        <div
+                          className={`relative px-3.5 py-2 rounded-2xl border text-sm transition-all shadow-xs ${
+                            mine
+                              ? 'bg-linear-to-br from-cyan-600/30 to-cyan-500/20 border-cyan-500/50 text-white rounded-br-xs'
+                              : 'bg-slate-800/90 border-slate-700 text-slate-100 rounded-bl-xs'
+                          }`}
+                        >
+                          {/* Texto da Mensagem */}
+                          <p className="leading-snug whitespace-pre-wrap break-words text-[13.5px] select-text">
+                            {m.text}
+                          </p>
+
+                          {/* Rodapé do Balão: Horário, Ações e Status */}
+                          <div className="mt-1 flex items-center justify-end gap-1.5 select-none">
+                            {copiedId === m.id ? (
+                              <span className="text-[10px] text-cyan-300 font-bold flex items-center gap-0.5">
+                                <Check size={11} /> Copiado
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(m.text, m.id)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-slate-200 transition-opacity"
+                                title="Copiar texto"
+                              >
+                                <Copy size={11} />
+                              </button>
+                            )}
+
+                            <span
+                              className="text-[10px] text-slate-400 font-mono tracking-tight"
+                              title={formatRelativeTime(m.createdAt, nowTick)}
                             >
-                              <Trash2 size={13} />
-                            </button>
-                          )}
+                              {formatClockTime(m.createdAt)}
+                            </span>
+
+                            {mine && (
+                              <span className="text-cyan-400" title="Entregue">
+                                <CheckCheck size={13} className="stroke-[2.5]" />
+                              </span>
+                            )}
+
+                            {mine && (
+                              <button
+                                type="button"
+                                onClick={() => handleDelete(m.id)}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-400 transition-opacity ml-0.5"
+                                title="Apagar mensagem"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  </React.Fragment>
                 );
               })}
 
             <div ref={endRef} />
           </div>
 
-          {/* Aviso de novas mensagens: aparece só quando o velejador está lendo
-              o histórico, no lugar de arrastar a tela dele. */}
+          {/* Botão Flutuante: Novas Mensagens */}
           {unread > 0 && (
-            <div className="shrink-0 px-3 pb-1 flex justify-center">
+            <div className="shrink-0 px-3 pb-2 flex justify-center z-10">
               <button
                 type="button"
                 onClick={() => scrollToEnd('smooth')}
-                className="flex items-center gap-2 px-4 min-h-11 rounded-full bg-cyan-500 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/30 active:scale-95 transition-transform"
+                className="flex items-center gap-2 px-4 h-9 rounded-full bg-cyan-500 text-slate-950 font-black text-xs shadow-lg shadow-cyan-500/40 active:scale-95 transition-all animate-bounce"
               >
-                <ArrowDown size={15} className="stroke-[3]" />
+                <ArrowDown size={14} className="stroke-[3]" />
                 <span>
                   {unread} nova{unread > 1 ? 's' : ''} mensage{unread > 1 ? 'ns' : 'm'}
                 </span>
@@ -563,18 +652,45 @@ export const ChatView: React.FC = () => {
             </div>
           )}
 
-          {/* Campo de envio */}
-          <div className={`shrink-0 border-t border-slate-800 px-3 py-2.5 ${beachMode ? 'bg-[#020617]' : 'bg-[#0F172A]'}`}>
+          {/* 3. Barra de Atalhos Rápidos (Kiter Bar) */}
+          <div className="shrink-0 bg-[#0A0F1D] border-t border-slate-800/80 px-2.5 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            <span className="text-[10px] font-black text-cyan-400/80 uppercase tracking-wider shrink-0 flex items-center gap-1 pl-1">
+              <Sparkles size={11} /> Rápido:
+            </span>
+            {QUICK_KITE_SHORTCUTS.map((sc, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => handleSend(sc.text)}
+                className="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-white text-[11px] font-semibold transition-all active:scale-95"
+              >
+                {sc.label}
+              </button>
+            ))}
+          </div>
+
+          {/* 4. Campo de Digitação Fixo e Estável */}
+          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2 pb-3 safe-area-pb">
             {sendError && (
-              <p role="alert" className="mb-2 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-lg px-2.5 py-1.5">
-                {sendError}
+              <p
+                role="alert"
+                className="mb-2 text-[11px] text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded-xl px-3 py-1.5 flex items-center justify-between"
+              >
+                <span>{sendError}</span>
+                <button
+                  type="button"
+                  onClick={() => setSendError(null)}
+                  className="text-rose-300 font-bold hover:text-rose-100"
+                >
+                  ✕
+                </button>
               </p>
             )}
 
-            <div className="flex items-end gap-2">
-              <label className="flex-1 min-w-0">
-                <span className="sr-only">Escrever mensagem na sala {roomLabel}</span>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 relative min-w-0">
                 <input
+                  ref={inputRef}
                   type="text"
                   value={draft}
                   maxLength={CHAT_TEXT_MAX}
@@ -589,32 +705,47 @@ export const ChatView: React.FC = () => {
                     }
                   }}
                   placeholder={`Mensagem em ${roomLabel}...`}
-                  /* text-base = 16px: abaixo disso o Safari do iPhone dá zoom no
-                     foco e desmonta o layout fixo da tela. */
-                  className="w-full min-h-11 px-3.5 rounded-2xl bg-[#1E293B] border border-slate-700 text-base text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-400"
+                  className="w-full h-11 px-3.5 pr-10 rounded-xl bg-[#1E293B] border border-slate-700 text-[15px] text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-all"
                 />
-              </label>
+
+                {draft.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft('');
+                      inputRef.current?.focus();
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs p-1"
+                    title="Limpar texto"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
 
               <button
                 type="button"
-                onClick={handleSend}
+                onClick={() => handleSend()}
                 disabled={sending || draft.trim().length === 0}
-                className="min-w-11 min-h-11 px-3 rounded-2xl bg-cyan-500 text-slate-950 font-black flex items-center justify-center hover:bg-cyan-400 active:scale-95 transition-all shadow-md shadow-cyan-500/20 disabled:opacity-40 disabled:active:scale-100"
+                className="w-11 h-11 shrink-0 rounded-xl bg-cyan-500 text-slate-950 font-black flex items-center justify-center hover:bg-cyan-400 active:scale-95 transition-all shadow-md shadow-cyan-500/25 disabled:opacity-40 disabled:active:scale-100"
                 aria-label="Enviar mensagem"
               >
-                {sending ? <Loader2 size={17} className="animate-spin" /> : <Send size={17} />}
+                {sending ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
               </button>
             </div>
 
-            {/* Contador só perto do limite: barulho visual o tempo todo não ajuda. */}
-            {draft.length > CHAT_TEXT_MAX - 100 && (
-              <p className="mt-1 text-right text-[10px] font-mono text-slate-400">
-                {draft.length}/{CHAT_TEXT_MAX}
-              </p>
+            {/* Contador de Caracteres Discreto */}
+            {draft.length > CHAT_TEXT_MAX - 80 && (
+              <div className="mt-1 flex justify-end">
+                <span className="text-[10px] font-mono text-slate-400">
+                  {draft.length}/{CHAT_TEXT_MAX}
+                </span>
+              </div>
             )}
           </div>
         </>
       ) : (
+        /* Aba Online: Quem está na água */
         <OnlinePanel
           online={online}
           now={nowTick}
@@ -623,24 +754,22 @@ export const ChatView: React.FC = () => {
           onChangeSpot={setAtSpotId}
           spots={spots.map((s) => ({ id: s.id, name: s.name, location: s.location }))}
           onRetry={loadOnline}
+          onWave={(userName) => {
+            setTab('conversa');
+            handleSend(`🤙 Salve ${userName}! Bons ventos!`);
+          }}
         />
       )}
     </div>
   );
 };
 
-/**
- * Relógio que avança de 30 em 30s.
- *
- * "há 3 min" precisa virar "há 4 min" sozinho — sem isto, o horário congela no
- * momento em que a mensagem chegou e a conversa parece parada no tempo. 30s é o
- * passo mais grosso que ainda mantém a precisão de minuto do texto.
- */
+/** Relógio que avança a cada 20s para atualizar tempos relativos */
 function useNowTick(): Date {
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 30_000);
+    const id = setInterval(() => setNow(new Date()), 20_000);
     return () => clearInterval(id);
   }, []);
 
@@ -655,9 +784,10 @@ interface OnlinePanelProps {
   onChangeSpot: (id: string) => void;
   spots: { id: string; name: string; location: string }[];
   onRetry: () => void;
+  onWave: (userName: string) => void;
 }
 
-/** Aba "Online": quem está na água agora e onde. */
+/** Aba "Online / Na Água Agora" */
 const OnlinePanel: React.FC<OnlinePanelProps> = ({
   online,
   now,
@@ -666,68 +796,88 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
   onChangeSpot,
   spots,
   onRetry,
+  onWave,
 }) => {
-  // Filtramos pela janela também no cliente: a lista pode ter sido carregada há
-  // um minuto, e quem saiu no meio precisa cair sem esperar o próximo fetch.
   const ativos = online.filter((o) => isPresenceOnline(o.lastSeenAt, now));
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3">
-      {/* Toggle "estou neste spot" */}
-      <div className={`p-3.5 rounded-2xl border ${cardBg}`}>
-        <div className="flex items-center gap-2 mb-2">
-          <MapPin size={15} className="text-emerald-400" />
-          <span className="text-xs font-black text-slate-100">Estou no spot</span>
+      {/* Card: Marcar meu spot atual */}
+      <div className={`p-4 rounded-2xl border ${cardBg} shadow-sm`}>
+        <div className="flex items-center gap-2 mb-1.5">
+          <div className="w-7 h-7 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <MapPin size={16} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-100 uppercase tracking-wide">
+              Estou na Praia / No Spot
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Marque onde você está velejando agora para os outros te encontrarem.
+            </p>
+          </div>
         </div>
-        <p className="text-[11px] text-slate-400 mb-2.5 leading-relaxed">
-          Marque onde você está e quem abrir o app vê que tem gente na água aí.
-        </p>
-        <label className="block">
-          <span className="sr-only">Escolher o spot onde você está</span>
+
+        <div className="mt-3">
           <select
             value={atSpotId}
             onChange={(e) => onChangeSpot(e.target.value)}
-            className="w-full min-h-11 px-3 rounded-xl bg-[#0F172A] border border-slate-700 text-slate-100 font-bold focus:outline-hidden focus:border-emerald-400"
+            className="w-full h-11 px-3 rounded-xl bg-[#0F172A] border border-slate-700 text-slate-100 font-bold text-sm focus:outline-hidden focus:border-emerald-400"
           >
-            <option value="">Não estou em nenhum spot</option>
+            <option value="">Não estou em nenhum spot no momento</option>
             {spots.map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} — {s.location}
+                📍 {s.name} — {s.location}
               </option>
             ))}
           </select>
-        </label>
+        </div>
       </div>
 
-      <div className="flex items-center justify-between px-1">
-        <h3 className="text-xs font-black text-slate-400 uppercase tracking-wider">
-          Na água agora ({ativos.length})
-        </h3>
+      {/* Cabeçalho da Lista */}
+      <div className="flex items-center justify-between px-1 pt-1">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <h3 className="text-xs font-black text-slate-300 uppercase tracking-wider">
+            Velejadores Conectados ({ativos.length})
+          </h3>
+        </div>
         <button
           type="button"
           onClick={onRetry}
-          className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 min-h-11 px-2 flex items-center"
+          className="text-xs font-bold text-cyan-400 hover:text-cyan-300 h-8 px-2 flex items-center transition-colors"
         >
           Atualizar
         </button>
       </div>
 
+      {/* Lista de Velejadores Ativos */}
       {ativos.length === 0 ? (
-        <div className={`p-6 rounded-2xl border text-center ${cardBg}`}>
-          <Users size={28} className="mx-auto text-slate-500" />
-          <p className="mt-2.5 font-black text-slate-100 text-sm">Ninguém na água agora</p>
-          <p className="mt-1.5 text-xs text-slate-400 leading-relaxed">
-            Abra o app na praia e você aparece aqui para os outros velejadores.
+        <div className={`p-8 rounded-2xl border text-center ${cardBg}`}>
+          <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500 mb-3">
+            <Users size={24} />
+          </div>
+          <p className="font-black text-slate-100 text-sm">Nenhum velejador na água agora</p>
+          <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
+            Quando você ou outros membros abrirem o KiteNinja na praia, aparecerão aqui em tempo real.
           </p>
         </div>
       ) : (
         <div className="space-y-2">
           {ativos.map((o) => (
-            <div key={o.userId} className={`p-3 rounded-2xl border flex items-center gap-3 ${cardBg}`}>
+            <div
+              key={o.userId}
+              className={`p-3 rounded-2xl border flex items-center gap-3 transition-all hover:border-slate-600 ${cardBg}`}
+            >
               <div className="relative shrink-0">
-                <div className="w-11 h-11 rounded-full bg-slate-800 ring-2 ring-emerald-400/70 overflow-hidden flex items-center justify-center">
+                <div className="w-11 h-11 rounded-full bg-slate-800 ring-2 ring-emerald-400/80 overflow-hidden flex items-center justify-center shadow-xs">
                   {o.userAvatar ? (
-                    <img src={o.userAvatar} alt={o.userName} className="w-full h-full object-cover" />
+                    <img
+                      src={o.userAvatar}
+                      alt={o.userName}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
                   ) : (
                     <User size={20} className="text-slate-300" />
                   )}
@@ -738,22 +888,34 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5">
                   <span className="font-black text-sm text-white truncate">{o.userName}</span>
-                  <span className="text-sm shrink-0">{o.countryFlag}</span>
+                  {o.countryFlag && <span className="text-sm shrink-0">{o.countryFlag}</span>}
                 </div>
                 <p className="text-[11px] text-slate-400 truncate">
-                  {o.userLevel} • ID {o.userRiderId}
+                  {o.userLevel ?? 'Velejador'} • #{o.userRiderId}
                 </p>
-                {o.atSpotName && (
-                  <p className="text-[11px] font-bold text-emerald-300 flex items-center gap-1 mt-0.5 truncate">
+                {o.atSpotName ? (
+                  <p className="text-[11px] font-bold text-emerald-400 flex items-center gap-1 mt-0.5 truncate">
                     <MapPin size={11} className="shrink-0" />
                     <span className="truncate">{o.atSpotName}</span>
                   </p>
+                ) : (
+                  <p className="text-[10px] text-slate-500 mt-0.5">Online no app</p>
                 )}
               </div>
 
-              <span className="text-[10px] font-mono text-slate-500 shrink-0">
-                {formatRelativeTime(o.lastSeenAt, now)}
-              </span>
+              <div className="flex flex-col items-end gap-1.5 shrink-0">
+                <span className="text-[10px] font-mono text-slate-400">
+                  {formatRelativeTime(o.lastSeenAt, now)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onWave(o.userName)}
+                  className="px-2.5 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold active:scale-95 transition-all"
+                  title={`Mandar um salve para ${o.userName}`}
+                >
+                  Acenar 🤙
+                </button>
+              </div>
             </div>
           ))}
         </div>

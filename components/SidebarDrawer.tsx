@@ -39,6 +39,8 @@ export const SidebarDrawer: React.FC = () => {
     setBeachMode,
     windUnit,
     setWindUnit,
+    selectedSpot,
+    setSelectedSpot,
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
@@ -82,6 +84,9 @@ export const SidebarDrawer: React.FC = () => {
   if (!isSidebarOpen) return null;
 
   const navigateTo = (tabName: ActiveTab) => {
+    if (selectedSpot) {
+      setSelectedSpot(null);
+    }
     setActiveTab(tabName);
     setIsSidebarOpen(false);
   };

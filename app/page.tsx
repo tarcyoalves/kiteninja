@@ -53,8 +53,14 @@ const MainContent: React.FC = () => {
       {/* Header — shrink-0 no próprio componente, sempre visível */}
       <Header />
 
-      {/* Único elemento que rola no app. Ver .app-scroll em globals.css. */}
-      <main className="app-scroll w-full max-w-lg mx-auto">
+      {/* Área central do app: quando for chat ou mapa, desativa scroll externo para evitar conflito de visualViewport */}
+      <main
+        className={`w-full max-w-lg mx-auto ${
+          activeTab === "chat" || activeTab === "mapa"
+            ? "flex-1 min-h-0 overflow-hidden flex flex-col"
+            : "app-scroll"
+        }`}
+      >
         {activeTab === "favoritos" && (
           <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
         )}

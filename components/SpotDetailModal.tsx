@@ -299,7 +299,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
        max-h-[92dvh] saiu junto: com o shell flex a altura já vem do inset, e o
        92% criava uma faixa morta embaixo.
     */
-    <div className="fixed inset-0 bottom-nav-gap z-modal bg-[#0F172A]">
+    <div className="fixed inset-x-0 top-0 bottom-nav-gap z-modal bg-[#0F172A]">
       <div
         ref={dialogRef}
         role="dialog"

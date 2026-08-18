@@ -5,7 +5,17 @@ import { Star, MapPin, Bell, MoreHorizontal, Compass, Flame, BookOpen } from 'lu
 import { useKiteData } from '../context/KiteDataContext';
 
 export const BottomNav: React.FC = () => {
-  const { activeTab, setActiveTab, beachMode, safetyAlerts } = useKiteData();
+  const {
+    activeTab,
+    setActiveTab,
+    beachMode,
+    safetyAlerts,
+    selectedSpot,
+    setSelectedSpot,
+    setIsSidebarOpen,
+    setIsLoggerOpen,
+    setIsCalculatorOpen,
+  } = useKiteData();
   const navRef = useRef<HTMLElement | null>(null);
 
   /* Publica a altura real em --nav-h para os modais em tela cheia pararem
@@ -30,6 +40,16 @@ export const BottomNav: React.FC = () => {
     return () => observer.disconnect();
   }, []);
 
+  const handleTabClick = (tab: typeof activeTab) => {
+    if (selectedSpot) {
+      setSelectedSpot(null);
+    }
+    setIsSidebarOpen(false);
+    setIsLoggerOpen(false);
+    setIsCalculatorOpen(false);
+    setActiveTab(tab);
+  };
+
   const activeAlertsCount = safetyAlerts.filter(a => a.status === 'Ativo').length;
 
   return (
@@ -53,14 +73,14 @@ export const BottomNav: React.FC = () => {
       <div className="max-w-md mx-auto grid grid-cols-5 h-16 items-center px-1">
         {/* Tab 1: Favoritos */}
         <button
-          onClick={() => setActiveTab('favoritos')}
+          onClick={() => handleTabClick('favoritos')}
           className={`flex flex-col items-center justify-center py-1.5 px-1 min-w-11 min-h-11 transition-all relative ${
-            activeTab === 'favoritos'
+            activeTab === 'favoritos' && !selectedSpot
               ? 'text-cyan-400 font-extrabold scale-105'
               : 'hover:text-slate-200 active:scale-95 text-slate-400'
           }`}
           aria-label="Favoritos"
-          aria-current={activeTab === 'favoritos' ? 'page' : undefined}
+          aria-current={activeTab === 'favoritos' && !selectedSpot ? 'page' : undefined}
         >
           <div className="relative">
             <Star
@@ -75,14 +95,14 @@ export const BottomNav: React.FC = () => {
 
         {/* Tab 2: Mapa e pesquisa */}
         <button
-          onClick={() => setActiveTab('mapa')}
+          onClick={() => handleTabClick('mapa')}
           className={`flex flex-col items-center justify-center py-1.5 px-1 min-w-11 min-h-11 transition-all relative ${
-            activeTab === 'mapa'
+            activeTab === 'mapa' && !selectedSpot
               ? 'text-cyan-400 font-extrabold scale-105'
               : 'hover:text-slate-200 active:scale-95 text-slate-400'
           }`}
           aria-label="Mapa"
-          aria-current={activeTab === 'mapa' ? 'page' : undefined}
+          aria-current={activeTab === 'mapa' && !selectedSpot ? 'page' : undefined}
         >
           <div className="relative">
             <Compass
@@ -97,14 +117,14 @@ export const BottomNav: React.FC = () => {
 
         {/* Tab 3: Destaques (Feed) */}
         <button
-          onClick={() => setActiveTab('destaques')}
+          onClick={() => handleTabClick('destaques')}
           className={`flex flex-col items-center justify-center py-1.5 px-1 min-w-11 min-h-11 transition-all relative ${
-            activeTab === 'destaques'
+            activeTab === 'destaques' && !selectedSpot
               ? 'text-emerald-400 font-extrabold scale-105'
               : 'hover:text-slate-200 active:scale-95 text-slate-400'
           }`}
           aria-label="Destaques"
-          aria-current={activeTab === 'destaques' ? 'page' : undefined}
+          aria-current={activeTab === 'destaques' && !selectedSpot ? 'page' : undefined}
         >
           <div className="relative">
             <Flame
@@ -119,14 +139,14 @@ export const BottomNav: React.FC = () => {
 
         {/* Tab 4: Sessões / Logbook */}
         <button
-          onClick={() => setActiveTab('sessoes')}
+          onClick={() => handleTabClick('sessoes')}
           className={`flex flex-col items-center justify-center py-1.5 px-1 min-w-11 min-h-11 transition-all relative ${
-            activeTab === 'sessoes'
+            activeTab === 'sessoes' && !selectedSpot
               ? 'text-amber-400 font-extrabold scale-105'
               : 'hover:text-slate-200 active:scale-95 text-slate-400'
           }`}
           aria-label="Logbook de sessões"
-          aria-current={activeTab === 'sessoes' ? 'page' : undefined}
+          aria-current={activeTab === 'sessoes' && !selectedSpot ? 'page' : undefined}
         >
           <div className="relative">
             <BookOpen
@@ -141,14 +161,14 @@ export const BottomNav: React.FC = () => {
 
         {/* Tab 5: Alertas & Mais */}
         <button
-          onClick={() => setActiveTab('alertas')}
+          onClick={() => handleTabClick('alertas')}
           className={`flex flex-col items-center justify-center py-1.5 px-1 min-w-11 min-h-11 transition-all relative ${
-            activeTab === 'alertas' || activeTab === 'mais'
+            (activeTab === 'alertas' || activeTab === 'mais') && !selectedSpot
               ? 'text-rose-400 font-extrabold scale-105'
               : 'hover:text-slate-200 active:scale-95 text-slate-400'
           }`}
           aria-label="Alertas de segurança"
-          aria-current={activeTab === 'alertas' || activeTab === 'mais' ? 'page' : undefined}
+          aria-current={(activeTab === 'alertas' || activeTab === 'mais') && !selectedSpot ? 'page' : undefined}
         >
           <div className="relative">
             <Bell
