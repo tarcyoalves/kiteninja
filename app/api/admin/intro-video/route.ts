@@ -1,4 +1,5 @@
 import { put, del } from '@vercel/blob';
+import { revalidatePath } from 'next/cache';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
 import { getIntroVideoRaw, setIntroVideo, clearIntroVideo } from '@/lib/settings';
@@ -124,6 +125,9 @@ export async function POST(request: Request) {
     // deixaria a abertura apontando para um arquivo já apagado.
     await removerArquivoAntigo(anterior?.url, enviado.url);
 
+    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
+    // abertura e continuaria vendo a antiga por até 5 minutos.
+    revalidatePath('/api/intro-video');
     return { ok: true, video: valor };
   });
 }
@@ -157,6 +161,9 @@ export async function PATCH(request: Request) {
     };
     await setIntroVideo(valor, admin.id);
 
+    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
+    // abertura e continuaria vendo a antiga por até 5 minutos.
+    revalidatePath('/api/intro-video');
     return { ok: true, video: valor };
   });
 }
@@ -170,6 +177,9 @@ export async function DELETE() {
     await clearIntroVideo();
     await removerArquivoAntigo(atual?.url, undefined);
 
+    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
+    // abertura e continuaria vendo a antiga por até 5 minutos.
+    revalidatePath('/api/intro-video');
     return { ok: true };
   });
 }
