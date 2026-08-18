@@ -375,9 +375,18 @@ const SplashVideo: React.FC<{
 
   return (
     <div
-      className={`fixed inset-0 z-splash bg-black transition-opacity duration-400 ${
+      className={`fixed inset-0 w-screen h-[100dvh] z-splash bg-black overflow-hidden transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100vw',
+        height: '100dvh',
+      }}
       role="status"
       aria-label="Abertura do KiteNinja"
     >
@@ -385,17 +394,27 @@ const SplashVideo: React.FC<{
         ref={ref}
         src={video.url}
         poster={video.posterDataUrl}
-        // Sem `muted` o navegador barra o autoplay; sem `playsInline` o iOS
-        // abre o vídeo em tela cheia própria e sequestra a navegação.
         muted
         playsInline
         preload="auto"
         aria-hidden="true"
-        className="w-full h-full object-cover"
+        className="absolute inset-0 w-full h-full object-cover block"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          display: 'block',
+        }}
       />
       <button
         onClick={pular}
-        className="absolute bottom-8 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-white/15 border border-white/25 text-white text-sm font-bold backdrop-blur-md active:scale-95 transition-all"
+        className="absolute left-1/2 -translate-x-1/2 px-6 py-2 rounded-full bg-black/40 border border-white/30 text-white text-sm font-black backdrop-blur-md active:scale-95 transition-all shadow-xl z-20"
+        style={{
+          bottom: 'max(env(safe-area-inset-bottom, 0px) + 2rem, 2.5rem)',
+        }}
       >
         Pular
       </button>

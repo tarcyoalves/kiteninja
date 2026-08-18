@@ -199,19 +199,25 @@ function opt(v: number | null | undefined, decimais: number): number | null {
   return Number(v.toFixed(decimais));
 }
 
-async function getJson<T>(url: string): Promise<T | null> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
-    if (!res.ok) return null;
-    return (await res.json()) as T;
-  } catch {
-    // Timeout ou rede: quem chama decide o que fazer com null.
-    return null;
-  } finally {
-    clearTimeout(timer);
+async function getJson<T>(url: string, retries = 1): Promise<T | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+      if (res.ok) {
+        return (await res.json()) as T;
+      }
+    } catch {
+      // Timeout ou rede
+    } finally {
+      clearTimeout(timer);
+    }
+    if (attempt < retries) {
+      await new Promise((r) => setTimeout(r, 200));
+    }
   }
+  return null;
 }
 
 /**
@@ -411,7 +417,7 @@ export async function getSpotWeather(
   days = 7,
   forceRefresh = false
 ): Promise<SpotWeather | null> {
-  const key = `${lat.toFixed(4)},${lng.toFixed(4)},${days}`;
+  const key = `${lat.toFixed(2)},${lng.toFixed(2)},${days}`;
   const hit = cache.get(key);
   if (!forceRefresh && hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
 
@@ -437,12 +443,32 @@ export async function getSpotWeather(
   });
 
   // Em paralelo: a marinha é opcional e não deve somar latência.
-  const [fc, mar] = await Promise.all([
+  const [fcInitial, mar] = await Promise.all([
     getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${forecastQs}`),
     getJson<{ hourly: MarineBlock }>(`${MARINE_URL}?${marineQs}`),
   ]);
 
-  if (!fc?.hourly?.time?.length) return null;
+  let fc = fcInitial;
+  // Fallback 1: se multimodelo falhar ou der timeout, tenta endpoint padrão rápido
+  if (!fc?.hourly?.time?.length) {
+    const fallbackQs = new URLSearchParams({
+      latitude: String(lat),
+      longitude: String(lng),
+      hourly:
+        'temperature_2m,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+      wind_speed_unit: 'kn',
+      timezone: TZ,
+      forecast_days: String(days),
+      models: 'gfs_seamless',
+    });
+    fc = await getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${fallbackQs}`);
+  }
+
+  // Fallback 2: se rede falhar completamente, aproveita cache anterior (stale-while-revalidate)
+  if (!fc?.hourly?.time?.length) {
+    if (hit?.data) return hit.data;
+    return null;
+  }
   const h = fc.hourly;
   const m = mar?.hourly ?? null;
 
@@ -630,12 +656,46 @@ export async function getSpotWeather(
   return data;
 }
 
-/** Busca vários pontos em paralelo; um ponto sem dado sai como null. */
+/** Busca vários pontos com agrupamento em células de grade e controle de concorrência. */
 export async function getManySpotsWeather(
   spots: { id: string; lat: number; lng: number }[],
   days = 7,
   forceRefresh = false
 ): Promise<Map<string, SpotWeather | null>> {
-  const results = await Promise.all(spots.map((s) => getSpotWeather(s.lat, s.lng, days, forceRefresh)));
-  return new Map(spots.map((s, i) => [s.id, results[i]]));
+  // Deduplica por célula de grade (~0.05 graus = ~5.5km)
+  const gridMap = new Map<string, { lat: number; lng: number }>();
+  const spotToGrid = new Map<string, string>();
+
+  for (const s of spots) {
+    const gridKey = `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`;
+    spotToGrid.set(s.id, gridKey);
+    if (!gridMap.has(gridKey)) {
+      gridMap.set(gridKey, { lat: s.lat, lng: s.lng });
+    }
+  }
+
+  const uniqueGrids = Array.from(gridMap.entries());
+  const gridResults = new Map<string, SpotWeather | null>();
+
+  // Processa em lotes de 3 em paralelo para não estourar rate limit da Open-Meteo
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < uniqueGrids.length; i += BATCH_SIZE) {
+    const batch = uniqueGrids.slice(i, i + BATCH_SIZE);
+    const batchResults = await Promise.all(
+      batch.map(async ([key, coord]) => {
+        const weather = await getSpotWeather(coord.lat, coord.lng, days, forceRefresh);
+        return [key, weather] as const;
+      })
+    );
+    for (const [key, weather] of batchResults) {
+      gridResults.set(key, weather);
+    }
+  }
+
+  const out = new Map<string, SpotWeather | null>();
+  for (const s of spots) {
+    const gridKey = spotToGrid.get(s.id)!;
+    out.set(s.id, gridResults.get(gridKey) ?? null);
+  }
+  return out;
 }

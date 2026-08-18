@@ -135,7 +135,48 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const url = forceRefresh ? `/api/spots?refresh=1&_t=${Date.now()}` : '/api/spots';
       const data = await api<{ spots: Spot[] }>(url, forceRefresh ? { cache: 'no-store' } : undefined);
-      setSpots(data.spots);
+      if (Array.isArray(data?.spots) && data.spots.length > 0) {
+        setSpots((prev) => {
+          if (!prev.length) return data.spots;
+          const prevMap = new Map(prev.map((p) => [p.id, p]));
+          return data.spots.map((curr) => {
+            const old = prevMap.get(curr.id);
+            // Se o novo spot veio zerado por oscilação momentânea da API externa, mantém os dados anteriores
+            if (
+              curr.currentKnots === 0 &&
+              (!curr.daysForecast || curr.daysForecast.length === 0) &&
+              old &&
+              old.currentKnots > 0
+            ) {
+              return {
+                ...curr,
+                currentKnots: old.currentKnots,
+                avgKnots: old.avgKnots,
+                maxKnots: old.maxKnots,
+                gustKnots: old.gustKnots,
+                windDirectionDeg: old.windDirectionDeg,
+                windDirectionText: old.windDirectionText,
+                temperature: old.temperature,
+                weatherDescription: old.weatherDescription,
+                weatherIcon: old.weatherIcon,
+                currentTideHeightM: old.currentTideHeightM,
+                currentTideTrend: old.currentTideTrend,
+                nextTideInfo: old.nextTideInfo,
+                waveHeightM: old.waveHeightM,
+                wavePeriodS: old.wavePeriodS,
+                swellHeightM: old.swellHeightM,
+                windWaveHeightM: old.windWaveHeightM,
+                multiModel: old.multiModel,
+                sailingScore: old.sailingScore,
+                daysForecast: old.daysForecast,
+                isLiveObservation: old.isLiveObservation,
+                lastUpdated: old.lastUpdated,
+              };
+            }
+            return curr;
+          });
+        });
+      }
     } catch {
       // Sem rede: mantém o que já estava na tela em vez de esvaziar o mapa.
     }
