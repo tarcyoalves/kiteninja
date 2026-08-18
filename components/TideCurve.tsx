@@ -60,21 +60,31 @@ export const TideCurve: React.FC<TideCurveProps> = ({
   const gradientId = useId();
 
   const chart = useMemo(() => {
-    const levels = hours.map((h) => h.tideHeightM);
-    if (levels.length === 0) return null;
+    /* Só entram horas com altura medida. Tratar ausência como 0 desenhava uma
+       curva que ia ao fundo do gráfico e sugeria maré seca onde só faltava
+       dado — leitura oposta à realidade para quem depende de laguna cheia. */
+    const amostras = hours
+      .map((h, i) => ({ h, i }))
+      .filter((s): s is { h: (typeof hours)[number] & { tideHeightM: number }; i: number } =>
+        typeof s.h.tideHeightM === 'number'
+      );
+    if (amostras.length === 0) return null;
 
+    const levels = amostras.map((s) => s.h.tideHeightM);
     const min = Math.min(...levels);
     const max = Math.max(...levels);
-    // Série achatada (maré parada ou sem dado) não pode virar divisão por zero.
+    // Série achatada (maré parada) não pode virar divisão por zero.
     const span = max - min < 0.05 ? 1 : max - min;
 
-    const toX = (i: number) => (i / Math.max(1, levels.length - 1)) * W;
+    // O eixo X segue o índice da hora original, senão um buraco no meio da
+    // série comprimiria o gráfico e desalinharia da tabela ao lado.
+    const ultimoIdx = Math.max(1, hours.length - 1);
+    const toX = (i: number) => (i / ultimoIdx) * W;
     const toY = (v: number) => H - PAD_Y - ((v - min) / span) * (H - PAD_Y * 2);
 
-    const points = levels.map((v, i) => ({ x: toX(i), y: toY(v) }));
+    const points = amostras.map((s) => ({ x: toX(s.i), y: toY(s.h.tideHeightM) }));
 
-    const peaks = hours
-      .map((h, i) => ({ h, i }))
+    const peaks = amostras
       .filter(({ h }) => h.tideTrend === 'peak_high' || h.tideTrend === 'peak_low')
       .map(({ h, i }) => ({
         x: toX(i),
@@ -87,13 +97,16 @@ export const TideCurve: React.FC<TideCurveProps> = ({
     const nowIdx =
       currentHour == null
         ? -1
-        : hours.findIndex((h) => Number(h.hour.replace('h', '')) === currentHour);
+        : amostras.findIndex((s) => Number(s.h.hour.replace('h', '')) === currentHour);
 
     return {
       line: smoothPath(points),
       area: `${smoothPath(points)} L ${W},${H} L 0,${H} Z`,
       peaks,
-      now: nowIdx >= 0 ? { x: toX(nowIdx), y: toY(levels[nowIdx]) } : null,
+      now:
+        nowIdx >= 0
+          ? { x: toX(amostras[nowIdx].i), y: toY(amostras[nowIdx].h.tideHeightM) }
+          : null,
       min,
       max,
     };

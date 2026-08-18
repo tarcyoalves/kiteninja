@@ -56,11 +56,12 @@ export interface SpotWeather {
   temperature: number;
   weatherDescription: string;
   weatherIcon: IconName;
-  currentTideHeightM: number;
-  currentTideTrend: TideStatus;
+  /** `null` = API marinha não cobriu o spot. Ver `opt()` sobre o porquê. */
+  currentTideHeightM: number | null;
+  currentTideTrend: TideStatus | null;
   nextTideInfo: string;
-  waveHeightM: number;
-  wavePeriodS: number;
+  waveHeightM: number | null;
+  wavePeriodS: number | null;
   lastUpdated: string;
   nextUpdate: string;
   daysForecast: DayForecast[];
@@ -141,6 +142,16 @@ function num(v: number | null | undefined, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
+/**
+ * Igual a `num`, mas preserva a ausência de dado como `null` em vez de virar 0.
+ * Usado nos campos de onda e maré: 0 ali é leitura válida, então confundir os
+ * dois casos mostra previsão inventada quando a API marinha falha.
+ */
+function opt(v: number | null | undefined, decimais: number): number | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  return Number(v.toFixed(decimais));
+}
+
 async function getJson<T>(url: string): Promise<T | null> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -188,15 +199,18 @@ export function getMarineCoordinates(lat: number, lng: number): { lat: number; l
 /**
  * Tendência da maré comparando a altura anterior e a seguinte. Nos extremos da
  * série não há vizinho dos dois lados, então caímos para o vizinho existente.
+ *
+ * Devolve `null` quando não há altura medida nesta hora: antes retornava 'up',
+ * e a tela exibia "enchendo" sem nenhuma medição por trás.
  */
 export function tideTrendAt(
   levels: (number | null)[],
   i: number
-): 'up' | 'down' | 'peak_high' | 'peak_low' {
+): 'up' | 'down' | 'peak_high' | 'peak_low' | null {
   const prev = i > 0 ? levels[i - 1] : null;
   const cur = levels[i];
   const next = i + 1 < levels.length ? levels[i + 1] : null;
-  if (typeof cur !== 'number') return 'up';
+  if (typeof cur !== 'number') return null;
 
   const rising = typeof prev === 'number' ? cur > prev : typeof next === 'number' ? next > cur : true;
   const fallingNext = typeof next === 'number' ? next < cur : !rising;
@@ -350,7 +364,10 @@ export async function getSpotWeather(
   for (let i = 0; i < h.time.length; i++) {
     const iso = h.time[i];
     const mi = marineIdx.get(iso);
-    const trend = mi === undefined ? 'up' : tideTrendAt(marineLevels, mi);
+    /* Sem célula marinha para esta hora não há tendência a inferir. Antes isso
+       virava 'up', ou seja a tela afirmava "enchendo" sem nenhum dado por
+       trás — pior que não mostrar nada, porque o velejador decide por isso. */
+    const trend = mi === undefined ? null : tideTrendAt(marineLevels, mi);
 
     const hour: WindForecastHour = {
       hour: `${iso.slice(11, 13)}h`,
@@ -361,11 +378,11 @@ export async function getSpotWeather(
       conditionIcon: weatherIcon(num(h.weather_code[i]), num(h.is_day[i]) === 1),
       temperature: Math.round(num(h.temperature_2m[i])),
       pressureHpa: Math.round(num(h.surface_pressure[i])),
-      waveHeightM: mi === undefined ? 0 : Number(num(m?.wave_height?.[mi]).toFixed(1)),
-      wavePeriodS: mi === undefined ? 0 : Number(num(m?.wave_period?.[mi]).toFixed(1)),
-      waveDirDeg: mi === undefined ? 0 : Math.round(num(m?.wave_direction?.[mi])),
+      waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
+      wavePeriodS: opt(m?.wave_period?.[mi ?? -1], 1),
+      waveDirDeg: opt(m?.wave_direction?.[mi ?? -1], 0),
       tideTrend: trend,
-      tideHeightM: mi === undefined ? 0 : Number(num(marineLevels[mi]).toFixed(2)),
+      tideHeightM: opt(marineLevels[mi ?? -1], 2),
     };
 
     if (mi !== undefined && (trend === 'peak_high' || trend === 'peak_low')) {
@@ -394,7 +411,7 @@ export async function getSpotWeather(
   const maxKnots = todayHours.reduce((acc, x) => Math.max(acc, x.gustKnots, x.knots), 0);
 
   const code = num(h.weather_code[now]);
-  const nowTrend = marineNow === undefined ? 'up' : tideTrendAt(marineLevels, marineNow);
+  const nowTrend = marineNow === undefined ? null : tideTrendAt(marineLevels, marineNow);
 
   const data: SpotWeather = {
     currentKnots: Math.round(num(h.wind_speed_10m[now])),
@@ -404,15 +421,14 @@ export async function getSpotWeather(
     temperature: Math.round(num(h.temperature_2m[now])),
     weatherDescription: describeWeather(code),
     weatherIcon: weatherIcon(code, num(h.is_day[now]) === 1),
-    currentTideHeightM:
-      marineNow === undefined ? 0 : Number(num(marineLevels[marineNow]).toFixed(2)),
-    currentTideTrend: statusFromTrend(nowTrend),
+    currentTideHeightM: opt(marineLevels[marineNow ?? -1], 2),
+    currentTideTrend: nowTrend === null ? null : statusFromTrend(nowTrend),
     nextTideInfo:
       marineNow === undefined
         ? 'Sem dado de maré'
         : nextTideText(marineTimes, marineLevels, marineNow),
-    waveHeightM: marineNow === undefined ? 0 : Number(num(m?.wave_height?.[marineNow]).toFixed(1)),
-    wavePeriodS: marineNow === undefined ? 0 : Number(num(m?.wave_period?.[marineNow]).toFixed(1)),
+    waveHeightM: opt(m?.wave_height?.[marineNow ?? -1], 1),
+    wavePeriodS: opt(m?.wave_period?.[marineNow ?? -1], 1),
     lastUpdated: new Date().toLocaleTimeString('pt-BR', {
       timeZone: TZ,
       hour: '2-digit',

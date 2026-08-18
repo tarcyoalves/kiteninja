@@ -98,7 +98,8 @@ function createSpotIcon(spot: Spot, layer: MapLayer): L.DivIcon {
       icon = <Zap size={10} className="text-white/90" />;
       break;
     case 'ondas':
-      value = `${spot.waveHeightM.toFixed(1)}`;
+      // Sem dado de onda o pino mostra "–" em vez de 0.0, que seria mar liso.
+      value = spot.waveHeightM === null ? '–' : `${spot.waveHeightM.toFixed(1)}`;
       icon = <Waves size={10} className="text-white/90" />;
       break;
     default:

@@ -717,25 +717,43 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                               </span>
                             </div>
 
-                            {/* Col 5: Ondas (direction arrow + height + period) */}
+                            {/* Col 5: Ondas. Sem dado marinho mostramos "–",
+                                nunca 0.0m: zero é altura real e mentir sobre
+                                isso muda a decisão de entrar na água. */}
                             <div className="flex flex-col items-center leading-none">
-                              <div className="flex items-center gap-0.5">
-                                <div
-                                  className="w-3 h-3 flex items-center justify-center text-slate-300"
-                                  style={{ transform: `rotate(${row.waveDirDeg - 90}deg)` }}
-                                >
-                                  <Navigation size={10} className="fill-slate-300 transform rotate-45" />
-                                </div>
-                                <span className="font-black text-[11px] text-white">
-                                  {row.waveHeightM}m
+                              {row.waveHeightM === null ? (
+                                <span className="text-[11px] font-bold text-slate-500" title="Sem dado de onda para esta hora">
+                                  –
                                 </span>
-                              </div>
-                              <span className="text-[10px] text-slate-400 mt-0.5">{row.wavePeriodS}s</span>
+                              ) : (
+                                <>
+                                  <div className="flex items-center gap-0.5">
+                                    {row.waveDirDeg !== null && (
+                                      <div
+                                        className="w-3 h-3 flex items-center justify-center text-slate-300"
+                                        style={{ transform: `rotate(${row.waveDirDeg - 90}deg)` }}
+                                      >
+                                        <Navigation size={10} className="fill-slate-300 transform rotate-45" />
+                                      </div>
+                                    )}
+                                    <span className="font-black text-[11px] text-white">
+                                      {row.waveHeightM}m
+                                    </span>
+                                  </div>
+                                  {row.wavePeriodS !== null && (
+                                    <span className="text-[10px] text-slate-400 mt-0.5">{row.wavePeriodS}s</span>
+                                  )}
+                                </>
+                              )}
                             </div>
 
-                            {/* Col 6: Marés (Arrow + Height + Peak Time if high/low) */}
+                            {/* Col 6: Marés (seta + altura, ou hora do pico) */}
                             <div className="flex flex-col items-center justify-center leading-tight">
-                              {row.tidePeakTime ? (
+                              {row.tideHeightM === null && !row.tidePeakTime ? (
+                                <span className="text-[11px] font-bold text-slate-500" title="Sem dado de maré para esta hora">
+                                  –
+                                </span>
+                              ) : row.tidePeakTime ? (
                                 <div className="flex flex-col items-center">
                                   <span className="text-emerald-400 font-black text-sm">
                                     {row.tideTrend === 'peak_high' ? '⇈' : '⇊'}
@@ -791,8 +809,10 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
               <TideCurve
                 hours={chartHours}
                 currentHour={selectedDayIndex === 0 ? nowHour : undefined}
-                currentHeightM={selectedDayIndex === 0 ? spot.currentTideHeightM : undefined}
-                trend={selectedDayIndex === 0 ? spot.currentTideTrend : undefined}
+                currentHeightM={
+                  selectedDayIndex === 0 ? spot.currentTideHeightM ?? undefined : undefined
+                }
+                trend={selectedDayIndex === 0 ? spot.currentTideTrend ?? undefined : undefined}
               />
             </div>
           </div>

@@ -13,11 +13,18 @@ export interface WindForecastHour {
   conditionIcon: 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' | 'rain';
   temperature: number; // in °C
   pressureHpa: number;
-  waveHeightM: number;
-  wavePeriodS: number;
-  waveDirDeg: number;
-  tideTrend: 'up' | 'down' | 'peak_high' | 'peak_low';
-  tideHeightM: number;
+  /**
+   * Onda e maré vêm de uma segunda API (marine), que pode falhar sozinha ou
+   * não cobrir a hora. `null` significa "sem dado" e é diferente de 0: maré de
+   * 0,00m é uma leitura real e legítima. Cair para 0 aqui fazia a tela mostrar
+   * "0.0m / 0s" como se fosse previsão, escondendo a falha.
+   */
+  waveHeightM: number | null;
+  wavePeriodS: number | null;
+  waveDirDeg: number | null;
+  /** `null` quando não há série de maré para deduzir a tendência. */
+  tideTrend: 'up' | 'down' | 'peak_high' | 'peak_low' | null;
+  tideHeightM: number | null;
   tidePeakTime?: string;
   tidePeakHeight?: string;
 }
@@ -49,11 +56,12 @@ export interface Spot {
   isLiveObservation: boolean;
   lastUpdated: string;
   nextUpdate: string;
-  currentTideHeightM: number;
-  currentTideTrend: TideStatus;
+  /** `null` quando a API marinha não cobriu o spot — ver WindForecastHour. */
+  currentTideHeightM: number | null;
+  currentTideTrend: TideStatus | null;
   nextTideInfo: string;
-  waveHeightM: number;
-  wavePeriodS: number;
+  waveHeightM: number | null;
+  wavePeriodS: number | null;
   waterCondition: 'Flat / Lagoa' | 'Chop Médio' | 'Ondas / Swell' | 'Água Rasa';
   bottomType: 'Areia' | 'Coral / Pedras' | 'Misto';
   difficulty: RiderLevel;

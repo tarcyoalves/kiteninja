@@ -141,12 +141,36 @@ describe('getSpotWeather (rede real)', () => {
     expect(again?.currentKnots).toBe(w.currentKnots);
   }, 30000);
 
-  it('coordenada em terra firme ainda devolve vento, sem onda', async () => {
-    // Brasília: a API marinha não cobre, a atmosférica sim.
+  it('coordenada em terra firme devolve vento e marca onda/maré como ausentes', async () => {
+    // Brasília: a API marinha não cobre, a atmosférica sim. O contrato é
+    // devolver null, não 0 — 0.0m é mar liso e 0.00m é maré real, então usar
+    // zero como "sem dado" fazia a tela afirmar condição que ninguém mediu.
     const w = await getSpotWeather(-15.7939, -47.8828, 1);
     if (!w) return;
     expect(w.currentKnots).toBeGreaterThanOrEqual(0);
-    expect(w.waveHeightM).toBe(0);
+    expect(w.waveHeightM).toBeNull();
+    expect(w.wavePeriodS).toBeNull();
+    expect(w.currentTideHeightM).toBeNull();
+    expect(w.currentTideTrend).toBeNull();
     expect(w.nextTideInfo).toBe('Sem dado de maré');
+
+    // E as horas da previsão seguem a mesma regra, não só o bloco "agora".
+    const horas = w.daysForecast[0]?.hours ?? [];
+    expect(horas.length).toBeGreaterThan(0);
+    expect(horas.every((h) => h.tideHeightM === null)).toBe(true);
+    expect(horas.every((h) => h.waveHeightM === null)).toBe(true);
+    expect(horas.every((h) => h.tideTrend === null)).toBe(true);
+    // O vento, que é a razão da tela existir, continua presente.
+    expect(horas.every((h) => typeof h.knots === 'number')).toBe(true);
+  }, 30000);
+
+  it('spot de praia real traz maré e onda preenchidas', async () => {
+    // Contraprova do teste acima: se null virasse o padrão em todo lugar, o
+    // bug ficaria escondido atrás de um teste que só aceita ausência.
+    const w = await getSpotWeather(-4.9572, -36.8833, 1);
+    if (!w) return;
+    const horas = w.daysForecast[0]?.hours ?? [];
+    const comMare = horas.filter((h) => typeof h.tideHeightM === 'number');
+    expect(comMare.length).toBeGreaterThan(0);
   }, 30000);
 });
