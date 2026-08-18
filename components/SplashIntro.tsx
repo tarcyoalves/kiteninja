@@ -301,6 +301,7 @@ const SplashVideo: React.FC<{
   onFalha: () => void;
 }> = ({ video, onDone, onFalha }) => {
   const ref = useRef<HTMLVideoElement | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
@@ -322,11 +323,9 @@ const SplashVideo: React.FC<{
       if (encerrado) return;
       encerrado = true;
       setLeaving(true);
-      setTimeout(() => doneRef.current(), 400);
+      setTimeout(() => doneRef.current(), 350);
     };
 
-    // `timeupdate` dispara a cada ~250ms, o que deixaria passar um pedaço
-    // visível além do fim do trecho; o rAF fecha no quadro certo.
     let raf = 0;
     const vigiar = () => {
       if (el.currentTime >= video.fimSeg) {
@@ -337,31 +336,44 @@ const SplashVideo: React.FC<{
       raf = requestAnimationFrame(vigiar);
     };
 
-    const aoCarregar = () => {
-      // Se o trecho salvo não couber no arquivo (vídeo trocado por fora),
-      // começamos do zero em vez de travar num seek impossível.
-      const inicio = video.inicioSeg < el.duration ? video.inicioSeg : 0;
-      el.currentTime = inicio;
+    const iniciar = () => {
+      const inicio = video.inicioSeg < (el.duration || 999) ? video.inicioSeg : 0;
+      if (Math.abs(el.currentTime - inicio) > 0.2) {
+        el.currentTime = inicio;
+      }
+
       el.play()
         .then(() => {
+          setIsPlaying(true);
           raf = requestAnimationFrame(vigiar);
         })
         .catch(() => {
-          // Autoplay barrado apesar do muted, ou codec sem suporte.
           onFalha();
         });
     };
 
-    // Rede da praia pode travar no meio do download; não deixamos a abertura
-    // segurar o login para sempre.
-    const limite = setTimeout(finalizar, Math.min((video.fimSeg - video.inicioSeg) * 1000 + 4000, 20000));
+    const onSeekedOrPlaying = () => {
+      setIsPlaying(true);
+    };
 
-    el.addEventListener('loadedmetadata', aoCarregar);
+    const limite = setTimeout(
+      finalizar,
+      Math.min((video.fimSeg - video.inicioSeg) * 1000 + 4000, 20000)
+    );
+
+    el.addEventListener('loadedmetadata', iniciar);
+    el.addEventListener('playing', onSeekedOrPlaying);
+    el.addEventListener('seeked', onSeekedOrPlaying);
     el.addEventListener('error', onFalha);
-    if (el.readyState >= 1) aoCarregar();
+
+    if (el.readyState >= 2) {
+      iniciar();
+    }
 
     return () => {
-      el.removeEventListener('loadedmetadata', aoCarregar);
+      el.removeEventListener('loadedmetadata', iniciar);
+      el.removeEventListener('playing', onSeekedOrPlaying);
+      el.removeEventListener('seeked', onSeekedOrPlaying);
       el.removeEventListener('error', onFalha);
       cancelAnimationFrame(raf);
       clearTimeout(limite);
@@ -375,7 +387,7 @@ const SplashVideo: React.FC<{
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-[100dvh] z-splash bg-black overflow-hidden transition-opacity duration-400 ${
+      className={`fixed inset-0 w-screen h-screen z-splash bg-black overflow-hidden select-none transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
@@ -386,6 +398,10 @@ const SplashVideo: React.FC<{
         bottom: 0,
         width: '100vw',
         height: '100dvh',
+        minHeight: '-webkit-fill-available',
+        zIndex: 99999,
+        backgroundColor: '#000000',
+        overflow: 'hidden',
       }}
       role="status"
       aria-label="Abertura do KiteNinja"
@@ -393,27 +409,33 @@ const SplashVideo: React.FC<{
       <video
         ref={ref}
         src={video.url}
-        poster={video.posterDataUrl}
         muted
+        autoPlay
         playsInline
         preload="auto"
         aria-hidden="true"
-        className="absolute inset-0 w-full h-full object-cover block"
+        className={`absolute inset-0 w-full h-full object-cover block transition-opacity duration-300 ${
+          isPlaying ? 'opacity-100' : 'opacity-0'
+        }`}
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
+          right: 0,
+          bottom: 0,
           width: '100%',
           height: '100%',
+          minHeight: '100%',
           objectFit: 'cover',
+          objectPosition: 'center center',
           display: 'block',
         }}
       />
       <button
         onClick={pular}
-        className="absolute left-1/2 -translate-x-1/2 px-6 py-2 rounded-full bg-black/40 border border-white/30 text-white text-sm font-black backdrop-blur-md active:scale-95 transition-all shadow-xl z-20"
+        className="absolute left-1/2 -translate-x-1/2 px-6 py-2.5 rounded-full bg-black/50 border border-white/30 text-white text-sm font-black backdrop-blur-md active:scale-95 transition-all shadow-2xl z-30 pointer-events-auto"
         style={{
-          bottom: 'max(env(safe-area-inset-bottom, 0px) + 2rem, 2.5rem)',
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 24px)',
         }}
       >
         Pular
