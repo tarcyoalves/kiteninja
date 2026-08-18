@@ -156,13 +156,27 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
             <h3 className="text-sm sm:text-base font-extrabold text-white truncate group-hover:text-cyan-300 transition-colors">
               {spot.name}
             </h3>
-            {smartBadge && (
+            {spot.sailingScore ? (
+              <span
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-xs"
+                style={{ backgroundColor: spot.sailingScore.badgeColor }}
+                title={`Kite Score: ${spot.sailingScore.totalScore}/100 - ${spot.sailingScore.classification}`}
+              >
+                <span>{spot.sailingScore.totalScore}</span>
+                <span>{spot.sailingScore.classification}</span>
+              </span>
+            ) : smartBadge && (
               <span
                 className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-black border uppercase tracking-wider ${smartBadge.className}`}
                 title={smartBadge.title}
               >
                 {smartBadge.icon}
                 <span>{smartBadge.label}</span>
+              </span>
+            )}
+            {spot.multiModel && spot.multiModel.confidenceLevel === 'Alta' && (
+              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                ECMWF+GFS
               </span>
             )}
           </div>

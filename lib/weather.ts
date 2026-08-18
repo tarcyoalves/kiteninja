@@ -10,14 +10,22 @@
  * nulo, a previsão de vento continua valendo e os campos de onda/maré vêm
  * zerados: vento ruim cancela a sessão, falta de dado de onda não.
  */
-import type { DayForecast, TideStatus, WindForecastHour } from '@/types';
+import type {
+  DayForecast,
+  TideStatus,
+  WindForecastHour,
+  MultiModelForecast,
+  SailingScore,
+  WindSafety,
+} from '@/types';
+import { calcularConsensoMultimodelo } from './multiModel';
+import { calcularSailingScore } from './sailingScore';
+import { calibrarNivelMareHarmonica, encontrarEstacaoMaregraficaMaisProxima } from './tideHarmonics';
 
 /**
- * Modelo de vento. Escolhido por medição, não por preferência: ver o comentário
- * em forecastQs. Trocar isto muda todos os números do app, então qualquer
- * mudança precisa vir com nova comparação contra uma fonte de referência.
+ * Modelos meteorológicos consultados em paralelo para consenso de alta resolução.
  */
-const WIND_MODEL = 'gfs_seamless';
+const FORECAST_MODELS = 'gfs_seamless,ecmwf_ifs025,icon_seamless';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const MARINE_URL = 'https://marine-api.open-meteo.com/v1/marine';
@@ -35,9 +43,13 @@ interface HourlyBlock {
   surface_pressure: number[];
   weather_code: number[];
   is_day: number[];
-  wind_speed_10m: number[];
-  wind_direction_10m: number[];
-  wind_gusts_10m: number[];
+  wind_speed_10m?: number[];
+  wind_direction_10m?: number[];
+  wind_gusts_10m?: number[];
+  // Campos retornados na consulta multimodelo
+  wind_speed_10m_gfs_seamless?: number[];
+  wind_speed_10m_ecmwf_ifs025?: number[];
+  wind_speed_10m_icon_seamless?: number[];
 }
 
 interface MarineBlock {
@@ -45,6 +57,12 @@ interface MarineBlock {
   wave_height: (number | null)[];
   wave_direction: (number | null)[];
   wave_period: (number | null)[];
+  wind_wave_height?: (number | null)[];
+  wind_wave_direction?: (number | null)[];
+  wind_wave_period?: (number | null)[];
+  swell_wave_height?: (number | null)[];
+  swell_wave_direction?: (number | null)[];
+  swell_wave_period?: (number | null)[];
   sea_level_height_msl: (number | null)[];
 }
 
@@ -55,6 +73,7 @@ export interface SpotWeather {
   gustKnots: number;
   windDirectionDeg: number;
   windDirectionText: string;
+  windSafety?: WindSafety;
   temperature: number;
   weatherDescription: string;
   weatherIcon: IconName;
@@ -64,8 +83,18 @@ export interface SpotWeather {
   nextTideInfo: string;
   nextTideHeightM: number | null;
   nextTideTime: string | null;
+  tideStationName?: string;
   waveHeightM: number | null;
   wavePeriodS: number | null;
+  waveDirDeg?: number | null;
+  swellHeightM?: number | null;
+  swellPeriodS?: number | null;
+  swellDirDeg?: number | null;
+  windWaveHeightM?: number | null;
+  windWavePeriodS?: number | null;
+  windWaveDirDeg?: number | null;
+  multiModel?: MultiModelForecast;
+  sailingScore?: SailingScore;
   lastUpdated: string;
   lastUpdatedFull: string;
   nextUpdate: string;
@@ -383,20 +412,13 @@ export async function getSpotWeather(
     wind_speed_unit: 'kn',
     timezone: TZ,
     forecast_days: String(days),
-    /* GFS explícito, não o `best_match` padrão. Medido contra o Windfinder
-       (Barra de Pernambuquinho, 8 blocos de 3h): GFS erra 1,9 nó no vento e
-       2,1 na rajada; best_match erra 4,1 e 6,4. O best_match escolhe o modelo
-       por região e no litoral do Nordeste cai em malha que suaviza a térmica
-       — justamente o vento que interessa ao velejador. */
-    models: WIND_MODEL,
-    /* Sem cell_selection=sea de propósito: parece certo para spot de praia,
-       mas medido piora o vento (erro 3,6 contra 1,9 nós). A célula de mar
-       aberto perde o efeito de costa que o velejador sente na praia. */
+    models: FORECAST_MODELS,
   });
   const marineQs = new URLSearchParams({
     latitude: String(marineCoords.lat),
     longitude: String(marineCoords.lng),
-    hourly: 'wave_height,wave_direction,wave_period,sea_level_height_msl',
+    hourly:
+      'wave_height,wave_direction,wave_period,wind_wave_height,wind_wave_direction,wind_wave_period,swell_wave_height,swell_wave_direction,swell_wave_period,sea_level_height_msl',
     timezone: TZ,
     forecast_days: String(days),
   });
@@ -411,7 +433,10 @@ export async function getSpotWeather(
   const h = fc.hourly;
   const m = mar?.hourly ?? null;
 
-  const marineLevels = (m?.sea_level_height_msl ?? []).map((lvl) => toChartDatum(lvl, lat, lng));
+  const estacaoMare = encontrarEstacaoMaregraficaMaisProxima(lat, lng);
+  const marineLevels = (m?.sea_level_height_msl ?? []).map(
+    (lvl) => calibrarNivelMareHarmonica(lvl, lat, lng).nivelNauticoM
+  );
   const marineIdx = new Map<string, number>();
   if (m?.time) {
     for (let i = 0; i < m.time.length; i++) marineIdx.set(m.time[i], i);
@@ -423,25 +448,53 @@ export async function getSpotWeather(
   for (let i = 0; i < h.time.length; i++) {
     const iso = h.time[i];
     const mi = marineIdx.get(iso);
-    /* Sem célula marinha para esta hora não há tendência a inferir. Antes isso
-       virava 'up', ou seja a tela afirmava "enchendo" sem nenhum dado por
-       trás — pior que não mostrar nada, porque o velejador decide por isso. */
     const trend = mi === undefined ? null : tideTrendAt(marineLevels, mi);
+
+    // Multimodelo por hora
+    const gfsKts = num(h.wind_speed_10m_gfs_seamless?.[i] ?? h.wind_speed_10m?.[i]);
+    const ecmwfKts = num(h.wind_speed_10m_ecmwf_ifs025?.[i] ?? gfsKts);
+    const iconKts = num(h.wind_speed_10m_icon_seamless?.[i] ?? gfsKts);
+    const mm = calcularConsensoMultimodelo(gfsKts, ecmwfKts, iconKts);
+
+    const dirDeg = Math.round(num(h.wind_direction_10m?.[i]));
+    let safety: WindSafety = 'Side-Onshore';
+    if (dirDeg >= 60 && dirDeg <= 135) safety = 'Side-Onshore';
+    else if (dirDeg > 135 && dirDeg <= 170) safety = 'Side-Shore';
+    else if (dirDeg > 170 && dirDeg <= 230) safety = 'Side-Offshore';
+    else if (dirDeg > 230 && dirDeg <= 310) safety = 'Offshore';
+    else safety = 'Onshore';
+
+    const knotsHour = mm.consensusKnots || Math.round(num(h.wind_speed_10m?.[i]));
+    const gustHour = Math.round(num(h.wind_gusts_10m?.[i]));
+
+    const scoreHour = calcularSailingScore({
+      knots: knotsHour,
+      gustKnots: gustHour,
+      windSafety: safety,
+      waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
+    });
 
     const hour: WindForecastHour = {
       hour: `${iso.slice(11, 13)}h`,
-      knots: Math.round(num(h.wind_speed_10m[i])),
-      gustKnots: Math.round(num(h.wind_gusts_10m[i])),
-      directionDeg: Math.round(num(h.wind_direction_10m[i])),
-      directionText: degToCompass(num(h.wind_direction_10m[i])),
+      knots: knotsHour,
+      gustKnots: gustHour,
+      directionDeg: dirDeg,
+      directionText: degToCompass(dirDeg),
       conditionIcon: weatherIcon(num(h.weather_code[i]), num(h.is_day[i]) === 1),
       temperature: Math.round(num(h.temperature_2m[i])),
       pressureHpa: Math.round(num(h.surface_pressure[i])),
       waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
       wavePeriodS: opt(m?.wave_period?.[mi ?? -1], 1),
       waveDirDeg: opt(m?.wave_direction?.[mi ?? -1], 0),
+      swellHeightM: opt(m?.swell_wave_height?.[mi ?? -1], 1),
+      swellPeriodS: opt(m?.swell_wave_period?.[mi ?? -1], 1),
+      swellDirDeg: opt(m?.swell_wave_direction?.[mi ?? -1], 0),
+      windWaveHeightM: opt(m?.wind_wave_height?.[mi ?? -1], 1),
+      windWavePeriodS: opt(m?.wind_wave_period?.[mi ?? -1], 1),
+      windWaveDirDeg: opt(m?.wind_wave_direction?.[mi ?? -1], 0),
       tideTrend: trend,
       tideHeightM: opt(marineLevels[mi ?? -1], 2),
+      sailingScore: scoreHour,
     };
 
     if (mi !== undefined && (trend === 'peak_high' || trend === 'peak_low')) {
@@ -472,11 +525,32 @@ export async function getSpotWeather(
   const code = num(h.weather_code[now]);
   const nowTrend = marineNow === undefined ? null : tideTrendAt(marineLevels, marineNow);
 
-  const nowWind = Math.round(num(h.wind_speed_10m[now]));
-  const nowGust = Math.round(num(h.wind_gusts_10m[now]));
+  // Consenso multimodelo atual
+  const nowGfs = num(h.wind_speed_10m_gfs_seamless?.[now] ?? h.wind_speed_10m?.[now]);
+  const nowEcmwf = num(h.wind_speed_10m_ecmwf_ifs025?.[now] ?? nowGfs);
+  const nowIcon = num(h.wind_speed_10m_icon_seamless?.[now] ?? nowGfs);
+  const multiModelNow = calcularConsensoMultimodelo(nowGfs, nowEcmwf, nowIcon);
+
+  const nowWind = multiModelNow.consensusKnots || Math.round(num(h.wind_speed_10m?.[now]));
+  const nowGust = Math.round(num(h.wind_gusts_10m?.[now]));
   const currentKnots = nowWind;
   const gustKnots = Math.max(nowGust, currentKnots);
   const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
+
+  const nowDirDeg = Math.round(num(h.wind_direction_10m?.[now]));
+  let currentSafety: WindSafety = 'Side-Onshore';
+  if (nowDirDeg >= 60 && nowDirDeg <= 135) currentSafety = 'Side-Onshore';
+  else if (nowDirDeg > 135 && nowDirDeg <= 170) currentSafety = 'Side-Shore';
+  else if (nowDirDeg > 170 && nowDirDeg <= 230) currentSafety = 'Side-Offshore';
+  else if (nowDirDeg > 230 && nowDirDeg <= 310) currentSafety = 'Offshore';
+  else currentSafety = 'Onshore';
+
+  const currentSailingScore = calcularSailingScore({
+    knots: currentKnots,
+    gustKnots,
+    windSafety: currentSafety,
+    waveHeightM: opt(m?.wave_height?.[marineNow ?? -1], 1),
+  });
 
   const tideDetail =
     marineNow === undefined ? null : nextTideDetails(marineTimes, marineLevels, marineNow);
@@ -495,8 +569,9 @@ export async function getSpotWeather(
     avgKnots,
     maxKnots,
     gustKnots,
-    windDirectionDeg: Math.round(num(h.wind_direction_10m[now])),
-    windDirectionText: degToCompass(num(h.wind_direction_10m[now])),
+    windDirectionDeg: nowDirDeg,
+    windDirectionText: degToCompass(nowDirDeg),
+    windSafety: currentSafety,
     temperature: Math.round(num(h.temperature_2m[now])),
     weatherDescription: describeWeather(code),
     weatherIcon: weatherIcon(code, num(h.is_day[now]) === 1),
@@ -505,8 +580,18 @@ export async function getSpotWeather(
     nextTideInfo: tideDetail?.text ?? 'Sem dado de maré',
     nextTideHeightM: tideDetail?.peakHeightM ?? null,
     nextTideTime: tideDetail?.peakTime ?? null,
+    tideStationName: estacaoMare.nome,
     waveHeightM: opt(m?.wave_height?.[marineNow ?? -1], 1),
     wavePeriodS: opt(m?.wave_period?.[marineNow ?? -1], 1),
+    waveDirDeg: opt(m?.wave_direction?.[marineNow ?? -1], 0),
+    swellHeightM: opt(m?.swell_wave_height?.[marineNow ?? -1], 1),
+    swellPeriodS: opt(m?.swell_wave_period?.[marineNow ?? -1], 1),
+    swellDirDeg: opt(m?.swell_wave_direction?.[marineNow ?? -1], 0),
+    windWaveHeightM: opt(m?.wind_wave_height?.[marineNow ?? -1], 1),
+    windWavePeriodS: opt(m?.wind_wave_period?.[marineNow ?? -1], 1),
+    windWaveDirDeg: opt(m?.wind_wave_direction?.[marineNow ?? -1], 0),
+    multiModel: multiModelNow,
+    sailingScore: currentSailingScore,
     lastUpdated: timeFormatted,
     lastUpdatedFull,
     nextUpdate: new Date(Date.now() + CACHE_TTL_MS).toLocaleTimeString('pt-BR', {

@@ -4,6 +4,32 @@ export type WindSafety = 'Side-Onshore' | 'Side-Shore' | 'Onshore' | 'Side-Offsh
 export type RiderLevel = 'Iniciante' | 'Intermediário' | 'Avançado' | 'Profissional';
 export type Discipline = 'Kitesurf Twintip' | 'Kitesurf Strapless Wave' | 'Hydrofoil' | 'Wingfoil' | 'Big Air';
 
+export interface MultiModelForecast {
+  consensusKnots: number;
+  spreadKnots: number;
+  confidencePercent: number; // 0 a 100%
+  confidenceLevel: 'Alta' | 'Média' | 'Baixa';
+  confidenceText: string;
+  models: {
+    gfsKnots: number;
+    ecmwfKnots: number;
+    iconKnots: number;
+  };
+}
+
+export interface SailingScore {
+  totalScore: number; // 0 a 100
+  classification: 'Épico' | 'Muito Bom' | 'Bom' | 'Regular' | 'Ruim';
+  badgeColor: string;
+  summary: string;
+  breakdown: {
+    windSpeedScore: number; // máx 35
+    gustQualityScore: number; // máx 20
+    directionSafetyScore: number; // máx 25
+    tideWaterScore: number; // máx 20
+  };
+}
+
 export interface WindForecastHour {
   hour: string; // e.g. "00h", "03h", "06h", "09h", "12h", "15h", "18h", "21h"
   knots: number;
@@ -22,11 +48,21 @@ export interface WindForecastHour {
   waveHeightM: number | null;
   wavePeriodS: number | null;
   waveDirDeg: number | null;
+  /** Detalhamento do Swell oceânico de fundo */
+  swellHeightM?: number | null;
+  swellPeriodS?: number | null;
+  swellDirDeg?: number | null;
+  /** Detalhamento de vagas de vento local */
+  windWaveHeightM?: number | null;
+  windWavePeriodS?: number | null;
+  windWaveDirDeg?: number | null;
   /** `null` quando não há série de maré para deduzir a tendência. */
   tideTrend: 'up' | 'down' | 'peak_high' | 'peak_low' | null;
   tideHeightM: number | null;
   tidePeakTime?: string;
   tidePeakHeight?: string;
+  /** Score do velejo para esta hora específica */
+  sailingScore?: SailingScore;
 }
 
 export interface DayForecast {
@@ -69,6 +105,17 @@ export interface Spot {
   nextTideTime?: string | null;
   waveHeightM: number | null;
   wavePeriodS: number | null;
+  /** Detalhamento de ondas e swell */
+  swellHeightM?: number | null;
+  swellPeriodS?: number | null;
+  swellDirDeg?: number | null;
+  windWaveHeightM?: number | null;
+  windWavePeriodS?: number | null;
+  windWaveDirDeg?: number | null;
+  /** Comparativo multimodelo em tempo real */
+  multiModel?: MultiModelForecast;
+  /** Pontuação e diagnóstico náutico da sessão */
+  sailingScore?: SailingScore;
   waterCondition: 'Flat / Lagoa' | 'Chop Médio' | 'Ondas / Swell' | 'Água Rasa';
   bottomType: 'Areia' | 'Coral / Pedras' | 'Misto';
   difficulty: RiderLevel;

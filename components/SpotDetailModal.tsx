@@ -538,26 +538,150 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
               </span>
             </div>
 
-            {/* Waves & Water condition */}
+            {/* Waves & Water condition com Swell vs Vaga */}
             <div className="p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80 flex flex-col justify-between shadow-sm">
               <div className="flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
-                  Ondas / Água
+                  Ondas & Swell
                 </span>
                 <Waves size={14} className="text-cyan-400" />
               </div>
               <div className="flex items-baseline gap-1 my-1">
                 <span className="text-2xl font-black text-cyan-300 leading-none">
-                  {spot.waveHeightM}m
+                  {spot.waveHeightM !== null ? `${spot.waveHeightM}m` : '–'}
                 </span>
                 <span className="text-xs font-bold text-slate-400">
-                  {spot.wavePeriodS}s período
+                  {spot.wavePeriodS ? `${spot.wavePeriodS}s` : ''}
                 </span>
               </div>
-              <span className="text-[11px] text-slate-300 font-medium truncate">
-                {spot.waterCondition}
-              </span>
+              <div className="text-[11px] text-slate-300 font-medium truncate space-y-0.5">
+                {spot.swellHeightM !== null && spot.swellHeightM !== undefined ? (
+                  <span className="text-cyan-300 font-mono text-[10px]">
+                    Swell {spot.swellHeightM}m {spot.swellPeriodS ? `@ ${spot.swellPeriodS}s` : ''}
+                  </span>
+                ) : (
+                  <span>{spot.waterCondition}</span>
+                )}
+              </div>
             </div>
+          </div>
+
+          {/* NOVO: Bloco de Inteligência Náutica (Kite Score 0-100 & Consenso Multimodelo) */}
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
+            {/* Card 1: Kite Score (0 a 100) */}
+            {spot.sailingScore && (
+              <div className="p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-white">Score do Velejo</span>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider text-slate-950 shadow-sm"
+                      style={{ backgroundColor: spot.sailingScore.badgeColor }}
+                    >
+                      {spot.sailingScore.classification}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-0.5">
+                    <span
+                      className="text-xl font-black font-sans leading-none"
+                      style={{ color: spot.sailingScore.badgeColor }}
+                    >
+                      {spot.sailingScore.totalScore}
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-bold">/100</span>
+                  </div>
+                </div>
+
+                {/* Barra de Progresso do Score */}
+                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-300"
+                    style={{
+                      width: `${spot.sailingScore.totalScore}%`,
+                      backgroundColor: spot.sailingScore.badgeColor,
+                    }}
+                  />
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  {spot.sailingScore.summary}
+                </p>
+
+                {/* Mini Breakdown de Pontos */}
+                <div className="grid grid-cols-4 gap-1 text-center pt-1 border-t border-slate-800/80 text-[10px]">
+                  <div className="bg-slate-900/60 p-1 rounded-lg">
+                    <span className="text-slate-400 block text-[9px]">Vento</span>
+                    <span className="font-bold text-white">{spot.sailingScore.breakdown.windSpeedScore}/35</span>
+                  </div>
+                  <div className="bg-slate-900/60 p-1 rounded-lg">
+                    <span className="text-slate-400 block text-[9px]">Rajadas</span>
+                    <span className="font-bold text-white">{spot.sailingScore.breakdown.gustQualityScore}/20</span>
+                  </div>
+                  <div className="bg-slate-900/60 p-1 rounded-lg">
+                    <span className="text-slate-400 block text-[9px]">Direção</span>
+                    <span className="font-bold text-white">{spot.sailingScore.breakdown.directionSafetyScore}/25</span>
+                  </div>
+                  <div className="bg-slate-900/60 p-1 rounded-lg">
+                    <span className="text-slate-400 block text-[9px]">Maré/Mar</span>
+                    <span className="font-bold text-white">{spot.sailingScore.breakdown.tideWaterScore}/20</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Card 2: Consenso Multimodelo (ECMWF + GFS + ICON) */}
+            {spot.multiModel && (
+              <div className="p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-black text-white">Previsão Multimodelo</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                        spot.multiModel.confidenceLevel === 'Alta'
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          : spot.multiModel.confidenceLevel === 'Média'
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                          : 'bg-red-500/20 text-red-300 border border-red-500/30'
+                      }`}
+                    >
+                      {spot.multiModel.confidenceLevel} ({spot.multiModel.confidencePercent}%)
+                    </span>
+                  </div>
+                  <span className="text-xs font-mono font-bold text-cyan-300">
+                    Consenso {spot.multiModel.consensusKnots} kts
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-slate-300 leading-snug">
+                  {spot.multiModel.confidenceText}
+                </p>
+
+                {/* Colunas dos 3 Modelos */}
+                <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-800/80 text-center">
+                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-cyan-500/20">
+                    <span className="text-[10px] font-black text-cyan-300 block">ECMWF</span>
+                    <span className="text-xs font-extrabold text-white">
+                      {spot.multiModel.models.ecmwfKnots} kts
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">Europeu</span>
+                  </div>
+                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-blue-500/20">
+                    <span className="text-[10px] font-black text-blue-300 block">GFS</span>
+                    <span className="text-xs font-extrabold text-white">
+                      {spot.multiModel.models.gfsKnots} kts
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">NOAA / EUA</span>
+                  </div>
+                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-amber-500/20">
+                    <span className="text-[10px] font-black text-amber-300 block">ICON</span>
+                    <span className="text-xs font-extrabold text-white">
+                      {spot.multiModel.models.iconKnots} kts
+                    </span>
+                    <span className="text-[9px] text-slate-400 block">Alemão DWD</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -805,6 +929,26 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
         {/* TAB 2: TÁBUA DE MARÉS */}
         {activeSubTab === 'mares' && (
           <div className="p-4 space-y-4">
+            {/* Tag da Estação Maregráfica Oficial do CHM */}
+            <div className="p-3.5 bg-[#1E293B] rounded-2xl border border-cyan-500/30 flex items-center justify-between shadow-md">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+                  <Compass size={18} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-black text-white">Tábua Harmônica Oficial</p>
+                    <span className="px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300 font-mono text-[9px] font-bold">
+                      Zero Hidrográfico / DHN
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Estação de Referência: <strong className="text-slate-200">{spot.stationName || spot.location || 'Termisa / Areia Branca (Porto-Ilha)'}</strong>
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-[#1E293B] p-4 rounded-2xl border border-slate-700/80 shadow-xl">
               <h3 className="font-extrabold text-base mb-1 flex items-center gap-2 text-white">
                 <Waves className="text-cyan-400" size={20} />
