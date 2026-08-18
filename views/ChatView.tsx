@@ -120,11 +120,19 @@ export const ChatView: React.FC = () => {
 
   const nowTick = useNowTick();
 
-  const scrollToEnd = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior, block: 'end' });
+  const scrollToEnd = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = scrollRef.current;
+    if (el) {
+      if (behavior === 'smooth') {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
       atBottomRef.current = true;
       setUnread(0);
+    }
+    if (endRef.current) {
+      endRef.current.scrollIntoView({ behavior, block: 'end' });
     }
   }, []);
 
@@ -232,9 +240,24 @@ export const ChatView: React.FC = () => {
   // Troca de sala
   useEffect(() => {
     loadRoom(room).then(() => {
-      requestAnimationFrame(() => scrollToEnd('auto'));
+      scrollToEnd('auto');
     });
   }, [room, loadRoom, scrollToEnd]);
+
+  // Garante que SEMPRE abra nas últimas mensagens (rolagem para o final)
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      scrollToEnd('auto');
+      const t1 = setTimeout(() => scrollToEnd('auto'), 40);
+      const t2 = setTimeout(() => scrollToEnd('auto'), 150);
+      const t3 = setTimeout(() => scrollToEnd('auto'), 350);
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
+    }
+  }, [loading, room, messages.length, scrollToEnd]);
 
   // Polling e heartbeat sincronizados com a visibilidade da tela
   useEffect(() => {
