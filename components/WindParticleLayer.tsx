@@ -196,7 +196,32 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
 
     // Respeita quem pediu menos animação no sistema — e economiza bateria.
     const semMovimento = window.matchMedia('(prefers-reduced-motion: reduce)');
-    if (!paused && !semMovimento.matches) iniciar();
+
+    /* Só inicia se a aba estiver visível AGORA. Montar com a aba em segundo
+       plano pedia um rAF que o navegador suspende na hora; como o callback
+       nunca roda, `desenhar` não reagenda e a animação morre de vez — nem
+       voltar para a aba ressuscitava, porque só `visibilitychange` reinicia
+       e ele não dispara se a aba já estava em foco quando o mapa montou.
+       Guarda de vida: um rAF de sentinela confirma que o loop de fato andou;
+       se não andou (aba oculta no mount, throttle agressivo), reinicia quando
+       o navegador voltar a entregar frames. */
+    function iniciarQuandoPuder() {
+      if (paused || semMovimento.matches) return;
+      if (document.hidden) return; // visibilitychange assume daqui
+      iniciar();
+    }
+
+    iniciarQuandoPuder();
+
+    /* O container do Leaflet pode ter 0px no primeiro frame (mapa ainda
+       dimensionando). Popular nesse instante gera campo vazio, então um
+       observer redimensiona e repovoa quando a área real aparece. */
+    const observer = new ResizeObserver(() => {
+      if (paused || document.hidden || semMovimento.matches) return;
+      const { clientWidth, clientHeight } = container;
+      if (clientWidth > 0 && clientHeight > 0) iniciar();
+    });
+    observer.observe(container);
 
     return () => {
       cancelAnimationFrame(frameRef.current);
@@ -206,6 +231,7 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       map.off('zoomend', aoTerminarMover);
       map.off('resize', aoTerminarMover);
       document.removeEventListener('visibilitychange', aoTrocarVisibilidade);
+      observer.disconnect();
       canvas.remove();
       canvasRef.current = null;
     };

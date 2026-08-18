@@ -315,7 +315,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
           barras, com o acento ciano marcando a aba ativa.
         */}
         <div
-          className={`shrink-0 flex items-center justify-between px-3 py-3 shadow-lg border-b ${
+          className={`shrink-0 overlay-safe-top flex items-center justify-between px-3 py-3 shadow-lg border-b ${
             beachMode
               ? 'bg-[#020617] border-slate-800'
               : 'bg-[#0F172A] border-slate-800/90'

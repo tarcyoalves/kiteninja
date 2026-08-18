@@ -117,7 +117,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
         onClick={(e) => e.stopPropagation()}
         className="relative max-w-4xl w-full max-h-[92vh] flex flex-col rounded-3xl bg-[#0F172A] border border-slate-800 shadow-2xl overflow-hidden"
       >
-        <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0 z-20 text-white">
+        <div className="flex items-center justify-between px-5 py-3.5 overlay-safe-top bg-gradient-to-b from-black/80 to-transparent absolute top-0 left-0 right-0 z-20 text-white">
           <div className="flex items-center gap-2 min-w-0">
             {spotName && (
               <span className="flex items-center gap-1 text-xs font-black text-cyan-300 bg-cyan-500/20 px-3 py-1 rounded-full border border-cyan-500/30 backdrop-blur-md">

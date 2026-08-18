@@ -1,11 +1,34 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Star, MapPin, Bell, MoreHorizontal, Compass, Flame, BookOpen } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 
 export const BottomNav: React.FC = () => {
   const { activeTab, setActiveTab, beachMode, safetyAlerts } = useKiteData();
+  const navRef = useRef<HTMLElement | null>(null);
+
+  /* Publica a altura real em --nav-h para os modais em tela cheia pararem
+     exatamente no topo do menu. Antes o CSS chumbava 4rem, mas o menu mede
+     65px (h-16 + borda + safe area), e o 1px de diferença bastava para o
+     overlay cobrir a primeira aba e engolir o toque. Medido > adivinhado:
+     acompanha fonte grande do sistema e a barra de gestos do iPhone. */
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+
+    const publicar = () => {
+      document.documentElement.style.setProperty(
+        '--nav-h',
+        `${Math.round(el.getBoundingClientRect().height)}px`
+      );
+    };
+
+    publicar();
+    const observer = new ResizeObserver(publicar);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const activeAlertsCount = safetyAlerts.filter(a => a.status === 'Ativo').length;
 
@@ -18,6 +41,7 @@ export const BottomNav: React.FC = () => {
      * Sendo parte do fluxo, o menu reserva o próprio espaço sozinho.
      */
     <nav
+      ref={navRef}
       className={`shrink-0 z-chrome transition-colors border-t safe-area-pb ${
         beachMode
           ? 'bg-[#020617]/95 border-slate-800 backdrop-blur text-slate-400'

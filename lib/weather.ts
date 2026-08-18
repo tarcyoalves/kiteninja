@@ -12,6 +12,13 @@
  */
 import type { DayForecast, TideStatus, WindForecastHour } from '@/types';
 
+/**
+ * Modelo de vento. Escolhido por medição, não por preferência: ver o comentário
+ * em forecastQs. Trocar isto muda todos os números do app, então qualquer
+ * mudança precisa vir com nova comparação contra uma fonte de referência.
+ */
+const WIND_MODEL = 'gfs_seamless';
+
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const MARINE_URL = 'https://marine-api.open-meteo.com/v1/marine';
 const TZ = 'America/Fortaleza';
@@ -222,6 +229,15 @@ export async function getSpotWeather(
     wind_speed_unit: 'kn',
     timezone: TZ,
     forecast_days: String(days),
+    /* GFS explícito, não o `best_match` padrão. Medido contra o Windfinder
+       (Barra de Pernambuquinho, 8 blocos de 3h): GFS erra 1,9 nó no vento e
+       2,1 na rajada; best_match erra 4,1 e 6,4. O best_match escolhe o modelo
+       por região e no litoral do Nordeste cai em malha que suaviza a térmica
+       — justamente o vento que interessa ao velejador. */
+    models: WIND_MODEL,
+    /* Sem cell_selection=sea de propósito: parece certo para spot de praia,
+       mas medido piora o vento (erro 3,6 contra 1,9 nós). A célula de mar
+       aberto perde o efeito de costa que o velejador sente na praia. */
   });
   const marineQs = new URLSearchParams({
     latitude: String(lat),

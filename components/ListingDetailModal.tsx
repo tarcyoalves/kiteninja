@@ -182,7 +182,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           aria-label={listing ? listing.title : 'Detalhe do anúncio'}
           className="bg-[#0F172A] text-slate-100 w-full max-w-md sm:rounded-3xl border-slate-800 sm:border shadow-2xl min-h-full sm:min-h-0 sm:my-6 overflow-hidden"
         >
-          <div className="sticky top-0 bg-[#0F172A]/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-2">
+          <div className="sticky top-0 overlay-safe-top bg-[#0F172A]/95 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between gap-2">
             <h2 className="font-black text-sm text-white truncate">
               {listing ? listing.title : 'Anúncio'}
             </h2>

@@ -128,7 +128,7 @@ export const SidebarDrawer: React.FC = () => {
 
       {/* Drawer Body (Left aligned matching screenshot 4) */}
       <div
-        className={`relative z-10 w-[85%] max-w-[320px] h-full flex flex-col overflow-y-auto transition-transform shadow-2xl ${
+        className={`relative z-10 w-[85%] max-w-[320px] h-full flex flex-col overflow-y-auto overlay-safe-top overlay-safe-bottom transition-transform shadow-2xl ${
           beachMode ? 'bg-[#020617] text-white' : 'bg-[#0F172A] text-slate-100 border-r border-slate-800'
         }`}
       >
