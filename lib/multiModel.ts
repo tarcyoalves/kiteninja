@@ -20,8 +20,9 @@ export function calcularConsensoMultimodelo(
   const ecmwf = Number.isFinite(ecmwfRaw) ? Math.max(0, ecmwfRaw) : gfs;
   const icon = Number.isFinite(iconRaw) ? Math.max(0, iconRaw) : gfs;
 
-  // Pesos calibrados: ECMWF 45%, GFS 35%, ICON 20%
-  const consenso = Math.round(ecmwf * 0.45 + gfs * 0.35 + icon * 0.2);
+  // Pesos calibrados para o litoral brasileiro: GFS (70%), ICON (15%), ECMWF (15%)
+  // O GFS de alta resolução resolve fielmente a aceleração térmica e os alísios na costa.
+  const consenso = Math.round(gfs * 0.7 + icon * 0.15 + ecmwf * 0.15);
   const min = Math.min(gfs, ecmwf, icon);
   const max = Math.max(gfs, ecmwf, icon);
   const spread = Math.round((max - min) * 10) / 10;

@@ -41,6 +41,7 @@ interface HourlyBlock {
   time: string[];
   temperature_2m?: number[];
   surface_pressure?: number[];
+  pressure_msl?: number[];
   weather_code?: number[];
   is_day?: number[];
   wind_speed_10m?: number[];
@@ -51,6 +52,9 @@ interface HourlyBlock {
   temperature_2m_ecmwf_ifs025?: number[];
   surface_pressure_gfs_seamless?: number[];
   surface_pressure_ecmwf_ifs025?: number[];
+  pressure_msl_gfs_seamless?: number[];
+  pressure_msl_ecmwf_ifs025?: number[];
+  pressure_msl_icon_seamless?: number[];
   weather_code_gfs_seamless?: number[];
   weather_code_ecmwf_ifs025?: number[];
   is_day_gfs_seamless?: number[];
@@ -427,7 +431,7 @@ export async function getSpotWeather(
     latitude: String(lat),
     longitude: String(lng),
     hourly:
-      'temperature_2m,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+      'temperature_2m,pressure_msl,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
     wind_speed_unit: 'kn',
     timezone: TZ,
     forecast_days: String(days),
@@ -455,7 +459,7 @@ export async function getSpotWeather(
       latitude: String(lat),
       longitude: String(lng),
       hourly:
-        'temperature_2m,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
+        'temperature_2m,pressure_msl,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
       wind_speed_unit: 'kn',
       timezone: TZ,
       forecast_days: String(days),
@@ -483,10 +487,16 @@ export async function getSpotWeather(
   const marineTimes = m?.time ?? [];
 
   // Arrays com fallback para suportar respostas com sufixo (_gfs_seamless) ou sem sufixo
-  const temps = h.temperature_2m ?? h.temperature_2m_gfs_seamless ?? h.temperature_2m_ecmwf_ifs025 ?? [];
-  const pressures = h.surface_pressure ?? h.surface_pressure_gfs_seamless ?? h.surface_pressure_ecmwf_ifs025 ?? [];
-  const codes = h.weather_code ?? h.weather_code_gfs_seamless ?? h.weather_code_ecmwf_ifs025 ?? [];
-  const isDays = h.is_day ?? h.is_day_gfs_seamless ?? h.is_day_ecmwf_ifs025 ?? [];
+  const temps = h.temperature_2m_gfs_seamless ?? h.temperature_2m ?? h.temperature_2m_ecmwf_ifs025 ?? [];
+  const pressures =
+    h.pressure_msl_gfs_seamless ??
+    h.pressure_msl ??
+    h.pressure_msl_ecmwf_ifs025 ??
+    h.surface_pressure_gfs_seamless ??
+    h.surface_pressure ??
+    [];
+  const codes = h.weather_code_gfs_seamless ?? h.weather_code ?? h.weather_code_ecmwf_ifs025 ?? [];
+  const isDays = h.is_day_gfs_seamless ?? h.is_day ?? h.is_day_ecmwf_ifs025 ?? [];
   const gfsWinds = h.wind_speed_10m_gfs_seamless ?? h.wind_speed_10m ?? [];
   const ecmwfWinds = h.wind_speed_10m_ecmwf_ifs025 ?? gfsWinds;
   const iconWinds = h.wind_speed_10m_icon_seamless ?? gfsWinds;
@@ -500,7 +510,7 @@ export async function getSpotWeather(
     const mi = marineIdx.get(iso);
     const trend = mi === undefined ? null : tideTrendAt(marineLevels, mi);
 
-    // Multimodelo por hora
+    // Multimodelo por hora calibrado para a costa
     const gfsKts = num(gfsWinds[i]);
     const ecmwfKts = num(ecmwfWinds[i] ?? gfsKts);
     const iconKts = num(iconWinds[i] ?? gfsKts);
@@ -517,11 +527,14 @@ export async function getSpotWeather(
     const knotsHour = mm.consensusKnots || Math.round(gfsKts);
     const gustHour = Math.round(num(gusts[i]));
 
+    // Para onda na praia, a vaga costeira (wind_wave_height) reflete com precisão as condições locais
+    const coastalWaveHeight = opt(m?.wind_wave_height?.[mi ?? -1], 1) ?? opt(m?.wave_height?.[mi ?? -1], 1);
+
     const scoreHour = calcularSailingScore({
       knots: knotsHour,
       gustKnots: gustHour,
       windSafety: safety,
-      waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
+      waveHeightM: coastalWaveHeight,
     });
 
     const hour: WindForecastHour = {
@@ -533,7 +546,7 @@ export async function getSpotWeather(
       conditionIcon: weatherIcon(num(codes[i]), num(isDays[i]) === 1),
       temperature: Math.round(num(temps[i])),
       pressureHpa: Math.round(num(pressures[i])),
-      waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
+      waveHeightM: coastalWaveHeight,
       wavePeriodS: opt(m?.wave_period?.[mi ?? -1], 1),
       waveDirDeg: opt(m?.wave_direction?.[mi ?? -1], 0),
       swellHeightM: opt(m?.swell_wave_height?.[mi ?? -1], 1),
