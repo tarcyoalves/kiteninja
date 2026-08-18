@@ -29,6 +29,13 @@ export async function touchPresence(
           room         = ${room},
           at_spot_id   = ${atSpotId}
   `;
+
+  // Sincroniza last_seen_at na tabela principal de velejadores para o painel de monitoramento
+  try {
+    await sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
+  } catch {
+    // Ignora erro
+  }
 }
 
 /**
@@ -49,4 +56,10 @@ export async function touchPresenceKeepingSpot(
       SET last_seen_at = NOW(),
           room         = ${room}
   `;
+
+  try {
+    await sql`UPDATE users SET last_seen_at = NOW() WHERE id = ${userId}`;
+  } catch {
+    // Ignora erro
+  }
 }

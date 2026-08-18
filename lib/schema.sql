@@ -36,10 +36,17 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS deactivated_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS quiver_kites NUMERIC(3,1)[] NOT NULL DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS quiver_boards TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_wind_unit TEXT NOT NULL DEFAULT 'knots';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INT NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_user_agent TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active);
+CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users (last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_last_login ON users (last_login_at DESC);
 
 -- ------------------------------------------------------- convites (1 uso só)
 -- O admin gera um link único. `token_hash` guarda SHA-256 do token: se o banco

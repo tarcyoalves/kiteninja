@@ -74,6 +74,20 @@ export async function createSession(userId: string, userAgent?: string): Promise
     VALUES (${userId}, ${hashToken(token)}, ${userAgent ?? null}, ${expiresAt.toISOString()})
   `;
 
+  // Atualiza métricas de monitoramento de acesso do velejador
+  try {
+    await sql`
+      UPDATE users
+      SET last_login_at = NOW(),
+          last_seen_at  = NOW(),
+          login_count   = COALESCE(login_count, 0) + 1,
+          last_user_agent = ${userAgent ?? null}
+      WHERE id = ${userId}
+    `;
+  } catch {
+    // Tolerante a oscilações
+  }
+
   const jar = await cookies();
   jar.set(SESSION_COOKIE, token, {
     httpOnly: true,

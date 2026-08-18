@@ -703,8 +703,8 @@ export const ChatView: React.FC = () => {
             ))}
           </div>
 
-          {/* 4. Campo de Digitação Fixo e Estável */}
-          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2 pb-3 safe-area-pb">
+          {/* 4. Campo de Digitação Fixo e Elevado acima do Menu Flutuante */}
+          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2 pb-20 safe-area-pb">
             {sendError && (
               <p
                 role="alert"
@@ -835,7 +835,7 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
   const ativos = online.filter((o) => isPresenceOnline(o.lastSeenAt, now));
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-3">
+    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 pb-24 space-y-3">
       {/* Card: Marcar meu spot atual */}
       <div className={`p-4 rounded-2xl border ${cardBg} shadow-sm`}>
         <div className="flex items-center gap-2 mb-1.5">

@@ -18,7 +18,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
       }}
       className="min-h-screen bg-[#0F172A] text-slate-100 px-4 sm:px-6 flex flex-col items-center"
     >
-      <div className="w-full max-w-3xl space-y-6">
+      <div className="w-full max-w-4xl space-y-6">
         {/* Header */}
         <header className="flex items-center justify-between pb-2 border-b border-slate-800/80">
           <Link
@@ -43,7 +43,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                 <span>Painel de Controle</span>
               </h1>
               <p className="text-xs text-slate-400 mt-1">
-                Gestão de acesso exclusivo por convites e controle de velejadores da comunidade.
+                Monitoramento de acessos em tempo real, convites exclusivos e gestão de velejadores.
               </p>
             </div>
 
@@ -51,7 +51,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
             <div className="flex items-center bg-[#1E293B] p-1 rounded-2xl border border-slate-700/80 shadow-md">
               <button
                 onClick={() => setTab('convites')}
-                className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
                   tab === 'convites'
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
                     : 'text-slate-400 hover:text-white'
@@ -63,19 +63,19 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
 
               <button
                 onClick={() => setTab('usuarios')}
-                className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
                   tab === 'usuarios'
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <Users size={14} />
-                <span>Velejadores</span>
+                <span>Monitoramento</span>
               </button>
 
               <button
                 onClick={() => setTab('abertura')}
-                className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
                   tab === 'abertura'
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
                     : 'text-slate-400 hover:text-white'
