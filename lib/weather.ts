@@ -579,6 +579,7 @@ export async function getSpotWeather(
   }));
 
   const now = currentIndex(h.time);
+  const nowNext = Math.min(h.time.length - 1, now + 1);
   const marineNow = marineIdx.get(h.time[now]);
 
   // Rajada máxima do dia de hoje: é isso que dita a escolha da kite.
@@ -588,15 +589,17 @@ export async function getSpotWeather(
   const code = num(codes[now]);
   const nowTrend = marineNow === undefined ? null : tideTrendAt(marineLevels, marineNow);
 
-  // Consenso multimodelo atual
-  const nowGfs = num(gfsWinds[now]);
-  const nowEcmwf = num(ecmwfWinds[now] ?? nowGfs);
-  const nowIcon = num(iconWinds[now] ?? nowGfs);
-  const multiModelNow = calcularConsensoMultimodelo(nowGfs, nowEcmwf, nowIcon);
+  // Interpolação minuto a minuto em tempo real entre a hora atual e a próxima
+  const nowDt = new Date();
+  const minuteFraction = nowDt.getMinutes() / 60;
 
-  const nowWind = multiModelNow.consensusKnots || Math.round(nowGfs);
-  const nowGust = Math.round(num(gusts[now]));
-  const currentKnots = nowWind;
+  const nowGfs = num(gfsWinds[now]) * (1 - minuteFraction) + num(gfsWinds[nowNext]) * minuteFraction;
+  const nowEcmwf = (num(ecmwfWinds[now]) || nowGfs) * (1 - minuteFraction) + (num(ecmwfWinds[nowNext]) || nowGfs) * minuteFraction;
+  const nowIcon = (num(iconWinds[now]) || nowGfs) * (1 - minuteFraction) + (num(iconWinds[nowNext]) || nowGfs) * minuteFraction;
+
+  const multiModelNow = calcularConsensoMultimodelo(nowGfs, nowEcmwf, nowIcon);
+  const currentKnots = multiModelNow.consensusKnots || Math.round(nowGfs);
+  const nowGust = Math.round(num(gusts[now]) * (1 - minuteFraction) + num(gusts[nowNext]) * minuteFraction);
   const gustKnots = Math.max(nowGust, currentKnots);
   const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
 
@@ -618,7 +621,6 @@ export async function getSpotWeather(
   const tideDetail =
     marineNow === undefined ? null : nextTideDetails(marineTimes, marineLevels, marineNow);
 
-  const nowDt = new Date();
   const dateFormatted = nowDt.toLocaleDateString('pt-BR', { timeZone: TZ });
   const timeFormatted = nowDt.toLocaleTimeString('pt-BR', {
     timeZone: TZ,
@@ -669,46 +671,27 @@ export async function getSpotWeather(
   return data;
 }
 
-/** Busca vários pontos com agrupamento em células de grade e controle de concorrência. */
+/** Busca vários pontos com coordenadas exatas e controle de concorrência. */
 export async function getManySpotsWeather(
   spots: { id: string; lat: number; lng: number }[],
   days = 7,
   forceRefresh = false
 ): Promise<Map<string, SpotWeather | null>> {
-  // Deduplica por célula de grade (~0.05 graus = ~5.5km)
-  const gridMap = new Map<string, { lat: number; lng: number }>();
-  const spotToGrid = new Map<string, string>();
+  const BATCH_SIZE = 4;
+  const out = new Map<string, SpotWeather | null>();
 
-  for (const s of spots) {
-    const gridKey = `${s.lat.toFixed(2)},${s.lng.toFixed(2)}`;
-    spotToGrid.set(s.id, gridKey);
-    if (!gridMap.has(gridKey)) {
-      gridMap.set(gridKey, { lat: s.lat, lng: s.lng });
-    }
-  }
-
-  const uniqueGrids = Array.from(gridMap.entries());
-  const gridResults = new Map<string, SpotWeather | null>();
-
-  // Processa em lotes de 3 em paralelo para não estourar rate limit da Open-Meteo
-  const BATCH_SIZE = 3;
-  for (let i = 0; i < uniqueGrids.length; i += BATCH_SIZE) {
-    const batch = uniqueGrids.slice(i, i + BATCH_SIZE);
+  for (let i = 0; i < spots.length; i += BATCH_SIZE) {
+    const batch = spots.slice(i, i + BATCH_SIZE);
     const batchResults = await Promise.all(
-      batch.map(async ([key, coord]) => {
-        const weather = await getSpotWeather(coord.lat, coord.lng, days, forceRefresh);
-        return [key, weather] as const;
+      batch.map(async (s) => {
+        const weather = await getSpotWeather(s.lat, s.lng, days, forceRefresh);
+        return [s.id, weather] as const;
       })
     );
-    for (const [key, weather] of batchResults) {
-      gridResults.set(key, weather);
+    for (const [id, weather] of batchResults) {
+      out.set(id, weather);
     }
   }
 
-  const out = new Map<string, SpotWeather | null>();
-  for (const s of spots) {
-    const gridKey = spotToGrid.get(s.id)!;
-    out.set(s.id, gridResults.get(gridKey) ?? null);
-  }
   return out;
 }
