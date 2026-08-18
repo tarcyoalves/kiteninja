@@ -132,14 +132,14 @@ select {
   overflow: hidden;
 }
 
-/* Área central rolável, entre header e menu. `min-height: 0` é obrigatório:
-   sem isso um filho flex se recusa a encolher e estoura o shell. */
+/* Área central rolável, entre header e menu flutuante. */
 .app-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* Telas que ocupam a área central sem rolagem própria (o mapa). */
@@ -148,25 +148,14 @@ select {
   min-height: 0;
 }
 
-/* O menu já não é sobreposto, então o card do mapa só precisa de uma folga. */
+/* Folga para o card de spot no mapa ficar acima da barra flutuante. */
 .map-card-bottom {
-  bottom: 0.5rem;
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
 }
 
-/* Modais em tela cheia param no topo do menu inferior, para o menu continuar
-   acessível em todo o app.
-
-   A altura vem de --nav-h, medida pelo próprio menu no layout, e não de um
-   4rem chumbado: o menu virou `static` dentro do shell flex e mede 65px reais
-   (h-16 + borda), então o valor fixo deixava 1px de sobreposição e o item mais
-   à esquerda perdia o toque. Medir em vez de adivinhar também sobrevive a
-   mudança de fonte e à barra de gestos do iPhone.
-
-   Sem somar safe-area-inset-bottom aqui: o menu já é o último elemento do
-   shell e aplica o próprio .safe-area-pb, então somar de novo empurrava o
-   modal para cima e abria uma faixa morta acima do menu. */
+/* Modais em tela cheia param no topo da barra flutuante. */
 .bottom-nav-gap {
-  bottom: var(--nav-h, 4rem);
+  bottom: var(--nav-h, 4.75rem);
 }
 
 /* O Leaflet injeta o container de atribuição no DOM mesmo com attribution="",
