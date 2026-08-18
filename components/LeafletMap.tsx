@@ -302,6 +302,10 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
         <MapContainer
           center={[DEFAULT_CENTER.lat, DEFAULT_CENTER.lng]}
           zoom={DEFAULT_ZOOM}
+          minZoom={4}
+          maxZoom={18}
+          maxBounds={[[-35, -80], [10, -25]]}
+          maxBoundsViscosity={0.6}
           className="w-full h-full"
           ref={mapRef}
           zoomControl={false}
@@ -320,6 +324,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
                 ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
                 : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
             }
+            noWrap={false}
           />
 
           <MapController center={mapCenter} zoom={mapZoom} />
@@ -373,11 +378,11 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
         {/* Locate Status Message */}
         {locateStatus !== 'idle' && (
-          <div className="absolute top-20 left-3 right-3 z-map-ui">
+          <div className="absolute top-20 left-3 right-3 z-map-ui animate-in fade-in duration-200">
             <div
               role="status"
               aria-live="polite"
-              className={`px-3 py-2 rounded-xl text-xs font-bold text-center shadow-lg ${
+              className={`px-3 py-2 rounded-xl text-xs font-bold text-center shadow-lg relative ${
                 locateStatus === 'loading'
                   ? 'bg-slate-800 text-cyan-400'
                   : locateStatus === 'success'

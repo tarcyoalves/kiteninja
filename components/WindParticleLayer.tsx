@@ -98,6 +98,9 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
 
     /** Campo de vento num ponto: delega ao módulo testado em lib/windVector. */
     function campo(x: number, y: number) {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { vx: -0.9, vy: 0.3, forca: 15 };
+      }
       return campoDeVento(x, y, projetados);
     }
 
@@ -106,14 +109,14 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       p.y = Math.random() * (altura || 1);
       p.idade = 0;
       // Vidas diferentes evitam que todas as partículas pisquem em sincronia.
-      p.vida = 60 + Math.random() * 90;
+      p.vida = 50 + Math.random() * 80;
     }
 
     function popular() {
       if (largura <= 0 || altura <= 0) return;
       // Densidade proporcional à área, com teto: numa tela grande não vale
       // gastar mais partículas do que o olho distingue.
-      const alvo = Math.min(Math.round((largura * altura) / 5200), 320);
+      const alvo = Math.min(Math.round((largura * altura) / 5000), 320);
       const atual = particulasRef.current;
       atual.length = 0;
       for (let i = 0; i < alvo; i++) {
@@ -131,7 +134,7 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       // Em vez de limpar, pinta um véu translúcido: o resto do frame anterior
       // vira o rastro da partícula, sem precisar guardar histórico de posições.
       ctx!.globalCompositeOperation = 'destination-out';
-      ctx!.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx!.fillStyle = 'rgba(0,0,0,0.14)';
       ctx!.fillRect(0, 0, largura, altura);
       ctx!.globalCompositeOperation = 'source-over';
 
@@ -139,18 +142,28 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       ctx!.lineCap = 'round';
 
       for (const p of particulasRef.current) {
+        if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) {
+          nascer(p);
+          continue;
+        }
+
         const { vx, vy, forca } = campo(p.x, p.y);
 
         // Garante velocidade visível mesmo com vento leve
         const forcaEfetiva = Math.max(forca, 10);
-        const vxEfetivo = vx === 0 && vy === 0 ? -0.9 : vx; // fallback direção ESE/E
-        const vyEfetivo = vx === 0 && vy === 0 ? 0.3 : vy;
+        const vxEfetivo = !Number.isFinite(vx) || (vx === 0 && vy === 0) ? -0.9 : vx; // fallback direção ESE/E
+        const vyEfetivo = !Number.isFinite(vy) || (vx === 0 && vy === 0) ? 0.3 : vy;
 
         // Escala: 25 nós ≈ 2.6 px/frame. Rápido o bastante para ler a direção,
         // lento o bastante para não virar chuvisco.
         const vel = 0.6 + (forcaEfetiva / 25) * 2.0;
         const nx = p.x + vxEfetivo * vel;
         const ny = p.y + vyEfetivo * vel;
+
+        if (!Number.isFinite(nx) || !Number.isFinite(ny)) {
+          nascer(p);
+          continue;
+        }
 
         // Escala de cor idêntica ao resto do app (lib/windVector).
         const cor = corPorForca(forca || 15);
@@ -165,8 +178,7 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
         p.y = ny;
         p.idade++;
 
-        // Renasce ao morrer ou ao sair da tela; sem isso as partículas se
-        // acumulam na borda a favor do vento e o meio do mapa esvazia.
+        // Renasce ao morrer ou ao sair da tela
         if (p.idade > p.vida || nx < -10 || nx > largura + 10 || ny < -10 || ny > altura + 10) {
           nascer(p);
         }
@@ -199,6 +211,7 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     }
 
     function reprojetar() {
+      dimensionar();
       projetarSpots();
       if (!isRodando && !paused && !document.hidden && !semMovimento.matches) {
         const { clientWidth, clientHeight } = container;
@@ -210,13 +223,14 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     reprojetarRef.current = reprojetar;
 
     function aoMover() {
-      // Durante o movimento do mapa, apenas atualiza as projeções dos spots em pixels
-      // sem interromper a animação nem zerar o canvas.
+      dimensionar();
       projetarSpots();
     }
 
     function aoTerminarMover() {
+      dimensionar();
       projetarSpots();
+      popular();
       if (!isRodando && !paused && !document.hidden && !semMovimento.matches) {
         iniciar();
       }
