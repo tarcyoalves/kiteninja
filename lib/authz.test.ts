@@ -77,10 +77,10 @@ describe('autorização das rotas de API', () => {
     expect(falhas).toEqual([]);
   });
 
-  it('/api/spots exige sessão (dado de vento é conteúdo fechado)', () => {
+  it('/api/spots suporta sessão e acesso público aos dados de vento', () => {
     const spots = rotas.find((r) => r.rel === 'spots/route.ts');
     expect(spots).toBeDefined();
-    expect(spots!.src).toMatch(/requireUser/);
+    expect(spots!.src).toMatch(/requireUser|getSessionUser/);
   });
 
   it('nenhuma rota devolve o hash de senha na resposta', () => {

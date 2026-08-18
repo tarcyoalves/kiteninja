@@ -39,17 +39,30 @@ type IconName = 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' | 'rain';
 
 interface HourlyBlock {
   time: string[];
-  temperature_2m: number[];
-  surface_pressure: number[];
-  weather_code: number[];
-  is_day: number[];
+  temperature_2m?: number[];
+  surface_pressure?: number[];
+  weather_code?: number[];
+  is_day?: number[];
   wind_speed_10m?: number[];
   wind_direction_10m?: number[];
   wind_gusts_10m?: number[];
-  // Campos retornados na consulta multimodelo
+  // Campos retornados na consulta multimodelo com sufixo
+  temperature_2m_gfs_seamless?: number[];
+  temperature_2m_ecmwf_ifs025?: number[];
+  surface_pressure_gfs_seamless?: number[];
+  surface_pressure_ecmwf_ifs025?: number[];
+  weather_code_gfs_seamless?: number[];
+  weather_code_ecmwf_ifs025?: number[];
+  is_day_gfs_seamless?: number[];
+  is_day_ecmwf_ifs025?: number[];
   wind_speed_10m_gfs_seamless?: number[];
   wind_speed_10m_ecmwf_ifs025?: number[];
   wind_speed_10m_icon_seamless?: number[];
+  wind_direction_10m_gfs_seamless?: number[];
+  wind_direction_10m_ecmwf_ifs025?: number[];
+  wind_gusts_10m_gfs_seamless?: number[];
+  wind_gusts_10m_ecmwf_ifs025?: number[];
+  [key: string]: unknown;
 }
 
 interface MarineBlock {
@@ -443,6 +456,17 @@ export async function getSpotWeather(
   }
   const marineTimes = m?.time ?? [];
 
+  // Arrays com fallback para suportar respostas com sufixo (_gfs_seamless) ou sem sufixo
+  const temps = h.temperature_2m ?? h.temperature_2m_gfs_seamless ?? h.temperature_2m_ecmwf_ifs025 ?? [];
+  const pressures = h.surface_pressure ?? h.surface_pressure_gfs_seamless ?? h.surface_pressure_ecmwf_ifs025 ?? [];
+  const codes = h.weather_code ?? h.weather_code_gfs_seamless ?? h.weather_code_ecmwf_ifs025 ?? [];
+  const isDays = h.is_day ?? h.is_day_gfs_seamless ?? h.is_day_ecmwf_ifs025 ?? [];
+  const gfsWinds = h.wind_speed_10m_gfs_seamless ?? h.wind_speed_10m ?? [];
+  const ecmwfWinds = h.wind_speed_10m_ecmwf_ifs025 ?? gfsWinds;
+  const iconWinds = h.wind_speed_10m_icon_seamless ?? gfsWinds;
+  const dirs = h.wind_direction_10m_gfs_seamless ?? h.wind_direction_10m ?? h.wind_direction_10m_ecmwf_ifs025 ?? [];
+  const gusts = h.wind_gusts_10m_gfs_seamless ?? h.wind_gusts_10m ?? h.wind_gusts_10m_ecmwf_ifs025 ?? [];
+
   const byDay = new Map<string, WindForecastHour[]>();
 
   for (let i = 0; i < h.time.length; i++) {
@@ -451,12 +475,12 @@ export async function getSpotWeather(
     const trend = mi === undefined ? null : tideTrendAt(marineLevels, mi);
 
     // Multimodelo por hora
-    const gfsKts = num(h.wind_speed_10m_gfs_seamless?.[i] ?? h.wind_speed_10m?.[i]);
-    const ecmwfKts = num(h.wind_speed_10m_ecmwf_ifs025?.[i] ?? gfsKts);
-    const iconKts = num(h.wind_speed_10m_icon_seamless?.[i] ?? gfsKts);
+    const gfsKts = num(gfsWinds[i]);
+    const ecmwfKts = num(ecmwfWinds[i] ?? gfsKts);
+    const iconKts = num(iconWinds[i] ?? gfsKts);
     const mm = calcularConsensoMultimodelo(gfsKts, ecmwfKts, iconKts);
 
-    const dirDeg = Math.round(num(h.wind_direction_10m?.[i]));
+    const dirDeg = Math.round(num(dirs[i]));
     let safety: WindSafety = 'Side-Onshore';
     if (dirDeg >= 60 && dirDeg <= 135) safety = 'Side-Onshore';
     else if (dirDeg > 135 && dirDeg <= 170) safety = 'Side-Shore';
@@ -464,8 +488,8 @@ export async function getSpotWeather(
     else if (dirDeg > 230 && dirDeg <= 310) safety = 'Offshore';
     else safety = 'Onshore';
 
-    const knotsHour = mm.consensusKnots || Math.round(num(h.wind_speed_10m?.[i]));
-    const gustHour = Math.round(num(h.wind_gusts_10m?.[i]));
+    const knotsHour = mm.consensusKnots || Math.round(gfsKts);
+    const gustHour = Math.round(num(gusts[i]));
 
     const scoreHour = calcularSailingScore({
       knots: knotsHour,
@@ -480,9 +504,9 @@ export async function getSpotWeather(
       gustKnots: gustHour,
       directionDeg: dirDeg,
       directionText: degToCompass(dirDeg),
-      conditionIcon: weatherIcon(num(h.weather_code[i]), num(h.is_day[i]) === 1),
-      temperature: Math.round(num(h.temperature_2m[i])),
-      pressureHpa: Math.round(num(h.surface_pressure[i])),
+      conditionIcon: weatherIcon(num(codes[i]), num(isDays[i]) === 1),
+      temperature: Math.round(num(temps[i])),
+      pressureHpa: Math.round(num(pressures[i])),
       waveHeightM: opt(m?.wave_height?.[mi ?? -1], 1),
       wavePeriodS: opt(m?.wave_period?.[mi ?? -1], 1),
       waveDirDeg: opt(m?.wave_direction?.[mi ?? -1], 0),
@@ -522,22 +546,22 @@ export async function getSpotWeather(
   const todayHours = daysForecast[0]?.hours ?? [];
   const maxKnots = todayHours.reduce((acc, x) => Math.max(acc, x.gustKnots, x.knots), 0);
 
-  const code = num(h.weather_code[now]);
+  const code = num(codes[now]);
   const nowTrend = marineNow === undefined ? null : tideTrendAt(marineLevels, marineNow);
 
   // Consenso multimodelo atual
-  const nowGfs = num(h.wind_speed_10m_gfs_seamless?.[now] ?? h.wind_speed_10m?.[now]);
-  const nowEcmwf = num(h.wind_speed_10m_ecmwf_ifs025?.[now] ?? nowGfs);
-  const nowIcon = num(h.wind_speed_10m_icon_seamless?.[now] ?? nowGfs);
+  const nowGfs = num(gfsWinds[now]);
+  const nowEcmwf = num(ecmwfWinds[now] ?? nowGfs);
+  const nowIcon = num(iconWinds[now] ?? nowGfs);
   const multiModelNow = calcularConsensoMultimodelo(nowGfs, nowEcmwf, nowIcon);
 
-  const nowWind = multiModelNow.consensusKnots || Math.round(num(h.wind_speed_10m?.[now]));
-  const nowGust = Math.round(num(h.wind_gusts_10m?.[now]));
+  const nowWind = multiModelNow.consensusKnots || Math.round(nowGfs);
+  const nowGust = Math.round(num(gusts[now]));
   const currentKnots = nowWind;
   const gustKnots = Math.max(nowGust, currentKnots);
   const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
 
-  const nowDirDeg = Math.round(num(h.wind_direction_10m?.[now]));
+  const nowDirDeg = Math.round(num(dirs[now]));
   let currentSafety: WindSafety = 'Side-Onshore';
   if (nowDirDeg >= 60 && nowDirDeg <= 135) currentSafety = 'Side-Onshore';
   else if (nowDirDeg > 135 && nowDirDeg <= 170) currentSafety = 'Side-Shore';
@@ -572,9 +596,9 @@ export async function getSpotWeather(
     windDirectionDeg: nowDirDeg,
     windDirectionText: degToCompass(nowDirDeg),
     windSafety: currentSafety,
-    temperature: Math.round(num(h.temperature_2m[now])),
+    temperature: Math.round(num(temps[now])),
     weatherDescription: describeWeather(code),
-    weatherIcon: weatherIcon(code, num(h.is_day[now]) === 1),
+    weatherIcon: weatherIcon(code, num(isDays[now]) === 1),
     currentTideHeightM: opt(marineLevels[marineNow ?? -1], 2),
     currentTideTrend: nowTrend === null ? null : statusFromTrend(nowTrend),
     nextTideInfo: tideDetail?.text ?? 'Sem dado de maré',

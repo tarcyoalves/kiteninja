@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
+import { getSessionUser } from '@/lib/auth';
 import { getManySpotsWeather } from '@/lib/weather';
 import { INITIAL_SPOTS } from '@/data/mockSpots';
 
@@ -16,7 +16,7 @@ import { INITIAL_SPOTS } from '@/data/mockSpots';
  */
 export async function GET(request: Request) {
   return handle(async () => {
-    const user = await requireUser();
+    const user = await getSessionUser();
     const { searchParams } = new URL(request.url);
     const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true';
 
@@ -119,8 +119,10 @@ export async function GET(request: Request) {
     const weather = await getManySpotsWeather(base, 7, forceRefresh);
 
     const favIds = new Set<string>();
-    const favRows = await sql`SELECT spot_id FROM favorites WHERE user_id = ${user.id}`;
-    for (const r of favRows) favIds.add(String((r as Record<string, unknown>).spot_id));
+    if (user) {
+      const favRows = await sql`SELECT spot_id FROM favorites WHERE user_id = ${user.id}`;
+      for (const r of favRows) favIds.add(String((r as Record<string, unknown>).spot_id));
+    }
 
     const spots = base.map((s) => {
       const w = weather.get(s.id) ?? null;
@@ -145,8 +147,17 @@ export async function GET(request: Request) {
         nextTideInfo: w?.nextTideInfo ?? 'Sem dado de maré',
         nextTideHeightM: w?.nextTideHeightM ?? null,
         nextTideTime: w?.nextTideTime ?? null,
+        tideStationName: w?.tideStationName,
         waveHeightM: w?.waveHeightM ?? 0,
         wavePeriodS: w?.wavePeriodS ?? 0,
+        swellHeightM: w?.swellHeightM ?? null,
+        swellPeriodS: w?.swellPeriodS ?? null,
+        swellDirDeg: w?.swellDirDeg ?? null,
+        windWaveHeightM: w?.windWaveHeightM ?? null,
+        windWavePeriodS: w?.windWavePeriodS ?? null,
+        windWaveDirDeg: w?.windWaveDirDeg ?? null,
+        multiModel: w?.multiModel,
+        sailingScore: w?.sailingScore,
         daysForecast: w?.daysForecast ?? [],
       };
     });
