@@ -2,7 +2,11 @@ import { put, del } from '@vercel/blob';
 import { revalidatePath } from 'next/cache';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
-import { getIntroVideoRaw, setIntroVideo, clearIntroVideo } from '@/lib/settings';
+import {
+  getIntroVideoConfig,
+  setIntroVideoConfig,
+  clearIntroVideo,
+} from '@/lib/settings';
 import {
   erroDoTrecho,
   MAX_BYTES_VIDEO,
@@ -10,28 +14,20 @@ import {
   MIN_TRECHO_SEG,
   TIPOS_VIDEO_ACEITOS,
   type IntroVideo,
+  type IntroVideoConfig,
+  type ModoRodizio,
 } from '@/lib/introVideo';
-
-/**
- * Vídeo de abertura do app: upload do arquivo e ajuste do trecho exibido.
- *
- * Só admin entra aqui — é escrita em storage público e troca a primeira tela
- * que todo mundo vê, então é a superfície mais sensível fora da autenticação.
- *
- * Não recortamos o arquivo no servidor: função serverless não tem ffmpeg, e
- * transcodificar 4MB dentro do limite de execução não caberia. Guardamos o
- * trecho como metadado e o player toca só aquele intervalo — assim o admin
- * também reajusta o corte depois sem subir o vídeo de novo.
- */
 
 const TIPOS_ACEITOS = new Set<string>(TIPOS_VIDEO_ACEITOS);
 
 export async function GET() {
   return handle(async () => {
     await requireAdmin();
-    const atual = await getIntroVideoRaw();
+    const config = await getIntroVideoConfig();
     return {
-      video: atual,
+      config,
+      // Retrocompatibilidade para clientes legados
+      video: config.videos[0] ?? null,
       limites: {
         maxBytes: MAX_BYTES_VIDEO,
         maxTrechoSeg: MAX_TRECHO_SEG,
@@ -43,14 +39,52 @@ export async function GET() {
 }
 
 /**
- * Recebe o arquivo como multipart. O corpo vem do próprio painel, mas ainda
- * validamos tipo e tamanho aqui: quem tem cookie de admin pode chamar a rota
- * direto, sem passar pela nossa tela.
+ * Adiciona um novo vídeo à playlist (via upload de arquivo ou URL direta).
  */
 export async function POST(request: Request) {
   return handle(async () => {
     const admin = await requireAdmin();
 
+    const contentType = request.headers.get('content-type') || '';
+
+    // Caso 1: Envio de JSON (para cadastrar vídeo por URL direta)
+    if (contentType.includes('application/json')) {
+      const body = await readJson(request);
+      const b = (body ?? {}) as Record<string, unknown>;
+      const url = String(b.url || '').trim();
+      if (!url.startsWith('https://')) {
+        throw new HttpError(400, 'A URL do vídeo deve começar com https://');
+      }
+
+      const inicioSeg = Number(b.inicioSeg) || 0;
+      const fimSeg = Number(b.fimSeg) || 6;
+      validarTrecho(inicioSeg, fimSeg);
+
+      const novoItem: IntroVideo = {
+        id: `vid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        url,
+        inicioSeg,
+        fimSeg,
+        ativo: b.ativo !== false,
+        nomeArquivo: typeof b.nomeArquivo === 'string' ? b.nomeArquivo : undefined,
+        titulo: typeof b.titulo === 'string' ? b.titulo : 'Vídeo Externo',
+        duracaoSeg: Number(b.duracaoSeg) || undefined,
+        posterDataUrl: typeof b.posterDataUrl === 'string' ? b.posterDataUrl : undefined,
+        criadoEm: new Date().toISOString(),
+      };
+
+      const atual = await getIntroVideoConfig();
+      const novaConfig: IntroVideoConfig = {
+        modo: atual.modo || 'rodizio',
+        videos: [novoItem, ...atual.videos],
+      };
+
+      await setIntroVideoConfig(novaConfig, admin.id);
+      revalidatePath('/api/intro-video');
+      return { ok: true, video: novoItem, config: novaConfig };
+    }
+
+    // Caso 2: Upload multipart de arquivo
     if (!process.env.BLOB_READ_WRITE_TOKEN) {
       throw new HttpError(
         503,
@@ -77,7 +111,7 @@ export async function POST(request: Request) {
       const mb = (arquivo.size / 1024 / 1024).toFixed(1);
       throw new HttpError(
         413,
-        `Vídeo de ${mb}MB excede o limite de ${MAX_BYTES_VIDEO / 1024 / 1024}MB. Corte antes de enviar.`
+        `Vídeo de ${mb}MB excede o limite de ${MAX_BYTES_VIDEO / 1024 / 1024}MB.`
       );
     }
     if (!TIPOS_ACEITOS.has(arquivo.type)) {
@@ -88,18 +122,17 @@ export async function POST(request: Request) {
     }
 
     const inicioSeg = numeroDoForm(form, 'inicioSeg', 0);
-    const fimSeg = numeroDoForm(form, 'fimSeg', 0);
+    const fimSeg = numeroDoForm(form, 'fimSeg', 6);
     const duracaoSeg = numeroDoForm(form, 'duracaoSeg', 0);
+    const titulo = form.get('titulo');
     validarTrecho(inicioSeg, fimSeg);
 
     const poster = form.get('posterDataUrl');
     const posterDataUrl =
-      typeof poster === 'string' && poster.startsWith('data:image/') && poster.length < 400_000
+      typeof poster === 'string' && poster.startsWith('data:image/') && poster.length < 500_000
         ? poster
         : undefined;
 
-    // Nome com sufixo aleatório: dois uploads do mesmo arquivo não podem
-    // sobrescrever um ao outro enquanto o anterior ainda está sendo servido.
     const ext = extensaoDe(arquivo.type);
     const enviado = await put(`intro/abertura-${Date.now()}.${ext}`, arquivo, {
       access: 'public',
@@ -107,80 +140,131 @@ export async function POST(request: Request) {
       addRandomSuffix: true,
     });
 
-    const anterior = await getIntroVideoRaw();
-
-    const valor: IntroVideo = {
+    const novoItem: IntroVideo = {
+      id: `vid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       url: enviado.url,
       inicioSeg,
       fimSeg,
       posterDataUrl,
       ativo: true,
       nomeArquivo: arquivo.name,
+      titulo: typeof titulo === 'string' && titulo.trim() ? titulo.trim() : arquivo.name,
       duracaoSeg: duracaoSeg > 0 ? duracaoSeg : undefined,
+      criadoEm: new Date().toISOString(),
     };
-    await setIntroVideo(valor, admin.id);
 
-    // O arquivo antigo só sai depois que o novo já está gravado: se a limpeza
-    // falhar, sobra lixo no storage — barato. Na ordem inversa, uma falha
-    // deixaria a abertura apontando para um arquivo já apagado.
-    await removerArquivoAntigo(anterior?.url, enviado.url);
+    const atual = await getIntroVideoConfig();
+    const novaConfig: IntroVideoConfig = {
+      modo: atual.modo || 'rodizio',
+      videos: [novoItem, ...atual.videos],
+    };
 
-    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
-    // abertura e continuaria vendo a antiga por até 5 minutos.
+    await setIntroVideoConfig(novaConfig, admin.id);
     revalidatePath('/api/intro-video');
-    return { ok: true, video: valor };
+    return { ok: true, video: novoItem, config: novaConfig };
   });
 }
 
-/** Reajusta o trecho (ou liga/desliga) sem novo upload. */
+/**
+ * Atualiza modo de rodízio ou ajusta propriedades de um vídeo individual.
+ */
 export async function PATCH(request: Request) {
   return handle(async () => {
     const admin = await requireAdmin();
     const body = await readJson(request);
     const b = (body ?? {}) as Record<string, unknown>;
 
-    const atual = await getIntroVideoRaw();
-    if (!atual?.url) {
-      throw new HttpError(404, 'Nenhum vídeo de abertura enviado ainda.');
+    const atual = await getIntroVideoConfig();
+
+    // Atualiza o modo de rodízio se fornecido
+    let novoModo: ModoRodizio = atual.modo;
+    if (b.modo === 'rodizio' || b.modo === 'aleatorio' || b.modo === 'unico') {
+      novoModo = b.modo;
     }
 
-    const ativo = b.ativo === undefined ? atual.ativo : b.ativo === true;
+    // Se informou um ID específico para atualizar
+    const videoId = typeof b.id === 'string' ? b.id : undefined;
 
-    const inicioSeg = b.inicioSeg === undefined ? atual.inicioSeg ?? 0 : Number(b.inicioSeg);
-    const fimSeg = b.fimSeg === undefined ? atual.fimSeg ?? 0 : Number(b.fimSeg);
-    validarTrecho(inicioSeg, fimSeg);
+    let novosVideos = [...atual.videos];
 
-    const valor: IntroVideo = {
-      url: atual.url,
-      inicioSeg,
-      fimSeg,
-      posterDataUrl: atual.posterDataUrl,
-      ativo,
-      nomeArquivo: atual.nomeArquivo,
-      duracaoSeg: atual.duracaoSeg,
+    if (videoId) {
+      novosVideos = novosVideos.map((v) => {
+        if (v.id !== videoId && v.url !== videoId) return v;
+
+        const inicioSeg = b.inicioSeg !== undefined ? Number(b.inicioSeg) : v.inicioSeg;
+        const fimSeg = b.fimSeg !== undefined ? Number(b.fimSeg) : v.fimSeg;
+        validarTrecho(inicioSeg, fimSeg);
+
+        return {
+          ...v,
+          inicioSeg,
+          fimSeg,
+          ativo: b.ativo !== undefined ? Boolean(b.ativo) : v.ativo,
+          titulo: typeof b.titulo === 'string' ? b.titulo : v.titulo,
+        };
+      });
+    } else if (b.inicioSeg !== undefined && b.fimSeg !== undefined && novosVideos.length > 0) {
+      // Ajusta o primeiro vídeo se nenhum ID for passado
+      const inicioSeg = Number(b.inicioSeg);
+      const fimSeg = Number(b.fimSeg);
+      validarTrecho(inicioSeg, fimSeg);
+      novosVideos[0] = {
+        ...novosVideos[0],
+        inicioSeg,
+        fimSeg,
+        ativo: b.ativo !== undefined ? Boolean(b.ativo) : novosVideos[0].ativo,
+      };
+    }
+
+    const novaConfig: IntroVideoConfig = {
+      modo: novoModo,
+      videos: novosVideos,
     };
-    await setIntroVideo(valor, admin.id);
 
-    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
-    // abertura e continuaria vendo a antiga por até 5 minutos.
+    await setIntroVideoConfig(novaConfig, admin.id);
     revalidatePath('/api/intro-video');
-    return { ok: true, video: valor };
+    return { ok: true, config: novaConfig };
   });
 }
 
-/** Remove a abertura e volta o app para a animação vetorial. */
-export async function DELETE() {
+/**
+ * Remove um vídeo específico da playlist por ID, ou limpa tudo se nenhum ID for fornecido.
+ */
+export async function DELETE(request: Request) {
   return handle(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
 
-    const atual = await getIntroVideoRaw();
-    await clearIntroVideo();
-    await removerArquivoAntigo(atual?.url, undefined);
+    const { searchParams } = new URL(request.url);
+    const videoId = searchParams.get('id');
 
-    // A rota pública é cacheada na borda; sem invalidar, o admin trocaria a
-    // abertura e continuaria vendo a antiga por até 5 minutos.
+    if (!videoId) {
+      // Limpa todos os vídeos
+      const atual = await getIntroVideoConfig();
+      await clearIntroVideo();
+      for (const v of atual.videos) {
+        await removerArquivoAntigo(v.url);
+      }
+      revalidatePath('/api/intro-video');
+      return { ok: true };
+    }
+
+    const atual = await getIntroVideoConfig();
+    const itemRemover = atual.videos.find((v) => v.id === videoId || v.url === videoId);
+    const videosRestantes = atual.videos.filter((v) => v.id !== videoId && v.url !== videoId);
+
+    const novaConfig: IntroVideoConfig = {
+      modo: atual.modo,
+      videos: videosRestantes,
+    };
+
+    await setIntroVideoConfig(novaConfig, admin.id);
+
+    if (itemRemover?.url) {
+      await removerArquivoAntigo(itemRemover.url);
+    }
+
     revalidatePath('/api/intro-video');
-    return { ok: true };
+    return { ok: true, config: novaConfig };
   });
 }
 
@@ -191,7 +275,6 @@ function numeroDoForm(form: FormData, campo: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** A regra vive em lib/introVideo para o painel mostrar a mesma mensagem. */
 function validarTrecho(inicioSeg: number, fimSeg: number): void {
   const erro = erroDoTrecho(inicioSeg, fimSeg);
   if (erro) throw new HttpError(400, erro);
@@ -203,20 +286,14 @@ function extensaoDe(mime: string): string {
   return 'mp4';
 }
 
-/**
- * Apaga o arquivo anterior no Blob. Nunca deixa a falha estourar: perder o
- * arquivo velho não é motivo para o admin achar que o upload deu errado.
- */
-async function removerArquivoAntigo(
-  urlAntiga: string | undefined,
-  urlNova: string | undefined
-): Promise<void> {
-  if (!urlAntiga || urlAntiga === urlNova) return;
+async function removerArquivoAntigo(url: string | undefined): Promise<void> {
+  if (!url || !url.includes('blob.vercel-storage.com')) return;
   try {
-    await del(urlAntiga);
+    await del(url);
   } catch (err) {
-    console.error('[intro-video] falha ao remover arquivo antigo:', err);
+    console.error('[intro-video] falha ao remover arquivo do storage:', err);
   }
 }
 
 export const runtime = 'nodejs';
+

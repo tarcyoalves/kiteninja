@@ -10,50 +10,50 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
+  Play,
+  Pause,
+  Shuffle,
+  Repeat,
+  Plus,
+  Link as LinkIcon,
+  Scissors,
 } from 'lucide-react';
-import { VideoTrimmer, type TrechoVideo } from '../../components/VideoTrimmer';
+import { VideoTrimmer, type TrechoVideo, formatarSegundos } from '../../components/VideoTrimmer';
 import {
   erroDoTrecho,
   MAX_BYTES_VIDEO,
   MAX_TRECHO_SEG,
   TIPOS_VIDEO_ACEITOS,
+  type IntroVideo,
+  type IntroVideoConfig,
+  type ModoRodizio,
 } from '../../lib/introVideo';
 
-/**
- * Vídeo de abertura do app: upload, escolha do trecho e liga/desliga.
- *
- * O corte não re-encoda o arquivo — guardamos os pontos de entrada e saída como
- * metadado e o player toca só aquele intervalo. Assim dá para reajustar o corte
- * depois sem subir o vídeo de novo, e não dependemos de ffmpeg no servidor
- * (indisponível em função serverless).
- */
-
-interface VideoSalvo {
-  url?: string;
-  inicioSeg?: number;
-  fimSeg?: number;
-  posterDataUrl?: string;
-  nomeArquivo?: string;
-  duracaoSeg?: number;
-  ativo: boolean;
-}
-
 export const IntroVideoManager: React.FC = () => {
-  const [salvo, setSalvo] = useState<VideoSalvo | null>(null);
+  const [config, setConfig] = useState<IntroVideoConfig>({ modo: 'rodizio', videos: [] });
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
-  // Estado do arquivo novo, antes de enviar.
+  // Modo de inclusão: 'arquivo' | 'url'
+  const [abaInclusao, setAbaInclusao] = useState<'arquivo' | 'url'>('arquivo');
+  const [urlDireta, setUrlDireta] = useState('');
+  const [tituloVideo, setTituloVideo] = useState('');
+
+  // Arquivo selecionado para upload
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [urlLocal, setUrlLocal] = useState<string | null>(null);
-  const [trecho, setTrecho] = useState<TrechoVideo>({ inicioSeg: 0, fimSeg: 6 });
+  const [trechoNovo, setTrechoNovo] = useState<TrechoVideo>({ inicioSeg: 0, fimSeg: 6 });
   const [enviando, setEnviando] = useState(false);
   const [progresso, setProgresso] = useState(0);
 
-  // Trecho do vídeo já salvo, para reajuste sem novo upload.
-  const [trechoSalvo, setTrechoSalvo] = useState<TrechoVideo | null>(null);
-  const [salvandoTrecho, setSalvandoTrecho] = useState(false);
+  // Vídeo atualmente sendo editado/recortado na galeria
+  const [editandoVideo, setEditandoVideo] = useState<IntroVideo | null>(null);
+  const [trechoEdicao, setTrechoEdicao] = useState<TrechoVideo>({ inicioSeg: 0, fimSeg: 6 });
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
+  // Pré-visualização na galeria
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -61,8 +61,6 @@ export const IntroVideoManager: React.FC = () => {
     void carregar();
   }, []);
 
-  // A URL de objeto é liberada ao trocar de arquivo; sem isso o vídeo anterior
-  // fica retido na memória da aba.
   useEffect(() => {
     return () => {
       if (urlLocal) URL.revokeObjectURL(urlLocal);
@@ -74,15 +72,11 @@ export const IntroVideoManager: React.FC = () => {
     try {
       const res = await fetch('/api/admin/intro-video', { cache: 'no-store' });
       if (!res.ok) throw new Error('Não foi possível ler a configuração.');
-      const data = (await res.json()) as { video: VideoSalvo | null };
-      setSalvo(data.video);
-      if (data.video?.url) {
-        setTrechoSalvo({
-          inicioSeg: data.video.inicioSeg ?? 0,
-          fimSeg: data.video.fimSeg ?? 6,
-        });
-      } else {
-        setTrechoSalvo(null);
+      const data = (await res.json()) as { config?: IntroVideoConfig; video?: IntroVideo };
+      if (data.config) {
+        setConfig(data.config);
+      } else if (data.video) {
+        setConfig({ modo: 'rodizio', videos: [data.video] });
       }
       setErro(null);
     } catch (e) {
@@ -96,8 +90,6 @@ export const IntroVideoManager: React.FC = () => {
     const f = e.target.files?.[0];
     if (!f) return;
 
-    // Validamos aqui e no servidor: aqui é para o admin não esperar um upload
-    // de 12MB só para receber a recusa no fim.
     if (!TIPOS_VIDEO_ACEITOS.includes(f.type as (typeof TIPOS_VIDEO_ACEITOS)[number])) {
       setErro(`Formato "${f.type || 'desconhecido'}" não suportado. Use MP4, WebM ou MOV.`);
       return;
@@ -116,13 +108,10 @@ export const IntroVideoManager: React.FC = () => {
     setAviso(null);
     setArquivo(f);
     setUrlLocal(URL.createObjectURL(f));
-    setTrecho({ inicioSeg: 0, fimSeg: 6 });
+    setTituloVideo(f.name.replace(/\.[^/.]+$/, ''));
+    setTrechoNovo({ inicioSeg: 0, fimSeg: 6 });
   }
 
-  /**
-   * Captura um quadro do trecho para servir de poster. Sem isso o vídeo mostra
-   * um retângulo preto enquanto carrega, o que parece falha de carregamento.
-   */
   async function capturarPoster(src: string, segundo: number): Promise<string | undefined> {
     return new Promise((resolve) => {
       const v = document.createElement('video');
@@ -131,21 +120,18 @@ export const IntroVideoManager: React.FC = () => {
       v.playsInline = true;
       v.preload = 'auto';
 
-      const desistir = setTimeout(() => resolve(undefined), 5000);
+      const desistir = setTimeout(() => resolve(undefined), 4000);
 
       v.addEventListener('loadeddata', () => {
         v.currentTime = Math.min(segundo, Math.max(0, v.duration - 0.1));
       });
 
-      // O seek é assíncrono: desenhar antes do `seeked` captura o quadro errado.
       v.addEventListener('seeked', () => {
         try {
           const c = document.createElement('canvas');
-          // Largura modesta: o poster é placeholder, e um data URL grande
-          // inflaria a linha do banco sem ganho visível.
           const largura = 480;
           c.width = largura;
-          c.height = Math.round((v.videoHeight / v.videoWidth) * largura) || 854;
+          c.height = Math.round((v.videoHeight / (v.videoWidth || 1)) * largura) || 854;
           const ctx = c.getContext('2d');
           if (!ctx) {
             resolve(undefined);
@@ -168,15 +154,33 @@ export const IntroVideoManager: React.FC = () => {
       try {
         v.load();
       } catch {
-        // Ignora caso load não seja suportado em algum browser
+        // ignore
       }
     });
   }
 
-  async function enviar() {
+  async function duracaoDoArquivo(src: string): Promise<number> {
+    return new Promise((resolve) => {
+      const v = document.createElement('video');
+      v.src = src;
+      v.preload = 'metadata';
+      const desistir = setTimeout(() => resolve(0), 4000);
+      v.onloadedmetadata = () => {
+        clearTimeout(desistir);
+        resolve(v.duration && isFinite(v.duration) ? v.duration : 0);
+      };
+      v.onerror = () => {
+        clearTimeout(desistir);
+        resolve(0);
+      };
+    });
+  }
+
+  // Upload com progresso
+  async function enviarArquivo() {
     if (!arquivo || !urlLocal) return;
 
-    const problema = erroDoTrecho(trecho.inicioSeg, trecho.fimSeg);
+    const problema = erroDoTrecho(trechoNovo.inicioSeg, trechoNovo.fimSeg);
     if (problema) {
       setErro(problema);
       return;
@@ -188,25 +192,49 @@ export const IntroVideoManager: React.FC = () => {
     setProgresso(0);
 
     try {
-      const poster = await capturarPoster(urlLocal, trecho.inicioSeg);
+      const poster = await capturarPoster(urlLocal, trechoNovo.inicioSeg);
+      const duracao = await duracaoDoArquivo(urlLocal);
 
       const form = new FormData();
       form.append('file', arquivo);
-      form.append('inicioSeg', String(trecho.inicioSeg));
-      form.append('fimSeg', String(trecho.fimSeg));
+      form.append('inicioSeg', String(trechoNovo.inicioSeg));
+      form.append('fimSeg', String(trechoNovo.fimSeg));
+      form.append('titulo', tituloVideo.trim() || arquivo.name);
+      if (duracao > 0) form.append('duracaoSeg', String(duracao));
       if (poster) form.append('posterDataUrl', poster);
 
-      // XHR em vez de fetch: precisamos de progresso, e o upload de vídeo em
-      // 4G leva tempo suficiente para uma barra parada parecer travamento.
-      const duracao = await duracaoDoArquivo(urlLocal);
-      if (duracao > 0) form.append('duracaoSeg', String(duracao));
+      await new Promise<void>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/api/admin/intro-video');
 
-      await enviarComProgresso(form, setProgresso);
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable) {
+            setProgresso(Math.round((ev.loaded / ev.total) * 100));
+          }
+        };
 
-      setAviso('Abertura atualizada. Abra o app em uma aba nova para ver.');
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            try {
+              const body = JSON.parse(xhr.responseText) as { error?: string };
+              reject(new Error(body.error || `Erro ${xhr.status} no envio`));
+            } catch {
+              reject(new Error(`Erro ${xhr.status} no envio`));
+            }
+          }
+        };
+
+        xhr.onerror = () => reject(new Error('Erro de conexão no envio'));
+        xhr.send(form);
+      });
+
+      setAviso('Vídeo adicionado à playlist com sucesso!');
       setArquivo(null);
       if (urlLocal) URL.revokeObjectURL(urlLocal);
       setUrlLocal(null);
+      setTituloVideo('');
       if (inputRef.current) inputRef.current.value = '';
       await carregar();
     } catch (e) {
@@ -217,275 +245,516 @@ export const IntroVideoManager: React.FC = () => {
     }
   }
 
-  async function salvarTrechoExistente() {
-    if (!trechoSalvo) return;
-    const problema = erroDoTrecho(trechoSalvo.inicioSeg, trechoSalvo.fimSeg);
+  // Cadastro por URL direta
+  async function cadastrarUrlDireta() {
+    const url = urlDireta.trim();
+    if (!url.startsWith('https://')) {
+      setErro('A URL deve começar com https://');
+      return;
+    }
+
+    const problema = erroDoTrecho(trechoNovo.inicioSeg, trechoNovo.fimSeg);
     if (problema) {
       setErro(problema);
       return;
     }
-    setSalvandoTrecho(true);
+
+    setEnviando(true);
+    setErro(null);
+    setAviso(null);
+
+    try {
+      const res = await fetch('/api/admin/intro-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url,
+          inicioSeg: trechoNovo.inicioSeg,
+          fimSeg: trechoNovo.fimSeg,
+          titulo: tituloVideo.trim() || 'Vídeo Externo',
+          ativo: true,
+        }),
+      });
+
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error || 'Falha ao cadastrar URL.');
+
+      setAviso('Vídeo externo cadastrado na playlist com sucesso!');
+      setUrlDireta('');
+      setTituloVideo('');
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao cadastrar.');
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  // Alterna modo de rodízio
+  async function alterarModo(novoModo: ModoRodizio) {
     setErro(null);
     try {
       const res = await fetch('/api/admin/intro-video', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(trechoSalvo),
+        body: JSON.stringify({ modo: novoModo }),
       });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error || 'Falha ao salvar o trecho.');
-      setAviso('Trecho atualizado.');
+      if (!res.ok) throw new Error('Falha ao atualizar modo.');
+      setConfig((prev) => ({ ...prev, modo: novoModo }));
+      setAviso(`Modo alterado para ${novoModo === 'rodizio' ? 'Rodízio Sequencial' : novoModo === 'aleatorio' ? 'Aleatório' : 'Único'}.`);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao mudar modo.');
+    }
+  }
+
+  // Alterna status ativo de um vídeo
+  async function alternarStatusVideo(v: IntroVideo) {
+    setErro(null);
+    try {
+      const res = await fetch('/api/admin/intro-video', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: v.id || v.url, ativo: !v.ativo }),
+      });
+      if (!res.ok) throw new Error('Falha ao alternar status.');
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : 'Falha ao alterar.');
+    }
+  }
+
+  // Salva edição de corte de um vídeo existente
+  async function salvarTrechoEdicao() {
+    if (!editandoVideo) return;
+    const problema = erroDoTrecho(trechoEdicao.inicioSeg, trechoEdicao.fimSeg);
+    if (problema) {
+      setErro(problema);
+      return;
+    }
+
+    setSalvandoEdicao(true);
+    setErro(null);
+    try {
+      const res = await fetch('/api/admin/intro-video', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editandoVideo.id || editandoVideo.url,
+          inicioSeg: trechoEdicao.inicioSeg,
+          fimSeg: trechoEdicao.fimSeg,
+        }),
+      });
+      if (!res.ok) throw new Error('Falha ao atualizar corte.');
+      setAviso('Corte do vídeo atualizado com sucesso!');
+      setEditandoVideo(null);
       await carregar();
     } catch (e) {
       setErro(e instanceof Error ? e.message : 'Falha ao salvar.');
     } finally {
-      setSalvandoTrecho(false);
+      setSalvandoEdicao(false);
     }
   }
 
-  async function alternarAtivo() {
-    if (!salvo) return;
+  // Remove um vídeo da playlist
+  async function excluirVideo(v: IntroVideo) {
+    if (!confirm(`Deseja realmente remover o vídeo "${v.titulo || v.nomeArquivo || 'selecionado'}" da playlist?`)) {
+      return;
+    }
+
     setErro(null);
     try {
-      const res = await fetch('/api/admin/intro-video', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ativo: !salvo.ativo }),
+      const res = await fetch(`/api/admin/intro-video?id=${encodeURIComponent(v.id || v.url)}`, {
+        method: 'DELETE',
       });
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error || 'Falha ao alternar.');
+      if (!res.ok) throw new Error('Falha ao excluir vídeo.');
+      setAviso('Vídeo removido da playlist.');
+      if (editandoVideo?.id === v.id) setEditandoVideo(null);
+      if (previewId === v.id) setPreviewId(null);
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao alternar.');
+      setErro(e instanceof Error ? e.message : 'Falha ao excluir.');
     }
   }
 
-  async function remover() {
-    if (!confirm('Remover o vídeo de abertura? O app volta a usar a animação.')) return;
-    setErro(null);
-    try {
-      const res = await fetch('/api/admin/intro-video', { method: 'DELETE' });
-      if (!res.ok) throw new Error('Falha ao remover.');
-      setSalvo(null);
-      setTrechoSalvo(null);
-      setAviso('Vídeo removido. A abertura voltou para a animação.');
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao remover.');
-    }
-  }
-
-  if (carregando) {
-    return (
-      <div className="flex items-center gap-2 text-slate-400 text-sm py-8 justify-center">
-        <Loader2 size={16} className="animate-spin" />
-        Carregando configuração…
-      </div>
-    );
-  }
+  const videosAtivos = config.videos.filter((v) => v.ativo).length;
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center shrink-0">
-          <Film size={18} className="text-emerald-300" />
-        </div>
+    <div className="space-y-6">
+      {/* Header Informativo */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
         <div>
-          <h2 className="text-white font-black text-base">Vídeo de abertura</h2>
-          <p className="text-xs text-slate-400 leading-relaxed mt-0.5">
-            Substitui a animação na primeira tela. Escolha o trecho que vai tocar —
-            o arquivo não é recortado, então dá para reajustar depois sem enviar de novo.
+          <div className="flex items-center gap-2">
+            <Film className="text-cyan-400" size={20} />
+            <h2 className="text-lg font-black text-white">Vídeos de Abertura & Playlist</h2>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            Cadastre múltiplos vídeos em alta resolução (até 50MB) para criar um rodízio automático na abertura do app.
           </p>
         </div>
-      </header>
 
+        {/* Seletor de Modo de Exibição */}
+        <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+          <button
+            onClick={() => alterarModo('rodizio')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              config.modo === 'rodizio'
+                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Alterna os vídeos sequencialmente a cada abertura"
+          >
+            <Repeat size={13} />
+            <span>Rodízio</span>
+          </button>
+          <button
+            onClick={() => alterarModo('aleatorio')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+              config.modo === 'aleatorio'
+                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
+                : 'text-slate-400 hover:text-white'
+            }`}
+            title="Sorteia um vídeo diferente a cada abertura"
+          >
+            <Shuffle size={13} />
+            <span>Aleatório</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Alertas */}
       {erro && (
-        <p
-          role="alert"
-          className="flex items-start gap-2 text-xs text-rose-300 bg-rose-500/10 border border-rose-500/30 rounded-xl px-3 py-2"
-        >
-          <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-          {erro}
-        </p>
-      )}
-      {aviso && (
-        <p className="flex items-start gap-2 text-xs text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 rounded-xl px-3 py-2">
-          <CheckCircle2 size={14} className="mt-0.5 shrink-0" />
-          {aviso}
-        </p>
+        <div className="flex items-center gap-2 p-3.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs font-medium">
+          <AlertTriangle size={16} className="text-red-400 shrink-0" />
+          <span>{erro}</span>
+        </div>
       )}
 
-      {/* Vídeo já configurado */}
-      {salvo?.url && (
-        <section className="rounded-2xl bg-[#0F172A] border border-slate-700/80 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">
-                {salvo.nomeArquivo || 'abertura'}
-              </p>
-              <p className="text-[11px] text-slate-400">
-                {salvo.ativo ? 'Em uso na abertura' : 'Desativado — o app usa a animação'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={alternarAtivo}
-                className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 hover:bg-slate-700 transition-colors"
+      {aviso && (
+        <div className="flex items-center gap-2 p-3.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs font-medium">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span>{aviso}</span>
+        </div>
+      )}
+
+      {/* Galeria de Vídeos Cadastrados */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+            <span>Galeria de Vídeos</span>
+            <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 text-xs font-mono font-bold">
+              {videosAtivos} ativos / {config.videos.length} total
+            </span>
+          </h3>
+        </div>
+
+        {carregando ? (
+          <div className="flex items-center justify-center p-8 bg-slate-900/40 rounded-2xl border border-slate-800">
+            <Loader2 className="animate-spin text-cyan-400" size={24} />
+          </div>
+        ) : config.videos.length === 0 ? (
+          <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-dashed border-slate-800 space-y-2">
+            <Film className="mx-auto text-slate-600" size={32} />
+            <p className="text-sm font-bold text-slate-300">Nenhum vídeo cadastrado na playlist</p>
+            <p className="text-xs text-slate-500">
+              Faça o upload do seu primeiro vídeo abaixo para substituir a animação padrão.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {config.videos.map((v, index) => (
+              <div
+                key={v.id || index}
+                className={`p-3.5 rounded-2xl border transition-all space-y-3 ${
+                  v.ativo
+                    ? 'bg-slate-900/80 border-slate-700/80 hover:border-cyan-500/50'
+                    : 'bg-slate-950/60 border-slate-800 opacity-60'
+                }`}
               >
-                {salvo.ativo ? <EyeOff size={13} /> : <Eye size={13} />}
-                {salvo.ativo ? 'Desativar' : 'Ativar'}
-              </button>
-              <button
-                onClick={remover}
-                className="flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 hover:bg-rose-500/20 transition-colors"
-              >
-                <Trash2 size={13} />
-                Remover
-              </button>
-            </div>
+                <div className="flex items-center gap-3">
+                  {/* Thumbnail / Player */}
+                  <div className="relative w-24 h-16 bg-black rounded-xl overflow-hidden shrink-0 border border-slate-800">
+                    {previewId === v.id ? (
+                      <video
+                        src={v.url}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover"
+                        onTimeUpdate={(e) => {
+                          const el = e.currentTarget;
+                          if (el.currentTime >= v.fimSeg) {
+                            el.currentTime = v.inicioSeg;
+                          }
+                        }}
+                      />
+                    ) : v.posterDataUrl ? (
+                      <img src={v.posterDataUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-slate-800 text-slate-500">
+                        <Film size={18} />
+                      </div>
+                    )}
+
+                    <button
+                      onClick={() => setPreviewId(previewId === v.id ? null : v.id || null)}
+                      className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-cyan-500/90 text-slate-950 flex items-center justify-center shadow-lg active:scale-95 transition-all"
+                      title={previewId === v.id ? 'Parar prévia' : 'Pré-visualizar'}
+                    >
+                      {previewId === v.id ? <Pause size={14} /> : <Play size={14} className="ml-0.5" />}
+                    </button>
+                  </div>
+
+                  {/* Informações */}
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-xs font-bold text-white truncate">
+                      {v.titulo || v.nomeArquivo || `Vídeo #${index + 1}`}
+                    </h4>
+                    <p className="text-[11px] font-mono text-cyan-300 mt-0.5">
+                      Corte: {formatarSegundos(v.inicioSeg)} - {formatarSegundos(v.fimSeg)} ({formatarSegundos(v.fimSeg - v.inicioSeg)})
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span
+                        className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                          v.ativo ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-400'
+                        }`}
+                      >
+                        {v.ativo ? 'Ativo no App' : 'Desativado'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ações do Vídeo */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                  <button
+                    onClick={() => alternarStatusVideo(v)}
+                    className={`px-2.5 py-1 rounded-lg font-bold flex items-center gap-1.5 transition-colors ${
+                      v.ativo
+                        ? 'text-amber-400 hover:bg-amber-500/10'
+                        : 'text-emerald-400 hover:bg-emerald-500/10'
+                    }`}
+                  >
+                    {v.ativo ? <EyeOff size={13} /> : <Eye size={13} />}
+                    <span>{v.ativo ? 'Desativar' : 'Ativar'}</span>
+                  </button>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => {
+                        setEditandoVideo(v);
+                        setTrechoEdicao({ inicioSeg: v.inicioSeg, fimSeg: v.fimSeg });
+                      }}
+                      className="px-2.5 py-1 rounded-lg font-bold text-cyan-400 hover:bg-cyan-500/10 flex items-center gap-1"
+                      title="Reajustar corte"
+                    >
+                      <Scissors size={13} />
+                      <span>Editar Corte</span>
+                    </button>
+
+                    <button
+                      onClick={() => excluirVideo(v)}
+                      className="p-1.5 rounded-lg text-red-400 hover:bg-red-500/10 transition-colors"
+                      title="Excluir vídeo da galeria"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Modal / Painel de Edição de Corte de Vídeo Existente */}
+      {editandoVideo && (
+        <div className="p-4 bg-slate-900 rounded-2xl border border-cyan-500/50 space-y-3 shadow-2xl">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-cyan-300 flex items-center gap-2">
+              <Scissors size={15} />
+              <span>Ajustar Corte: {editandoVideo.titulo || editandoVideo.nomeArquivo}</span>
+            </h3>
+            <button
+              onClick={() => setEditandoVideo(null)}
+              className="text-xs text-slate-400 hover:text-white"
+            >
+              Cancelar
+            </button>
           </div>
 
-          {trechoSalvo && (
-            <>
-              <VideoTrimmer
-                src={salvo.url}
-                valorInicial={trechoSalvo}
-                onChange={setTrechoSalvo}
-                maxSeg={MAX_TRECHO_SEG}
-              />
-              <button
-                onClick={salvarTrechoExistente}
-                disabled={salvandoTrecho}
-                className="w-full py-2.5 rounded-xl bg-emerald-500 text-[#0B1220] font-black text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-              >
-                {salvandoTrecho && <Loader2 size={14} className="animate-spin" />}
-                Salvar trecho
-              </button>
-            </>
-          )}
-        </section>
+          <VideoTrimmer
+            src={editandoVideo.url}
+            valorInicial={trechoEdicao}
+            onChange={(novo) => setTrechoEdicao(novo)}
+            maxSeg={MAX_TRECHO_SEG}
+          />
+
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              onClick={() => setEditandoVideo(null)}
+              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700"
+            >
+              Fechar
+            </button>
+            <button
+              onClick={salvarTrechoEdicao}
+              disabled={salvandoEdicao}
+              className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 text-xs font-black hover:bg-cyan-400 disabled:opacity-50 flex items-center gap-1.5"
+            >
+              {salvandoEdicao ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+              <span>Salvar Novo Corte</span>
+            </button>
+          </div>
+        </div>
       )}
 
-      {/* Upload de arquivo novo */}
-      <section className="rounded-2xl bg-[#0F172A] border border-slate-700/80 p-4 space-y-3">
-        <p className="text-xs font-bold text-slate-300">
-          {salvo?.url ? 'Trocar por outro vídeo' : 'Enviar vídeo'}
-        </p>
+      {/* Seção Adicionar Novo Vídeo */}
+      <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Plus size={16} className="text-cyan-400" />
+            <span>Adicionar Novo Vídeo à Playlist</span>
+          </h3>
 
-        <input
-          ref={inputRef}
-          type="file"
-          accept={TIPOS_VIDEO_ACEITOS.join(',')}
-          onChange={escolherArquivo}
-          className="block w-full text-xs text-slate-400 file:mr-3 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-emerald-300 hover:file:bg-slate-700 file:cursor-pointer"
-        />
-        <p className="text-[11px] text-slate-500">
-          MP4, WebM ou MOV, até {MAX_BYTES_VIDEO / 1024 / 1024}MB. O trecho pode ter no
-          máximo {MAX_TRECHO_SEG}s.
-        </p>
+          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl">
+            <button
+              onClick={() => setAbaInclusao('arquivo')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                abaInclusao === 'arquivo' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Upload (até 50MB)
+            </button>
+            <button
+              onClick={() => setAbaInclusao('url')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+                abaInclusao === 'url' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Link / URL Direta
+            </button>
+          </div>
+        </div>
 
-        {urlLocal && (
-          <>
-            <VideoTrimmer
-              src={urlLocal}
-              valorInicial={trecho}
-              onChange={setTrecho}
-              maxSeg={MAX_TRECHO_SEG}
-            />
+        {abaInclusao === 'arquivo' ? (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-slate-300">Título / Descrição do Vídeo:</label>
+              <input
+                type="text"
+                placeholder="Ex: Sessão em Ponta do Mel - Pôr do Sol"
+                value={tituloVideo}
+                onChange={(e) => setTituloVideo(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
 
-            {enviando && (
-              <div
-                className="h-1.5 rounded-full bg-slate-800 overflow-hidden"
-                role="progressbar"
-                aria-valuenow={progresso}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-label="Progresso do envio"
+            <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed border-slate-700 hover:border-cyan-500/60 rounded-2xl bg-slate-950/40 text-center transition-colors">
+              <Upload size={28} className="text-cyan-400 mb-2" />
+              <p className="text-xs font-bold text-white">Escolha um vídeo em alta qualidade</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">MP4, WebM ou MOV (Full HD / 4K nativo até 50MB)</p>
+              <input
+                ref={inputRef}
+                type="file"
+                accept={TIPOS_VIDEO_ACEITOS.join(',')}
+                onChange={escolherArquivo}
+                className="hidden"
+                id="novo-video-upload"
+              />
+              <label
+                htmlFor="novo-video-upload"
+                className="mt-3 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-bold cursor-pointer transition-all border border-slate-700"
               >
-                <div
-                  className="h-full bg-emerald-400 transition-all"
-                  style={{ width: `${progresso}%` }}
+                Selecionar Arquivo
+              </label>
+            </div>
+
+            {urlLocal && (
+              <div className="space-y-3 pt-2">
+                <VideoTrimmer
+                  src={urlLocal}
+                  valorInicial={trechoNovo}
+                  onChange={(novo) => setTrechoNovo(novo)}
+                  maxSeg={MAX_TRECHO_SEG}
                 />
+
+                {enviando && progresso > 0 && (
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-cyan-300 font-bold">
+                      <span>Enviando em alta definição...</span>
+                      <span>{progresso}%</span>
+                    </div>
+                    <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-500 transition-all duration-200"
+                        style={{ width: `${progresso}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  onClick={enviarArquivo}
+                  disabled={enviando}
+                  className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+                >
+                  {enviando ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+                  <span>{enviando ? 'Processando envio...' : 'Adicionar Vídeo à Playlist'}</span>
+                </button>
               </div>
             )}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300">Título do Vídeo:</label>
+              <input
+                type="text"
+                placeholder="Ex: Kite Foil em Tibau - 4K"
+                value={tituloVideo}
+                onChange={(e) => setTituloVideo(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+              />
+            </div>
 
-            <button
-              onClick={enviar}
-              disabled={enviando}
-              className="w-full py-3 rounded-xl bg-emerald-500 text-[#0B1220] font-black text-sm disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              {enviando ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" />
-                  Enviando… {progresso}%
-                </>
-              ) : (
-                <>
-                  <Upload size={15} />
-                  Enviar e usar como abertura
-                </>
-              )}
-            </button>
-          </>
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-300">URL Direta do Vídeo (HTTPS MP4/WebM):</label>
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <LinkIcon size={14} className="absolute left-3 top-3 text-slate-500" />
+                  <input
+                    type="url"
+                    placeholder="https://meu-cdn.com/videos/abertura-fullhd.mp4"
+                    value={urlDireta}
+                    onChange={(e) => setUrlDireta(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-white text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {urlDireta.trim().startsWith('https://') && (
+              <div className="space-y-3 pt-2">
+                <VideoTrimmer
+                  src={urlDireta.trim()}
+                  valorInicial={trechoNovo}
+                  onChange={(novo) => setTrechoNovo(novo)}
+                  maxSeg={MAX_TRECHO_SEG}
+                />
+
+                <button
+                  onClick={cadastrarUrlDireta}
+                  disabled={enviando}
+                  className="w-full py-3 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 disabled:opacity-50"
+                >
+                  {enviando ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  <span>Cadastrar Vídeo Externo na Playlist</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
-      </section>
+      </div>
     </div>
   );
 };
-
-/** Lê a duração do arquivo local, para o editor reabrir no lugar certo depois. */
-function duracaoDoArquivo(src: string): Promise<number> {
-  return new Promise((resolve) => {
-    const v = document.createElement('video');
-    v.preload = 'metadata';
-    v.src = src;
-    const desistir = setTimeout(() => resolve(0), 4000);
-    v.addEventListener('loadedmetadata', () => {
-      clearTimeout(desistir);
-      resolve(Number.isFinite(v.duration) ? v.duration : 0);
-    });
-    v.addEventListener('error', () => {
-      clearTimeout(desistir);
-      resolve(0);
-    });
-  });
-}
-
-/**
- * Envia via XHR para ter progresso real. `fetch` não expõe progresso de upload,
- * e uma barra parada num envio de 12MB em 4G parece travamento.
- */
-function enviarComProgresso(form: FormData, onProgresso: (pct: number) => void): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/admin/intro-video');
-    xhr.withCredentials = true;
-
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable) {
-        onProgresso(Math.round((e.loaded / e.total) * 100));
-      }
-    });
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-        return;
-      }
-      let msg = `Falha no envio (HTTP ${xhr.status}).`;
-      try {
-        const body = JSON.parse(xhr.responseText) as { error?: string };
-        if (body.error) msg = body.error;
-      } catch {
-        // Resposta não-JSON (proxy, timeout de borda): a mensagem genérica serve.
-      }
-      reject(new Error(msg));
-    });
-
-    xhr.addEventListener('error', () =>
-      reject(new Error('Conexão interrompida durante o envio.'))
-    );
-    xhr.addEventListener('abort', () => reject(new Error('Envio cancelado.')));
-
-    xhr.send(form);
-  });
-}

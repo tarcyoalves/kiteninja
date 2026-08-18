@@ -1,7 +1,13 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { parseIntroVideo, type IntroVideo } from '../lib/introVideo';
+import {
+  parseIntroVideo,
+  parseIntroVideoConfig,
+  escolherVideoParaExibicao,
+  type IntroVideo,
+  type IntroVideoConfig,
+} from '../lib/introVideo';
 
 /**
  * Abertura exibida a quem chega sem sessão, antes da tela de login.
@@ -199,6 +205,8 @@ export function introJaVista(): boolean {
   }
 }
 
+const LAST_VIDEO_STORAGE_KEY = 'kiteninja:ultimo_video_intro';
+
 export function marcarIntroVista(): void {
   try {
     sessionStorage.setItem(STORAGE_KEY, '1');
@@ -208,12 +216,8 @@ export function marcarIntroVista(): void {
 }
 
 /**
- * Escolhe entre o vídeo configurado pelo admin e a animação vetorial.
- *
- * Enquanto consulta a configuração não mostramos nada além do fundo: exibir a
- * animação e trocar por vídeo no meio daria um salto visual. A consulta é
- * rápida (rota cacheada na borda) e tem prazo curto — se demorar, seguimos com
- * a animação em vez de fazer o velejador esperar por causa da abertura.
+ * Escolhe entre os vídeos configurados na playlist pelo admin e a animação vetorial.
+ * Realiza rodízio inteligente a cada abertura do app.
  */
 export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [decisao, setDecisao] = useState<'carregando' | 'video' | 'animacao'>('carregando');
@@ -221,8 +225,6 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
   useEffect(() => {
     let ativo = true;
-    // Sem rede não há abertura em vídeo; o abort garante que a espera não passe
-    // de 2,5s, senão a tela de login ficaria refém da configuração.
     const ctrl = new AbortController();
     const prazo = setTimeout(() => ctrl.abort(), 2500);
 
@@ -230,11 +232,30 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
       try {
         const res = await fetch('/api/intro-video', { signal: ctrl.signal });
         if (!res.ok) throw new Error('sem configuração');
-        const data = (await res.json()) as { video?: unknown };
-        const v = parseIntroVideo(data.video);
+        const data = (await res.json()) as { config?: unknown; video?: unknown };
+
+        const config: IntroVideoConfig = parseIntroVideoConfig(data.config || data.video);
+
+        let ultimoId: string | null = null;
+        try {
+          ultimoId = localStorage.getItem(LAST_VIDEO_STORAGE_KEY);
+        } catch {
+          // ignore localStorage error
+        }
+
+        const selecionado = escolherVideoParaExibicao(config, ultimoId);
+
         if (!ativo) return;
-        if (v) {
-          setVideo(v);
+
+        if (selecionado) {
+          try {
+            if (selecionado.id) {
+              localStorage.setItem(LAST_VIDEO_STORAGE_KEY, selecionado.id);
+            }
+          } catch {
+            // ignore
+          }
+          setVideo(selecionado);
           setDecisao('video');
         } else {
           setDecisao('animacao');

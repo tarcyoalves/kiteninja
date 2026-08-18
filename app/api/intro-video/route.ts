@@ -1,20 +1,18 @@
 import { handle } from '@/lib/api';
-import { getIntroVideo } from '@/lib/settings';
+import { getIntroVideoConfig, getIntroVideo } from '@/lib/settings';
 
 /**
  * Abertura configurada, para a tela de splash.
- *
- * Rota pública de propósito: a abertura toca antes do login, então exigir
- * sessão aqui a tornaria invisível justamente para quem ela existe. Só expõe o
- * que já é público — a URL de um arquivo em storage público — e nada do usuário.
+ * Retorna a playlist completa e o vídeo principal para rotação do lado do cliente.
  */
 export async function GET() {
   return handle(async () => {
+    const config = await getIntroVideoConfig();
     const video = await getIntroVideo();
-    return { video };
+    return { config, video };
   });
 }
 
-// A abertura muda raramente e é pedida por todo visitante novo. 5 min de cache
-// na borda evita uma consulta ao Neon por visita, e o admin vê a troca rápido.
-export const revalidate = 300;
+// A abertura muda raramente e é pedida por todo visitante novo.
+export const revalidate = 60;
+
