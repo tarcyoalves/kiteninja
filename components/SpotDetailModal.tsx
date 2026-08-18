@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Spot, DayForecast, WindForecastHour } from '../types';
 import { filterHoursBy3, resolveCurrentHourBlock, getPreparedHours } from '../lib/forecastGrid';
+import { encontrarJanelasDePico, indiceDoPicoMaximo, resumoDePico } from '../lib/windPeaks';
 import {
   ChevronLeft,
   Share2,
@@ -221,6 +222,23 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
     () => (selectedDayIndex === 0 ? resolveCurrentHourBlock(filteredHours, nowHour) : -1),
     [filteredHours, nowHour, selectedDayIndex]
   );
+
+  /* Janelas de vento forte do dia selecionado. Set para o lookup por linha
+     ficar O(1) — a tabela consulta a cada render de linha. */
+  const indicesDePico = useMemo(() => {
+    const ids = new Set<number>();
+    for (const janela of encontrarJanelasDePico(filteredHours)) {
+      for (const i of janela.indices) ids.add(i);
+    }
+    return ids;
+  }, [filteredHours]);
+
+  const idxPicoMaximo = useMemo(
+    () => (indicesDePico.size > 0 ? indiceDoPicoMaximo(filteredHours) : -1),
+    [filteredHours, indicesDePico]
+  );
+
+  const textoResumoPico = useMemo(() => resumoDePico(filteredHours), [filteredHours]);
 
   if (!spot || !selectedDay) return null;
 
@@ -564,6 +582,18 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
               </span>
             </div>
 
+            {/* A resposta que o velejador quer primeiro: a que horas venta de
+                verdade. Só aparece quando existe janela forte — num dia fraco
+                a faixa seria ruído. */}
+            {textoResumoPico && (
+              <div className="flex items-center gap-2 rounded-2xl border border-amber-400/35 bg-amber-500/10 px-3 py-2.5">
+                <Wind size={15} className="shrink-0 text-amber-300" aria-hidden="true" />
+                <p className="text-xs font-black text-amber-200">
+                  Melhor janela hoje: <span className="text-white">{textoResumoPico}</span>
+                </p>
+              </div>
+            )}
+
             {/* Forma da curva antes da tabela: a rampa da térmica e a queda do
                 fim de tarde aparecem de relance, sem ler 24 linhas. */}
             <WindTrend
@@ -592,16 +622,26 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                   // Destaca o bloco de 3h que contém a hora atual, para o
                   // velejador achar "agora" sem contar linhas na praia.
                   const isNow = hIdx === currentHourBlockIdx;
+                  // Pico de vento forte: é o que o velejador procura primeiro.
+                  const isPico = indicesDePico.has(hIdx);
+                  const isPicoMaximo = hIdx === idxPicoMaximo;
 
                   return (
                     <div
                       key={hIdx}
                       aria-current={isNow ? 'time' : undefined}
-                      className={`grid grid-cols-6 items-center py-2.5 text-center text-xs transition-colors ${
+                      /* Ordem importa: "agora" em ciano é referência temporal e
+                         vence o pico; fora dele, a barra âmbar à esquerda marca
+                         a janela de vento forte e o pico máximo ganha fundo. */
+                      className={`relative grid grid-cols-6 items-center py-2.5 text-center text-xs transition-colors ${
                         isNow
                           ? 'bg-cyan-500/10 ring-1 ring-inset ring-cyan-400/40'
+                          : isPicoMaximo
+                          ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400/45'
+                          : isPico
+                          ? 'bg-amber-500/[0.07]'
                           : 'hover:bg-slate-700/30'
-                      }`}
+                      } ${isPico ? 'border-l-[3px] border-l-amber-400' : ''}`}
                     >
                       {/* Col 1: Tempo / Hora in pill */}
                       <div className="flex justify-center">

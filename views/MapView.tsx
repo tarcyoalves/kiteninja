@@ -144,6 +144,32 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   }, []);
 
   /**
+   * Localiza sozinho ao abrir o mapa: o velejador quer ver onde está sem
+   * caçar botão. Antes só o botão disparava, então o mapa abria sem pino
+   * nenhum. Só pede se a permissão JÁ foi concedida — assim ninguém leva
+   * pop-up do sistema na cara ao abrir o app, e quem já autorizou vê o
+   * pino na hora. A Permissions API não existe em todo Safari antigo; no
+   * fallback esperamos o toque no botão.
+   */
+  useEffect(() => {
+    if (!navigator.geolocation || !navigator.permissions?.query) return;
+    let cancelado = false;
+
+    navigator.permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then((status) => {
+        if (!cancelado && status.state === 'granted') handleLocateUser();
+      })
+      .catch(() => {
+        /* Navegador sem Permissions API: fica no fluxo do botão. */
+      });
+
+    return () => {
+      cancelado = true;
+    };
+  }, [handleLocateUser]);
+
+  /**
    * Os spots chegam da API depois da primeira renderização, então o estado
    * inicial pode nascer nulo. Isto tem que ser efeito: setState no corpo do
    * render dispara re-render em cascata.

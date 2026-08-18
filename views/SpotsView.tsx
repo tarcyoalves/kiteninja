@@ -34,7 +34,11 @@ export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
     <div className="flex flex-col min-h-full pb-20">
       {/* Top Search & Filter Bar */}
       <div
-        className={`sticky top-[86px] z-10 px-3 py-2.5 border-b shadow-md transition-colors ${
+        /* `top-0`, não `top-[86px]`: o header vive FORA deste container de
+           rolagem, então qualquer offset aqui abre um vão por onde os cards
+           aparecem por cima dos filtros. E `z-content` (500) vence o `z-10`
+           interno dos cards — antes era empate resolvido pela ordem do DOM. */
+        className={`sticky top-0 z-content px-3 py-2.5 border-b shadow-md transition-colors ${
           beachMode
             ? 'bg-[#020617] border-slate-800 text-white'
             : 'bg-[#0F172A]/95 backdrop-blur border-slate-800/80 text-slate-200'

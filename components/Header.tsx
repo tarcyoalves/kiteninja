@@ -60,8 +60,14 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
           : 'bg-gradient-to-r from-[#0B1220] to-[#12243B] text-white border-b border-cyan-500/25'
       }`}
     >
-      {/* Top micro bar with system status */}
-      <div className="px-4 py-1.5 flex items-center justify-between text-[11px] font-medium border-b border-white/15 tracking-tight backdrop-blur-xs">
+      {/* Top micro bar with system status.
+          O padding-top soma a safe-area do iOS: sem isso a faixa sobe por
+          baixo do relógio/notch no iPhone em modo standalone (PWA). O
+          fallback 0px mantém o espaçamento no Android e no desktop. */}
+      <div
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.375rem)' }}
+        className="px-4 pb-1.5 flex items-center justify-between text-[11px] font-medium border-b border-white/15 tracking-tight backdrop-blur-xs"
+      >
         <div className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
           <span className="text-white/95 font-bold tracking-wider text-[10px]">PREVISÃO OPEN-METEO</span>

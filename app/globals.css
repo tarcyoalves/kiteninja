@@ -73,6 +73,7 @@ select {
 }
 
 .z-map-ui { z-index: var(--z-map-ui); }
+.z-content { z-index: var(--z-content); }
 .z-chrome { z-index: var(--z-chrome); }
 .z-drawer { z-index: var(--z-drawer); }
 .z-modal { z-index: var(--z-modal); }
