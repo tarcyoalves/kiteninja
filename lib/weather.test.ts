@@ -6,6 +6,7 @@ import {
   getSpotWeather,
   interpolateTidePeak,
   tideTrendAt,
+  toChartDatum,
   weatherIcon,
 } from './weather';
 
@@ -173,4 +174,31 @@ describe('getSpotWeather (rede real)', () => {
     const comMare = horas.filter((h) => typeof h.tideHeightM === 'number');
     expect(comMare.length).toBeGreaterThan(0);
   }, 30000);
+});
+
+describe('toChartDatum', () => {
+  it('converte anomalia MSL para escala náutica do Windfinder no Nordeste', () => {
+    // -0.74m MSL (baixa-mar) vira ~0.9m náutico
+    const low = toChartDatum(-0.74, -4.975, -37.042);
+    expect(low).toBe(0.93);
+
+    // +0.92m MSL (preamar) vira ~3.0m náutico
+    const high = toChartDatum(0.92, -4.975, -37.042);
+    expect(high).toBe(3);
+
+    // Nível médio 0.0m vira 1.85m náutico
+    const mid = toChartDatum(0, -4.975, -37.042);
+    expect(mid).toBe(1.85);
+  });
+
+  it('retorna null para valores nulos ou indefinidos', () => {
+    expect(toChartDatum(null, -4.975, -37.042)).toBeNull();
+    expect(toChartDatum(undefined, -4.975, -37.042)).toBeNull();
+    expect(toChartDatum(NaN, -4.975, -37.042)).toBeNull();
+  });
+
+  it('mantém piso mínimo positivo (nunca maré negativa no Zero Hidrográfico)', () => {
+    const extremeLow = toChartDatum(-2.5, -4.975, -37.042);
+    expect(extremeLow).toBeGreaterThanOrEqual(0.1);
+  });
 });

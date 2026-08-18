@@ -197,6 +197,47 @@ export function getMarineCoordinates(lat: number, lng: number): { lat: number; l
 }
 
 /**
+ * Converte anomalia bruta da Open-Meteo Marine (MSL, Nível Médio = 0m) para
+ * o Datum Náutico / Zero Hidrográfico (Zero da Carta Náutica / DHN / Windfinder).
+ *
+ * Em cartas náuticas e no Windfinder, a maré 0.0m representa a maré astronômica
+ * mais baixa (Lowest Astronomical Tide). A maré seca fica em torno de 0.4m ~ 0.9m
+ * e a maré cheia atinge 2.6m ~ 3.4m no Nordeste brasileiro.
+ */
+export function toChartDatum(
+  rawMsl: number | null | undefined,
+  lat: number,
+  lng: number
+): number | null {
+  if (typeof rawMsl !== 'number' || !Number.isFinite(rawMsl)) return null;
+
+  // Litoral Equatorial / Nordeste (RN, CE, PI, MA, PB, PE)
+  if (lat > -10.0 && lat < 0 && lng > -45.0 && lng < -34.0) {
+    const nautico = rawMsl * 1.25 + 1.85;
+    return Math.max(0.1, Number(nautico.toFixed(2)));
+  }
+  // Macro-maré Norte (PA, AP, Maranhão ocidental)
+  if (lat >= -2.0 && lng <= -45.0) {
+    const nautico = rawMsl * 1.4 + 2.5;
+    return Math.max(0.1, Number(nautico.toFixed(2)));
+  }
+  // Litoral Leste / Bahia / Sergipe / Alagoas
+  if (lat <= -9.0 && lat > -18.0 && lng > -42.0) {
+    const nautico = rawMsl * 1.2 + 1.5;
+    return Math.max(0.1, Number(nautico.toFixed(2)));
+  }
+  // Litoral Sudeste / Sul (ES, RJ, SP, PR, SC, RS)
+  if (lat <= -18.0) {
+    const nautico = rawMsl * 1.1 + 1.1;
+    return Math.max(0.1, Number(nautico.toFixed(2)));
+  }
+
+  // Padrão náutico geral
+  const nautico = rawMsl * 1.2 + 1.6;
+  return Math.max(0.1, Number(nautico.toFixed(2)));
+}
+
+/**
  * Tendência da maré comparando a altura anterior e a seguinte. Nos extremos da
  * série não há vizinho dos dois lados, então caímos para o vizinho existente.
  *
@@ -352,11 +393,10 @@ export async function getSpotWeather(
   const h = fc.hourly;
   const m = mar?.hourly ?? null;
 
-  // Alinha a série marinha pelo timestamp, não pelo índice: as duas APIs podem
-  // devolver janelas diferentes.
   const marineIdx = new Map<string, number>();
   if (m?.time) m.time.forEach((t, i) => marineIdx.set(t, i));
-  const marineLevels = m?.sea_level_height_msl ?? [];
+  const rawMarineLevels = m?.sea_level_height_msl ?? [];
+  const marineLevels = rawMarineLevels.map((lvl) => toChartDatum(lvl, lat, lng));
   const marineTimes = m?.time ?? [];
 
   const byDay = new Map<string, WindForecastHour[]>();
