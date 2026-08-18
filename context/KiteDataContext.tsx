@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline } from '../types';
 import { useAuth } from './AuthContext';
+import { INITIAL_SPOTS } from '../data/mockSpots';
 
 /**
  * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
@@ -29,7 +30,6 @@ interface KiteDataContextType {
   setSearchQuery: (query: string) => void;
   selectedStateFilter: string;
   setSelectedStateFilter: (state: string) => void;
-
   // Sessions (Logbook)
   sessions: SessionLog[];
   addSession: (session: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>) => void;
@@ -107,7 +107,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
 
-  const [spots, setSpots] = useState<Spot[]>([]);
+  const [spots, setSpots] = useState<Spot[]>(INITIAL_SPOTS);
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStateFilter, setSelectedStateFilter] = useState('ALL');

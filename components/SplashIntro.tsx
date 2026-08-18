@@ -382,6 +382,12 @@ const SplashVideo: React.FC<{
 
   function pular() {
     marcarIntroVista();
+    if (ref.current) {
+      try {
+        ref.current.pause();
+        ref.current.src = '';
+      } catch {}
+    }
     onDone();
   }
 

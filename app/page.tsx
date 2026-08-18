@@ -34,15 +34,7 @@ const MainContent: React.FC = () => {
     selectedSpot,
     setSelectedSpot,
     beachMode,
-    isHydrated,
   } = useKiteData();
-
-  if (!isHydrated) {
-    // Render a silent placeholder while the client hydrates localStorage state.
-    return (
-      <div className="min-h-screen bg-[#0F172A]" />
-    );
-  }
 
   return (
     /*
@@ -102,9 +94,9 @@ const MainContent: React.FC = () => {
 
 /**
  * Portão de acesso.
- * A abertura com o vídeo selecionado pelo admin é exibida sempre que o app abre.
- * Após a finalização (ou clique em Pular), o velejador segue para o conteúdo do app
- * se estiver autenticado, ou para o LoginGate se for visitante.
+ * O app carrega em segundo plano enquanto a abertura roda sobreposta.
+ * Ao clicar em Pular (ou no término do vídeo), a abertura desmonta em 0ms
+ * com o app já pronto e hidratado na tela, sem qualquer atraso ou tela preta.
  */
 const Gate: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -115,28 +107,24 @@ const Gate: React.FC = () => {
     return <div className="min-h-screen bg-[#0B1220]" />;
   }
 
-  // Abertura com vídeo selecionado (ou animação de reserva) sempre na inicialização
-  if (!introDone) {
-    return (
-      <SplashIntro
-        onDone={() => {
-          marcarIntroVista();
-          setIntroDone(true);
-        }}
-      />
-    );
-  }
-
-  // Visitante sem sessão ativa vai para a tela de acesso/login
-  if (!isAuthenticated) {
-    return <LoginGate />;
-  }
-
-  // Velejador autenticado entra direto na experiência completa
   return (
-    <KiteDataProvider>
-      <MainContent />
-    </KiteDataProvider>
+    <>
+      {!introDone && (
+        <SplashIntro
+          onDone={() => {
+            marcarIntroVista();
+            setIntroDone(true);
+          }}
+        />
+      )}
+      {!isAuthenticated ? (
+        <LoginGate />
+      ) : (
+        <KiteDataProvider>
+          <MainContent />
+        </KiteDataProvider>
+      )}
+    </>
   );
 };
 
