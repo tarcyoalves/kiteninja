@@ -114,12 +114,12 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
           {/* Direction Arrow (rotated) */}
           <div
             className="flex items-center justify-center w-6 h-6 text-white drop-shadow-sm"
-            style={{ transform: `rotate(${spot.windDirectionDeg - 90}deg)` }}
+            style={{ transform: `rotate(${spot.windDirectionDeg + 180}deg)` }}
             title={`Direção: ${spot.windDirectionText} (${spot.windDirectionDeg}°)`}
           >
             <Navigation
               size={18}
-              className="fill-white text-white transform rotate-45"
+              className="fill-white text-white"
             />
           </div>
 

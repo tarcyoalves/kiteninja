@@ -46,7 +46,9 @@ export interface Spot {
   lng: number;
   isFavorite: boolean;
   currentKnots: number;
+  avgKnots?: number;
   maxKnots: number;
+  gustKnots?: number;
   windDirectionDeg: number;
   windDirectionText: string;
   windSafety: WindSafety;
@@ -54,12 +56,17 @@ export interface Spot {
   weatherDescription: string;
   weatherIcon: 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' | 'rain';
   isLiveObservation: boolean;
+  stationName?: string;
+  stationProvider?: string;
   lastUpdated: string;
+  lastUpdatedFull?: string;
   nextUpdate: string;
   /** `null` quando a API marinha não cobriu o spot — ver WindForecastHour. */
   currentTideHeightM: number | null;
   currentTideTrend: TideStatus | null;
   nextTideInfo: string;
+  nextTideHeightM?: number | null;
+  nextTideTime?: string | null;
   waveHeightM: number | null;
   wavePeriodS: number | null;
   waterCondition: 'Flat / Lagoa' | 'Chop Médio' | 'Ondas / Swell' | 'Água Rasa';

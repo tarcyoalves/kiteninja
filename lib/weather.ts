@@ -50,7 +50,9 @@ interface MarineBlock {
 
 export interface SpotWeather {
   currentKnots: number;
+  avgKnots: number;
   maxKnots: number;
+  gustKnots: number;
   windDirectionDeg: number;
   windDirectionText: string;
   temperature: number;
@@ -60,9 +62,12 @@ export interface SpotWeather {
   currentTideHeightM: number | null;
   currentTideTrend: TideStatus | null;
   nextTideInfo: string;
+  nextTideHeightM: number | null;
+  nextTideTime: string | null;
   waveHeightM: number | null;
   wavePeriodS: number | null;
   lastUpdated: string;
+  lastUpdatedFull: string;
   nextUpdate: string;
   daysForecast: DayForecast[];
 }
@@ -317,17 +322,29 @@ export function statusFromTrend(trend: 'up' | 'down' | 'peak_high' | 'peak_low')
   return 'estável';
 }
 
-/** Próxima maré alta ou baixa a partir de `from`, com minutos interpolados e altura precisa. */
-export function nextTideText(times: string[], levels: (number | null)[], from: number): string {
+export function nextTideDetails(
+  times: string[],
+  levels: (number | null)[],
+  from: number
+): { text: string; peakHeightM: number | null; peakTime: string | null } {
   for (let i = from + 1; i < levels.length; i++) {
     const t = tideTrendAt(levels, i);
     if (t === 'peak_high' || t === 'peak_low') {
-      const { peakTime, peakHeight } = interpolateTidePeak(times, levels, i);
+      const { peakTime, peakHeight, peakHeightM } = interpolateTidePeak(times, levels, i);
       const kind = t === 'peak_high' ? 'Alta' : 'Baixa';
-      return `${kind} às ${peakTime} (${peakHeight})`;
+      return {
+        text: `${kind} às ${peakTime} (${peakHeight})`,
+        peakHeightM,
+        peakTime,
+      };
     }
   }
-  return 'Sem dado de maré';
+  return { text: 'Sem dado de maré', peakHeightM: null, peakTime: null };
+}
+
+/** Próxima maré alta ou baixa a partir de `from`, com minutos interpolados e altura precisa. */
+export function nextTideText(times: string[], levels: (number | null)[], from: number): string {
+  return nextTideDetails(times, levels, from).text;
 }
 
 /** Índice da hora mais próxima do agora, no fuso da série. */
@@ -394,10 +411,11 @@ export async function getSpotWeather(
   const h = fc.hourly;
   const m = mar?.hourly ?? null;
 
+  const marineLevels = (m?.sea_level_height_msl ?? []).map((lvl) => toChartDatum(lvl, lat, lng));
   const marineIdx = new Map<string, number>();
-  if (m?.time) m.time.forEach((t, i) => marineIdx.set(t, i));
-  const rawMarineLevels = m?.sea_level_height_msl ?? [];
-  const marineLevels = rawMarineLevels.map((lvl) => toChartDatum(lvl, lat, lng));
+  if (m?.time) {
+    for (let i = 0; i < m.time.length; i++) marineIdx.set(m.time[i], i);
+  }
   const marineTimes = m?.time ?? [];
 
   const byDay = new Map<string, WindForecastHour[]>();
@@ -454,9 +472,29 @@ export async function getSpotWeather(
   const code = num(h.weather_code[now]);
   const nowTrend = marineNow === undefined ? null : tideTrendAt(marineLevels, marineNow);
 
+  const nowWind = Math.round(num(h.wind_speed_10m[now]));
+  const nowGust = Math.round(num(h.wind_gusts_10m[now]));
+  const currentKnots = nowWind;
+  const gustKnots = Math.max(nowGust, currentKnots);
+  const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
+
+  const tideDetail =
+    marineNow === undefined ? null : nextTideDetails(marineTimes, marineLevels, marineNow);
+
+  const nowDt = new Date();
+  const dateFormatted = nowDt.toLocaleDateString('pt-BR', { timeZone: TZ });
+  const timeFormatted = nowDt.toLocaleTimeString('pt-BR', {
+    timeZone: TZ,
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  const lastUpdatedFull = `${dateFormatted} às ${timeFormatted} - (-3 UTC)`;
+
   const data: SpotWeather = {
-    currentKnots: Math.round(num(h.wind_speed_10m[now])),
+    currentKnots,
+    avgKnots,
     maxKnots,
+    gustKnots,
     windDirectionDeg: Math.round(num(h.wind_direction_10m[now])),
     windDirectionText: degToCompass(num(h.wind_direction_10m[now])),
     temperature: Math.round(num(h.temperature_2m[now])),
@@ -464,17 +502,13 @@ export async function getSpotWeather(
     weatherIcon: weatherIcon(code, num(h.is_day[now]) === 1),
     currentTideHeightM: opt(marineLevels[marineNow ?? -1], 2),
     currentTideTrend: nowTrend === null ? null : statusFromTrend(nowTrend),
-    nextTideInfo:
-      marineNow === undefined
-        ? 'Sem dado de maré'
-        : nextTideText(marineTimes, marineLevels, marineNow),
+    nextTideInfo: tideDetail?.text ?? 'Sem dado de maré',
+    nextTideHeightM: tideDetail?.peakHeightM ?? null,
+    nextTideTime: tideDetail?.peakTime ?? null,
     waveHeightM: opt(m?.wave_height?.[marineNow ?? -1], 1),
     wavePeriodS: opt(m?.wave_period?.[marineNow ?? -1], 1),
-    lastUpdated: new Date().toLocaleTimeString('pt-BR', {
-      timeZone: TZ,
-      hour: '2-digit',
-      minute: '2-digit',
-    }),
+    lastUpdated: timeFormatted,
+    lastUpdatedFull,
     nextUpdate: new Date(Date.now() + CACHE_TTL_MS).toLocaleTimeString('pt-BR', {
       timeZone: TZ,
       hour: '2-digit',

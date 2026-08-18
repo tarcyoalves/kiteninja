@@ -37,6 +37,7 @@ import { useAuth } from '../context/AuthContext';
 import { getWindColorClass, calculateKiteSize, getSafetyBadgeColor } from '../lib/windUtils';
 import { TideCurve } from './TideCurve';
 import { WindTrend } from './WindTrend';
+import { LiveWindTelemetry } from './LiveWindTelemetry';
 
 interface SpotDetailModalProps {
   spot: Spot | null;
@@ -411,6 +412,16 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
           beachMode ? 'bg-[#020617] text-white' : 'bg-[#0F172A] text-slate-100'
         }`}
       >
+        {/* Telemetria de Vento Ao Vivo estilo Estação / WindRadar */}
+        <div className="p-3 sm:p-4">
+          <LiveWindTelemetry
+            spot={spot}
+            windUnit={windUnit}
+            convertWind={convertWind}
+            beachMode={beachMode}
+          />
+        </div>
+
         {/* Kiter Beach Glance Bar (Instant one-look summary for kiters on the sand) */}
         <div
           className={`p-3.5 border-b shadow-md transition-colors ${
@@ -460,9 +471,9 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
               <div className="flex items-center gap-1.5 text-xs text-slate-300">
                 <div
                   className="w-4 h-4 flex items-center justify-center text-cyan-400"
-                  style={{ transform: `rotate(${spot.windDirectionDeg - 90}deg)` }}
+                  style={{ transform: `rotate(${spot.windDirectionDeg + 180}deg)` }}
                 >
-                  <Navigation size={13} className="fill-current transform rotate-45" />
+                  <Navigation size={13} className="fill-current" />
                 </div>
                 <span className="font-bold">{spot.windDirectionText} ({spot.windDirectionDeg}°)</span>
                 <span className="text-slate-400">&bull;</span>
