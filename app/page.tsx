@@ -101,37 +101,38 @@ const MainContent: React.FC = () => {
 };
 
 /**
- * Portão de acesso. O conteúdo do app só é montado com sessão válida — a
- * proteção real está nas rotas de API, e aqui garantimos que quem não entrou
- * não recebe nem o HTML das telas internas.
- *
- * A abertura animada roda só para visitante sem sessão, e só uma vez por aba:
- * quem já está logado abre direto no vento, sem espera artificial.
+ * Portão de acesso.
+ * A abertura com o vídeo selecionado pelo admin é exibida sempre que o app abre.
+ * Após a finalização (ou clique em Pular), o velejador segue para o conteúdo do app
+ * se estiver autenticado, ou para o LoginGate se for visitante.
  */
 const Gate: React.FC = () => {
   const { isAuthenticated, isLoading } = useAuth();
-  const [introDone, setIntroDone] = React.useState(() => introJaVista());
+  const [introDone, setIntroDone] = React.useState(false);
 
-  // Enquanto verificamos o cookie não sabemos se é visitante ou velejador
-  // logado. Mostrar a intro aqui puniria quem já tem sessão.
+  // Enquanto verifica o cookie inicial da sessão, mantém fundo escuro sólido
   if (isLoading) {
     return <div className="min-h-screen bg-[#0B1220]" />;
   }
 
+  // Abertura com vídeo selecionado (ou animação de reserva) sempre na inicialização
+  if (!introDone) {
+    return (
+      <SplashIntro
+        onDone={() => {
+          marcarIntroVista();
+          setIntroDone(true);
+        }}
+      />
+    );
+  }
+
+  // Visitante sem sessão ativa vai para a tela de acesso/login
   if (!isAuthenticated) {
-    if (!introDone) {
-      return (
-        <SplashIntro
-          onDone={() => {
-            marcarIntroVista();
-            setIntroDone(true);
-          }}
-        />
-      );
-    }
     return <LoginGate />;
   }
 
+  // Velejador autenticado entra direto na experiência completa
   return (
     <KiteDataProvider>
       <MainContent />
@@ -146,3 +147,4 @@ export default function Page() {
     </AuthProvider>
   );
 }
+

@@ -131,9 +131,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
 
-  const loadSpots = useCallback(async () => {
+  const loadSpots = useCallback(async (forceRefresh = false) => {
     try {
-      const data = await api<{ spots: Spot[] }>('/api/spots');
+      const url = forceRefresh ? `/api/spots?refresh=1&_t=${Date.now()}` : '/api/spots';
+      const data = await api<{ spots: Spot[] }>(url, forceRefresh ? { cache: 'no-store' } : undefined);
       setSpots(data.spots);
     } catch {
       // Sem rede: mantém o que já estava na tela em vez de esvaziar o mapa.
@@ -339,7 +340,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const refreshWindData = () => {
     setIsRefreshing(true);
-    loadSpots().finally(() => setIsRefreshing(false));
+    loadSpots(true).finally(() => setIsRefreshing(false));
   };
 
   const refreshListings = useCallback(() => {

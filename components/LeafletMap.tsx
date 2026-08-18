@@ -108,9 +108,9 @@ function createSpotIcon(spot: Spot, layer: MapLayer): L.DivIcon {
   }
 
   const html = `
-    <div class="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-black shadow-lg border-2 ${bg} ${border} text-white whitespace-nowrap">
-      <div class="flex items-center justify-center" style="transform: rotate(${spot.windDirectionDeg - 90}deg)">
-        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black shadow-xl border-2 ${bg} ${border} text-white whitespace-nowrap backdrop-blur-xs">
+      <div class="flex items-center justify-center shrink-0" style="transform: rotate(${spot.windDirectionDeg + 180}deg)">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2L12 22M12 2L5 12M12 2L19 12"/>
         </svg>
       </div>
@@ -126,27 +126,26 @@ function createSpotIcon(spot: Spot, layer: MapLayer): L.DivIcon {
   });
 }
 
-/** Criar ícone para o spot encontrado via geolocalização.
- *  O marcador é visualmente diferente dos pins de spot (ponto azul com halo de pulso)
- *  para que o usuário não confunda sua posição com um spot de kite.
- *  Respeita prefers-reduced-motion: se o usuário solicitou menos animação,
- *  removes o efeito de pulso para economizar bateria e evitar incômodo. */
+/** Criar ícone para a posição exata do velejador via geolocalização.
+ *  Design com farol pulsante cyan + ponto branco de alta visibilidade. */
 function createUserLocationIcon(reduceMotion: boolean): L.DivIcon {
   const pulseClass = reduceMotion ? '' : 'animate-pulse';
   const pingClass = reduceMotion ? '' : 'animate-ping';
 
   const html = `
-    <div class="relative">
-      <div class="w-5 h-5 rounded-full bg-cyan-500 border-2 border-white shadow-lg ${pulseClass}"></div>
-      <div class="absolute -inset-2 rounded-full bg-cyan-500/30 ${pingClass}"></div>
+    <div class="relative flex items-center justify-center w-7 h-7">
+      <div class="absolute w-7 h-7 rounded-full bg-cyan-400/40 ${pingClass}"></div>
+      <div class="relative w-5 h-5 rounded-full bg-cyan-500 border-2 border-white shadow-xl shadow-cyan-500/60 flex items-center justify-center ${pulseClass}">
+        <div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+      </div>
     </div>
   `;
 
   return L.divIcon({
     html,
     className: 'user-location-marker',
-    iconSize: [20, 20],
-    iconAnchor: [10, 10],
+    iconSize: [28, 28],
+    iconAnchor: [14, 14],
   });
 }
 
@@ -345,29 +344,28 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           ))}
 
           {/* User Location Marker and Accuracy Circle (when located) */}
-          {locateStatus === 'success' && userPosition && (
+          {userPosition && (
             <>
               {/* Círculo translúcido representando a precisão do GPS.
                   Raio igual à precisão em metros (GPS bom: ~10-30m, GPS ruim: >1km).
                   Cor muda conforme a qualidade: verde=excelente, amarelo=razoável, vermelho=ruim. */}
               <CircleMarker
                 center={[userPosition.lat, userPosition.lng]}
-                radius={Math.max(10, userPosition.accuracy / 5)}
+                radius={Math.max(12, Math.min(60, userPosition.accuracy / 5))}
                 pathOptions={{
                   color: userPosition.accuracy <= 50 ? '#22c55e' :
                          userPosition.accuracy <= 1000 ? '#eab308' : '#ef4444',
                   fillColor: userPosition.accuracy <= 50 ? '#22c55e' :
                             userPosition.accuracy <= 1000 ? '#eab308' : '#ef4444',
-                  fillOpacity: 0.15,
-                  weight: 1.5,
+                  fillOpacity: 0.18,
+                  weight: 2,
                 }}
               />
-              {/* Pino do usuário: ponto azul com animação de pulso para ser visível e
-                  diferente dos pinos de spot. Z-index alto para ficar acima dos spots. */}
+              {/* Pino do usuário: farol azul com pulso nítido e z-index prioritário sobre os spots. */}
               <Marker
                 position={[userPosition.lat, userPosition.lng]}
                 icon={createUserLocationIcon(reduceMotion)}
-                zIndexOffset={1000}
+                zIndexOffset={2000}
               />
             </>
           )}

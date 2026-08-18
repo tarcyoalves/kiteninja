@@ -11,19 +11,25 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura'>('convites');
 
   return (
-    <main className="min-h-screen bg-[#0F172A] text-slate-100 p-4 sm:p-6 flex flex-col items-center">
+    <main
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.25rem)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)',
+      }}
+      className="min-h-screen bg-[#0F172A] text-slate-100 px-4 sm:px-6 flex flex-col items-center"
+    >
       <div className="w-full max-w-3xl space-y-6">
         {/* Header */}
-        <header className="flex items-center justify-between">
+        <header className="flex items-center justify-between pb-2 border-b border-slate-800/80">
           <Link
             href="/"
-            className="flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-xs font-bold text-slate-300 hover:text-white border border-slate-700/60 transition-colors"
           >
-            <ArrowLeft size={16} />
+            <ArrowLeft size={16} className="text-cyan-400" />
             <span>Voltar ao app</span>
           </Link>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Admin:</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#1E293B]/80 border border-slate-800">
+            <span className="text-[11px] font-bold text-slate-400">Admin:</span>
             <strong className="text-xs font-black text-cyan-400">{adminName}</strong>
           </div>
         </header>

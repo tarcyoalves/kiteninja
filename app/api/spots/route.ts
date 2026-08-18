@@ -16,9 +16,11 @@ import { getManySpotsWeather } from '@/lib/weather';
  * também evita que a chave-menos API de clima seja usada por terceiros através
  * do nosso servidor.
  */
-export async function GET() {
+export async function GET(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    const { searchParams } = new URL(request.url);
+    const forceRefresh = searchParams.get('refresh') === '1' || searchParams.get('refresh') === 'true';
 
     const rows = await sql`
       SELECT id, name, location, state, country, country_flag, lat, lng,
@@ -55,7 +57,7 @@ export async function GET() {
 
     // Uma chamada por coordenada, todas em paralelo e servidas do cache quando
     // dois spots repetem o mesmo par lat/lng arredondado.
-    const weather = await getManySpotsWeather(base, 7);
+    const weather = await getManySpotsWeather(base, 7, forceRefresh);
 
     const favIds = new Set<string>();
     const favRows = await sql`SELECT spot_id FROM favorites WHERE user_id = ${user.id}`;

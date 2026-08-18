@@ -268,8 +268,8 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     return () => {
       reprojetarRef.current = null;
       parar();
-      map.off('movestart', aoMover);
-      map.off('zoomstart', aoMover);
+      map.off('move', aoMover);
+      map.off('zoom', aoMover);
       map.off('moveend', aoTerminarMover);
       map.off('zoomend', aoTerminarMover);
       map.off('resize', aoTerminarMover);

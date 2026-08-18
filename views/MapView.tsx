@@ -119,20 +119,23 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       }
     };
 
-    // Iniciar watchPosition para seguir o usuário em tempo real.
-    // timeout: 10s - tempo razoável para GPS fixer inicial.
-    // maximumAge: 0 - sempre pega posição fresca, sem cache.
-    // enableHighAccuracy: true - GPS do celular, não localização por IP.
+    // Obter fix imediato rápido (para renderizar o pino na hora)
+    navigator.geolocation.getCurrentPosition(
+      onSuccess,
+      onError,
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+
+    // Iniciar watchPosition para seguir o usuário em tempo real
     watchIdRef.current = navigator.geolocation.watchPosition(
       onSuccess,
       onError,
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
   }, [spots]);
 
   /**
    * Para o rastreamento quando o usuário sai da tela de mapa.
-   * Este efeito roda quando o componente é desmontado.
    */
   useEffect(() => {
     return () => {
@@ -144,29 +147,11 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   }, []);
 
   /**
-   * Localiza sozinho ao abrir o mapa: o velejador quer ver onde está sem
-   * caçar botão. Antes só o botão disparava, então o mapa abria sem pino
-   * nenhum. Só pede se a permissão JÁ foi concedida — assim ninguém leva
-   * pop-up do sistema na cara ao abrir o app, e quem já autorizou vê o
-   * pino na hora. A Permissions API não existe em todo Safari antigo; no
-   * fallback esperamos o toque no botão.
+   * Localiza automaticamente ao abrir a tela de mapa no celular/desktop.
    */
   useEffect(() => {
-    if (!navigator.geolocation || !navigator.permissions?.query) return;
-    let cancelado = false;
-
-    navigator.permissions
-      .query({ name: 'geolocation' as PermissionName })
-      .then((status) => {
-        if (!cancelado && status.state === 'granted') handleLocateUser();
-      })
-      .catch(() => {
-        /* Navegador sem Permissions API: fica no fluxo do botão. */
-      });
-
-    return () => {
-      cancelado = true;
-    };
+    if (typeof window === 'undefined' || !navigator.geolocation) return;
+    handleLocateUser();
   }, [handleLocateUser]);
 
   /**
