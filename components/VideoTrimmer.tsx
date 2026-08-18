@@ -157,23 +157,27 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
   // Controla qual alça está sendo arrastada
   const [alçaArrastando, setAlçaArrastando] = useState<'inicio' | 'fim' | null>(null);
 
-  // Inicializa o trecho com valorInicial
+  // Inicializa o trecho com valorInicial evitando re-renders em loop
   useEffect(() => {
     if (duracaoVideo > 0) {
       const corrigido = validarValorInicial(valorInicial, duracaoVideo, minSeg, maxSeg);
-      setTrecho(corrigido);
+      setTrecho((anterior) => {
+        if (anterior.inicioSeg === corrigido.inicioSeg && anterior.fimSeg === corrigido.fimSeg) {
+          return anterior;
+        }
+        return corrigido;
+      });
       onChange(corrigido);
     }
-  }, [duracaoVideo, valorInicial, minSeg, maxSeg, onChange]);
+  }, [duracaoVideo, valorInicial?.inicioSeg, valorInicial?.fimSeg, minSeg, maxSeg]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Extrai miniaturas do vídeo
-  // O seek é assíncrono: precisamos esperar o evento 'seeked' antes de desenhar
-  // cada quadro, senão capturamos o frame anterior.
+  // Extrai miniaturas do vídeo de forma resiliente
   useEffect(() => {
     if (!videoRef.current || duracaoVideo <= 0) return;
 
+    let cancelado = false;
     const video = videoRef.current;
-    const NUM_MINIATURAS = 10;
+    const NUM_MINIATURAS = 8;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -183,18 +187,35 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
     canvas.height = 90;
 
     const tempMiniaturas: string[] = [];
-    let extraidas = 0;
 
     const capturarQuadro = (tempo: number) => {
       return new Promise<void>((resolve) => {
-        const handler = () => {
-          video.removeEventListener('seeked', handler);
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          tempMiniaturas.push(canvas.toDataURL('image/jpeg', 0.5));
-          extraidas++;
-          resolve();
+        let finalizado = false;
+        const concluir = () => {
+          if (!finalizado) {
+            finalizado = true;
+            video.removeEventListener('seeked', onSeeked);
+            clearTimeout(timeoutId);
+            resolve();
+          }
         };
-        video.addEventListener('seeked', handler);
+
+        const onSeeked = () => {
+          if (cancelado) {
+            concluir();
+            return;
+          }
+          try {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            tempMiniaturas.push(canvas.toDataURL('image/jpeg', 0.5));
+          } catch {
+            // Se CORS impedir toDataURL, não trava o trimmer
+          }
+          concluir();
+        };
+
+        const timeoutId = setTimeout(concluir, 1000);
+        video.addEventListener('seeked', onSeeked);
         video.currentTime = tempo;
       });
     };
@@ -202,14 +223,21 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
     const extrairTodas = async () => {
       setCarregando(true);
       for (let i = 0; i < NUM_MINIATURAS; i++) {
+        if (cancelado) break;
         const tempo = (duracaoVideo / NUM_MINIATURAS) * (i + 0.5);
         await capturarQuadro(tempo);
       }
-      setMiniaturas(tempMiniaturas);
-      setCarregando(false);
+      if (!cancelado) {
+        setMiniaturas(tempMiniaturas);
+        setCarregando(false);
+      }
     };
 
     extrairTodas();
+
+    return () => {
+      cancelado = true;
+    };
   }, [duracaoVideo]);
 
   // Cleanup do animation frame
@@ -407,11 +435,14 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
 
   return (
     <div className="w-full bg-[#0B1220] rounded-2xl border border-slate-700 p-4 space-y-4">
-      {/* Video oculto para captura de frames */}
+      {/* Video offscreen para decodificação e captura de frames */}
       <video
         ref={videoRef}
         src={src}
-        className="hidden"
+        className="absolute opacity-0 pointer-events-none w-1 h-1 -left-[9999px]"
+        muted
+        playsInline
+        preload="auto"
         onLoadedMetadata={handleLoadedMetadata}
         onTimeUpdate={handleTimeUpdate}
         onEnded={handleEnded}

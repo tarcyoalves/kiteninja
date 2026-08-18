@@ -72,12 +72,17 @@ export const IntroVideoManager: React.FC = () => {
   async function carregar() {
     setCarregando(true);
     try {
-      const res = await fetch('/api/admin/intro-video');
+      const res = await fetch('/api/admin/intro-video', { cache: 'no-store' });
       if (!res.ok) throw new Error('Não foi possível ler a configuração.');
       const data = (await res.json()) as { video: VideoSalvo | null };
       setSalvo(data.video);
-      if (data.video?.inicioSeg !== undefined && data.video?.fimSeg !== undefined) {
-        setTrechoSalvo({ inicioSeg: data.video.inicioSeg, fimSeg: data.video.fimSeg });
+      if (data.video?.url) {
+        setTrechoSalvo({
+          inicioSeg: data.video.inicioSeg ?? 0,
+          fimSeg: data.video.fimSeg ?? 6,
+        });
+      } else {
+        setTrechoSalvo(null);
       }
       setErro(null);
     } catch (e) {
@@ -124,6 +129,7 @@ export const IntroVideoManager: React.FC = () => {
       v.src = src;
       v.muted = true;
       v.playsInline = true;
+      v.preload = 'auto';
 
       const desistir = setTimeout(() => resolve(undefined), 5000);
 
@@ -158,6 +164,12 @@ export const IntroVideoManager: React.FC = () => {
         clearTimeout(desistir);
         resolve(undefined);
       });
+
+      try {
+        v.load();
+      } catch {
+        // Ignora caso load não seja suportado em algum browser
+      }
     });
   }
 
@@ -446,6 +458,7 @@ function enviarComProgresso(form: FormData, onProgresso: (pct: number) => void):
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', '/api/admin/intro-video');
+    xhr.withCredentials = true;
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable) {
