@@ -355,6 +355,17 @@ CREATE TABLE IF NOT EXISTS content_reports (
 CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC);
 
 -- ------------------------------------------------ preferências de notificação
+-- Configuração global do app, editável pelo admin sem novo deploy.
+-- Guardamos como chave/valor JSONB em vez de uma coluna por ajuste: cada novo
+-- controle no painel viraria uma migração, e o valor da abertura já é um objeto
+-- (url + trecho + poster), não um escalar.
+CREATE TABLE IF NOT EXISTS app_settings (
+  key        TEXT PRIMARY KEY,
+  value      JSONB NOT NULL,
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS notification_preferences (
   user_id                    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   wind_alerts_enabled        BOOLEAN NOT NULL DEFAULT TRUE,

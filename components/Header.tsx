@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import React from 'react';
-import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus } from 'lucide-react';
+import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus, Shield } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 
@@ -24,7 +24,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
     setIsLoggerOpen,
   } = useKiteData();
 
-  const { user, openAuthModal } = useAuth();
+  const { user, isAdmin, openAuthModal } = useAuth();
 
   const getHeaderTitle = () => {
     if (title) return title;
@@ -145,6 +145,19 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
             >
               Editar
             </button>
+          )}
+
+          {/* Atalho para o painel, à vista sem abrir a gaveta. Só para admin:
+              para os outros levaria a um redirect. */}
+          {isAdmin && (
+            <a
+              href="/admin"
+              title="Painel do Admin"
+              aria-label="Abrir painel do admin"
+              className="w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all"
+            >
+              <Shield size={15} className="stroke-[2.5]" />
+            </a>
           )}
 
           {/* Fast Quick Action: Log Session button */}

@@ -2,12 +2,13 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, Users, Shield, Sparkles } from 'lucide-react';
+import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film } from 'lucide-react';
 import { InviteManager } from './InviteManager';
 import { UserManager } from './UserManager';
+import { IntroVideoManager } from './IntroVideoManager';
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
-  const [tab, setTab] = useState<'convites' | 'usuarios'>('convites');
+  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura'>('convites');
 
   return (
     <main className="min-h-screen bg-[#0F172A] text-slate-100 p-4 sm:p-6 flex flex-col items-center">
@@ -65,16 +66,26 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                 <Users size={14} />
                 <span>Velejadores</span>
               </button>
+
+              <button
+                onClick={() => setTab('abertura')}
+                className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 transition-all ${
+                  tab === 'abertura'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Film size={14} />
+                <span>Abertura</span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* Content Body */}
-        {tab === 'convites' ? (
-          <InviteManager adminName={adminName} />
-        ) : (
-          <UserManager />
-        )}
+        {tab === 'convites' && <InviteManager adminName={adminName} />}
+        {tab === 'usuarios' && <UserManager />}
+        {tab === 'abertura' && <IntroVideoManager />}
       </div>
     </main>
   );

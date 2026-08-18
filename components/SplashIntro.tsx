@@ -1,17 +1,19 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { parseIntroVideo, type IntroVideo } from '../lib/introVideo';
 
 /**
- * Abertura de ~3,5s exibida a quem chega sem sessão, antes da tela de login.
+ * Abertura exibida a quem chega sem sessão, antes da tela de login.
  *
- * É animação vetorial, não arquivo de vídeo: um MP4 de qualidade custaria
- * 1–3MB baixados antes do primeiro pixel útil, justamente no 4G fraco da praia
- * onde o velejador está. SVG + CSS pesa alguns KB, escala em qualquer tela e
- * não engasga no primeiro frame.
+ * Duas formas: o vídeo que o admin sobe no painel, ou a animação vetorial de
+ * ~3,5s como reserva. A animação continua sendo o padrão porque não custa
+ * download antes do primeiro pixel útil — importa no 4G fraco da praia, onde o
+ * velejador está. Quando há vídeo configurado, ele ganha; se falhar em tocar,
+ * cai na animação em vez de deixar tela preta.
  *
- * Três regras de respeito ao usuário:
- * 1. `prefers-reduced-motion` pula a animação — movimento pode causar náusea
+ * Três regras de respeito ao usuário, válidas nas duas formas:
+ * 1. `prefers-reduced-motion` pula a abertura — movimento pode causar náusea
  *    e enjoo em quem tem sensibilidade vestibular.
  * 2. Botão "Pular" sempre visível: ninguém deve ser obrigado a esperar.
  * 3. Só aparece uma vez por sessão do navegador (sessionStorage), então
@@ -21,7 +23,7 @@ import React, { useEffect, useRef, useState } from 'react';
 const DURATION_MS = 3500;
 const STORAGE_KEY = 'kiteninja:intro-visto';
 
-export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
+export const SplashAnimado: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [leaving, setLeaving] = useState(false);
   // onDone pode mudar de identidade entre renders; a ref evita reiniciar o timer.
   const doneRef = useRef(onDone);
@@ -204,3 +206,178 @@ export function marcarIntroVista(): void {
     // Sem storage, a intro repete — irritante, não quebrado.
   }
 }
+
+/**
+ * Escolhe entre o vídeo configurado pelo admin e a animação vetorial.
+ *
+ * Enquanto consulta a configuração não mostramos nada além do fundo: exibir a
+ * animação e trocar por vídeo no meio daria um salto visual. A consulta é
+ * rápida (rota cacheada na borda) e tem prazo curto — se demorar, seguimos com
+ * a animação em vez de fazer o velejador esperar por causa da abertura.
+ */
+export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
+  const [decisao, setDecisao] = useState<'carregando' | 'video' | 'animacao'>('carregando');
+  const [video, setVideo] = useState<IntroVideo | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    // Sem rede não há abertura em vídeo; o abort garante que a espera não passe
+    // de 2,5s, senão a tela de login ficaria refém da configuração.
+    const ctrl = new AbortController();
+    const prazo = setTimeout(() => ctrl.abort(), 2500);
+
+    (async () => {
+      try {
+        const res = await fetch('/api/intro-video', { signal: ctrl.signal });
+        if (!res.ok) throw new Error('sem configuração');
+        const data = (await res.json()) as { video?: unknown };
+        const v = parseIntroVideo(data.video);
+        if (!ativo) return;
+        if (v) {
+          setVideo(v);
+          setDecisao('video');
+        } else {
+          setDecisao('animacao');
+        }
+      } catch {
+        if (ativo) setDecisao('animacao');
+      } finally {
+        clearTimeout(prazo);
+      }
+    })();
+
+    return () => {
+      ativo = false;
+      ctrl.abort();
+      clearTimeout(prazo);
+    };
+  }, []);
+
+  if (decisao === 'carregando') {
+    return <div className="fixed inset-0 z-splash bg-[#0B1220]" aria-hidden="true" />;
+  }
+
+  if (decisao === 'video' && video) {
+    return (
+      <SplashVideo
+        video={video}
+        onDone={onDone}
+        onFalha={() => setDecisao('animacao')}
+      />
+    );
+  }
+
+  return <SplashAnimado onDone={onDone} />;
+};
+
+/**
+ * Toca apenas o trecho escolhido no editor. Não recortamos o arquivo: o corte é
+ * metadado, então o admin reajusta depois sem subir o vídeo de novo.
+ */
+const SplashVideo: React.FC<{
+  video: IntroVideo;
+  onDone: () => void;
+  onFalha: () => void;
+}> = ({ video, onDone, onFalha }) => {
+  const ref = useRef<HTMLVideoElement | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const doneRef = useRef(onDone);
+  doneRef.current = onDone;
+
+  useEffect(() => {
+    const reduzMovimento =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduzMovimento) {
+      doneRef.current();
+      return;
+    }
+
+    const el = ref.current;
+    if (!el) return;
+
+    let encerrado = false;
+    const finalizar = () => {
+      if (encerrado) return;
+      encerrado = true;
+      setLeaving(true);
+      setTimeout(() => doneRef.current(), 400);
+    };
+
+    // `timeupdate` dispara a cada ~250ms, o que deixaria passar um pedaço
+    // visível além do fim do trecho; o rAF fecha no quadro certo.
+    let raf = 0;
+    const vigiar = () => {
+      if (el.currentTime >= video.fimSeg) {
+        el.pause();
+        finalizar();
+        return;
+      }
+      raf = requestAnimationFrame(vigiar);
+    };
+
+    const aoCarregar = () => {
+      // Se o trecho salvo não couber no arquivo (vídeo trocado por fora),
+      // começamos do zero em vez de travar num seek impossível.
+      const inicio = video.inicioSeg < el.duration ? video.inicioSeg : 0;
+      el.currentTime = inicio;
+      el.play()
+        .then(() => {
+          raf = requestAnimationFrame(vigiar);
+        })
+        .catch(() => {
+          // Autoplay barrado apesar do muted, ou codec sem suporte.
+          onFalha();
+        });
+    };
+
+    // Rede da praia pode travar no meio do download; não deixamos a abertura
+    // segurar o login para sempre.
+    const limite = setTimeout(finalizar, Math.min((video.fimSeg - video.inicioSeg) * 1000 + 4000, 20000));
+
+    el.addEventListener('loadedmetadata', aoCarregar);
+    el.addEventListener('error', onFalha);
+    if (el.readyState >= 1) aoCarregar();
+
+    return () => {
+      el.removeEventListener('loadedmetadata', aoCarregar);
+      el.removeEventListener('error', onFalha);
+      cancelAnimationFrame(raf);
+      clearTimeout(limite);
+    };
+  }, [video, onFalha]);
+
+  function pular() {
+    marcarIntroVista();
+    onDone();
+  }
+
+  return (
+    <div
+      className={`fixed inset-0 z-splash bg-black transition-opacity duration-400 ${
+        leaving ? 'opacity-0' : 'opacity-100'
+      }`}
+      role="status"
+      aria-label="Abertura do KiteNinja"
+    >
+      <video
+        ref={ref}
+        src={video.url}
+        poster={video.posterDataUrl}
+        // Sem `muted` o navegador barra o autoplay; sem `playsInline` o iOS
+        // abre o vídeo em tela cheia própria e sequestra a navegação.
+        muted
+        playsInline
+        preload="auto"
+        aria-hidden="true"
+        className="w-full h-full object-cover"
+      />
+      <button
+        onClick={pular}
+        className="absolute bottom-8 left-1/2 -translate-x-1/2 px-5 py-2 rounded-full bg-white/15 border border-white/25 text-white text-sm font-bold backdrop-blur-md active:scale-95 transition-all"
+      >
+        Pular
+      </button>
+    </div>
+  );
+};

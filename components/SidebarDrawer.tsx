@@ -41,7 +41,7 @@ export const SidebarDrawer: React.FC = () => {
     setWindUnit,
   } = useKiteData();
 
-  const { user, logout, openAuthModal, updateProfile } = useAuth();
+  const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -407,6 +407,19 @@ export const SidebarDrawer: React.FC = () => {
               {beachMode ? 'Ativo' : 'Desativado'}
             </button>
           </div>
+
+          {/* O painel existia só por URL digitada. O link aparece apenas para
+              admin: para os outros seria um botão que só leva a um redirect. */}
+          {isAdmin && (
+            <a
+              href="/admin"
+              onClick={() => setIsSidebarOpen(false)}
+              className="w-full mt-2 py-2.5 px-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-300 font-bold flex items-center justify-center gap-2 transition-colors"
+            >
+              <Shield size={14} />
+              <span>Painel do Admin</span>
+            </a>
+          )}
 
           {user && (
             <button

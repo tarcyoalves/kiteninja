@@ -284,6 +284,48 @@ async function main() {
     [riderA]
   );
 
+  console.log('\nConfiguração global (app_settings):');
+  await expectOk(
+    db,
+    'grava a abertura com upsert por chave',
+    `INSERT INTO app_settings (key, value, updated_by, updated_at)
+     VALUES ('intro_video', $1::jsonb, $2, NOW())
+     ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [
+      JSON.stringify({ url: 'https://blob/x.mp4', inicioSeg: 1, fimSeg: 6, ativo: true }),
+      adminId,
+    ]
+  );
+
+  // O upsert é o caminho normal: o admin troca a abertura várias vezes.
+  await expectOk(
+    db,
+    'segunda gravação sobrescreve em vez de duplicar',
+    `INSERT INTO app_settings (key, value, updated_by, updated_at)
+     VALUES ('intro_video', $1::jsonb, $2, NOW())
+     ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
+    [
+      JSON.stringify({ url: 'https://blob/y.mp4', inicioSeg: 0, fimSeg: 4, ativo: true }),
+      adminId,
+    ]
+  );
+
+  const settings = await db.query<{ cnt: number; url: string }>(
+    `SELECT COUNT(*)::int AS cnt, MAX(value->>'url') AS url
+     FROM app_settings WHERE key = 'intro_video'`
+  );
+  check('app_settings tem 1 linha por chave', Number(settings.rows[0].cnt) === 1);
+  check('valor gravado é o último enviado', settings.rows[0].url === 'https://blob/y.mp4');
+
+  const leitura = await db.query(
+    `SELECT value FROM app_settings WHERE key = 'intro_video' LIMIT 1`
+  );
+  const lido = leitura.rows[0] as { value: Record<string, unknown> };
+  check('JSONB volta como objeto, não string', typeof lido.value === 'object');
+  check('campo do trecho preserva número', Number(lido.value.fimSeg) === 4);
+
   console.log('\nIsolamento entre velejadores:');
   const sess = await db.query<{ id: string }>(
     `INSERT INTO sessions_log (user_id, spot_id, spot_name, spot_location, date,

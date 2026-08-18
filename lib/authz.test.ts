@@ -25,6 +25,8 @@ const PUBLICAS: Record<string, string> = {
   'auth/reset-password/route.ts': 'redefinição de senha com token de uso único',
   'invites/validate/route.ts': 'o convidado ainda não tem conta',
   'invites/accept/route.ts': 'cria a conta a partir do convite',
+  'intro-video/route.ts':
+    'a abertura toca antes do login; só devolve a URL de um arquivo em storage público, nada do usuário',
 };
 
 function listarRotas(dir: string): string[] {
