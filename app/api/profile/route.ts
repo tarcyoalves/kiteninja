@@ -26,14 +26,14 @@ export async function PATCH(request: Request) {
     const highestJumpM = num(body, 'highestJumpM', { min: 0, max: 40, optional: true });
 
     /**
-     * Foto de perfil. Chega como data URL JPEG já comprimida no cliente
-     * (lib/imageCompress). O limite acompanha o do compressor: acima disso a
-     * Vercel recusa o corpo antes de a rota rodar.
+     * Foto de perfil. Aceita data URL JPEG/PNG/WebP comprimida ou URLs HTTPS seguras (ex: Dicebear, Vercel Blob).
      */
     const avatarUrl = str(body, 'avatarUrl', { optional: true, max: 1_500_000 });
-    if (avatarUrl && !/^data:image\/(jpeg|png|webp);base64,/.test(avatarUrl)) {
-      // Recusar URL externa evita que o campo se transforme em vetor de
-      // requisição a terceiros (ou de rastreio) a partir do avatar.
+    if (
+      avatarUrl &&
+      !/^data:image\/(jpeg|jpg|png|webp|gif|svg\+xml);base64,/i.test(avatarUrl) &&
+      !/^https:\/\/[a-zA-Z0-9_\-./~%+=?&@#]+$/i.test(avatarUrl)
+    ) {
       throw new HttpError(400, 'Formato de imagem não suportado.');
     }
 
@@ -49,18 +49,32 @@ export async function PATCH(request: Request) {
         ) as Discipline[])
       : null;
 
+    const preferredWindUnit = str(body, 'preferredWindUnit', { optional: true, max: 10 });
+    const rawQuiverKites = (body as Record<string, unknown>)?.quiverKites;
+    const quiverKites = Array.isArray(rawQuiverKites)
+      ? rawQuiverKites.map((k) => Number(k)).filter((k) => !isNaN(k) && k > 0 && k < 30)
+      : null;
+
+    const rawQuiverBoards = (body as Record<string, unknown>)?.quiverBoards;
+    const quiverBoards = Array.isArray(rawQuiverBoards)
+      ? rawQuiverBoards.map((b) => String(b).trim()).filter((b) => b.length > 0)
+      : null;
+
     // COALESCE mantém o valor atual quando o campo não foi enviado.
     await sql`
       UPDATE users SET
-        name           = COALESCE(${name || null}, name),
-        weight_kg      = COALESCE(${weightKg}, weight_kg),
-        home_spot      = COALESCE(${homeSpot || null}, home_spot),
-        bio            = COALESCE(${bio || null}, bio),
-        highest_jump_m = COALESCE(${highestJumpM}, highest_jump_m),
-        avatar_url     = COALESCE(${avatarUrl || null}, avatar_url),
-        rider_level    = COALESCE(${riderLevel}, rider_level),
-        disciplines    = COALESCE(${disciplines && disciplines.length > 0 ? disciplines : null}, disciplines),
-        updated_at     = NOW()
+        name                = COALESCE(${name || null}, name),
+        weight_kg           = COALESCE(${weightKg}, weight_kg),
+        home_spot           = COALESCE(${homeSpot || null}, home_spot),
+        bio                 = COALESCE(${bio || null}, bio),
+        highest_jump_m      = COALESCE(${highestJumpM}, highest_jump_m),
+        avatar_url          = COALESCE(${avatarUrl || null}, avatar_url),
+        rider_level         = COALESCE(${riderLevel}, rider_level),
+        disciplines         = COALESCE(${disciplines && disciplines.length > 0 ? disciplines : null}, disciplines),
+        quiver_kites        = COALESCE(${quiverKites && quiverKites.length > 0 ? quiverKites : null}, quiver_kites),
+        quiver_boards       = COALESCE(${quiverBoards && quiverBoards.length > 0 ? quiverBoards : null}, quiver_boards),
+        preferred_wind_unit = COALESCE(${preferredWindUnit || null}, preferred_wind_unit),
+        updated_at          = NOW()
       WHERE id = ${user.id}
     `;
 

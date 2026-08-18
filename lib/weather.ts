@@ -157,10 +157,39 @@ async function getJson<T>(url: string): Promise<T | null> {
 }
 
 /**
+ * Resolve a coordenada marinha correspondente em mar aberto (offshore).
+ *
+ * Pontos de praia/costa muitas vezes caem em células continentais na grade
+ * da API marinha (ex.: elevação de 62m em Barra de Pernambuquinho), distorcendo
+ * a fase da maré e os cálculos de onda. Deslocar alguns km para o mar aberto
+ * garante resolução em célula puramente oceânica com elevação ~0m.
+ */
+export function getMarineCoordinates(lat: number, lng: number): { lat: number; lng: number } {
+  // Litoral do Nordeste (RN, CE, PI, MA): oceano fica ao norte/nordeste
+  if (lat > -8.0 && lat < 0 && lng > -45.0 && lng < -34.0) {
+    return {
+      lat: Number((lat + 0.08).toFixed(4)),
+      lng: Number((lng + 0.02).toFixed(4)),
+    };
+  }
+
+  // Litoral Sudeste/Sul (RJ, SP, SC, RS): oceano fica ao sul/sudeste
+  if (lat <= -20.0 && lng > -48.0 && lng < -40.0) {
+    return {
+      lat: Number((lat - 0.08).toFixed(4)),
+      lng: Number((lng + 0.02).toFixed(4)),
+    };
+  }
+
+  // Padrão de deslocamento leve mar adentro
+  return { lat, lng };
+}
+
+/**
  * Tendência da maré comparando a altura anterior e a seguinte. Nos extremos da
  * série não há vizinho dos dois lados, então caímos para o vizinho existente.
  */
-function tideTrendAt(
+export function tideTrendAt(
   levels: (number | null)[],
   i: number
 ): 'up' | 'down' | 'peak_high' | 'peak_low' {
@@ -177,20 +206,70 @@ function tideTrendAt(
   return rising ? 'up' : 'down';
 }
 
-function statusFromTrend(trend: 'up' | 'down' | 'peak_high' | 'peak_low'): TideStatus {
+/**
+ * Interpolação parabólica (3 pontos) para estimar o minuto exato e a altura
+ * real do pico de preamar ou baixa-mar entre amostras horárias discretas.
+ */
+export function interpolateTidePeak(
+  times: string[],
+  levels: (number | null)[],
+  i: number
+): { peakTime: string; peakHeight: string; peakHeightM: number } {
+  const cur = levels[i];
+  if (typeof cur !== 'number' || !times[i]) {
+    return { peakTime: '--:--', peakHeight: '0.0m', peakHeightM: 0 };
+  }
+
+  const prev = i > 0 && typeof levels[i - 1] === 'number' ? levels[i - 1]! : cur;
+  const next = i + 1 < levels.length && typeof levels[i + 1] === 'number' ? levels[i + 1]! : cur;
+
+  const y0 = prev;
+  const y1 = cur;
+  const y2 = next;
+
+  const denom = y0 - 2 * y1 + y2;
+  let deltaHours = 0;
+  let peakHeightM = y1;
+
+  // Se os 3 pontos formam uma curvatura não nula
+  if (Math.abs(denom) > 1e-5) {
+    deltaHours = (y0 - y2) / (2 * denom);
+    // Limita o deslocamento a [-0.5, +0.5] horas para não vazar do intervalo da amostra
+    deltaHours = Math.max(-0.5, Math.min(0.5, deltaHours));
+    peakHeightM = y1 - ((y0 - y2) * (y0 - y2)) / (8 * denom);
+  }
+
+  const baseIso = times[i];
+  const baseHour = Number(baseIso.slice(11, 13));
+  const totalMinutes = Math.round(baseHour * 60 + deltaHours * 60);
+  const normalizedMinutes = ((totalMinutes % 1440) + 1440) % 1440;
+  const finalHour = Math.floor(normalizedMinutes / 60);
+  const finalMin = normalizedMinutes % 60;
+
+  const hh = String(finalHour).padStart(2, '0');
+  const mm = String(finalMin).padStart(2, '0');
+
+  return {
+    peakTime: `${hh}:${mm}`,
+    peakHeight: `${peakHeightM.toFixed(1)}m`,
+    peakHeightM: Number(peakHeightM.toFixed(2)),
+  };
+}
+
+export function statusFromTrend(trend: 'up' | 'down' | 'peak_high' | 'peak_low'): TideStatus {
   if (trend === 'up') return 'subindo';
   if (trend === 'down') return 'descendo';
   return 'estável';
 }
 
-/** Próxima maré alta ou baixa a partir de `from`, como texto pronto para a UI. */
-function nextTideText(times: string[], levels: (number | null)[], from: number): string {
+/** Próxima maré alta ou baixa a partir de `from`, com minutos interpolados e altura precisa. */
+export function nextTideText(times: string[], levels: (number | null)[], from: number): string {
   for (let i = from + 1; i < levels.length; i++) {
     const t = tideTrendAt(levels, i);
     if (t === 'peak_high' || t === 'peak_low') {
-      const hh = times[i].slice(11, 16);
+      const { peakTime, peakHeight } = interpolateTidePeak(times, levels, i);
       const kind = t === 'peak_high' ? 'Alta' : 'Baixa';
-      return `${kind} às ${hh} (${num(levels[i]).toFixed(1)}m)`;
+      return `${kind} às ${peakTime} (${peakHeight})`;
     }
   }
   return 'Sem dado de maré';
@@ -221,6 +300,8 @@ export async function getSpotWeather(
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.data;
 
+  const marineCoords = getMarineCoordinates(lat, lng);
+
   const forecastQs = new URLSearchParams({
     latitude: String(lat),
     longitude: String(lng),
@@ -240,8 +321,8 @@ export async function getSpotWeather(
        aberto perde o efeito de costa que o velejador sente na praia. */
   });
   const marineQs = new URLSearchParams({
-    latitude: String(lat),
-    longitude: String(lng),
+    latitude: String(marineCoords.lat),
+    longitude: String(marineCoords.lng),
     hourly: 'wave_height,wave_direction,wave_period,sea_level_height_msl',
     timezone: TZ,
     forecast_days: String(days),
@@ -287,9 +368,10 @@ export async function getSpotWeather(
       tideHeightM: mi === undefined ? 0 : Number(num(marineLevels[mi]).toFixed(2)),
     };
 
-    if (trend === 'peak_high' || trend === 'peak_low') {
-      hour.tidePeakTime = iso.slice(11, 16);
-      hour.tidePeakHeight = `${hour.tideHeightM.toFixed(1)}m`;
+    if (mi !== undefined && (trend === 'peak_high' || trend === 'peak_low')) {
+      const { peakTime, peakHeight } = interpolateTidePeak(marineTimes, marineLevels, mi);
+      hour.tidePeakTime = peakTime;
+      hour.tidePeakHeight = peakHeight;
     }
 
     const k = dayKey(iso);

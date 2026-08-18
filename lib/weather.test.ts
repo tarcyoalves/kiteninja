@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { degToCompass, describeWeather, getSpotWeather, weatherIcon } from './weather';
+import {
+  degToCompass,
+  describeWeather,
+  getMarineCoordinates,
+  getSpotWeather,
+  interpolateTidePeak,
+  tideTrendAt,
+  weatherIcon,
+} from './weather';
 
 describe('degToCompass', () => {
   it('mapeia os pontos cardeais', () => {
@@ -43,6 +51,54 @@ describe('weatherIcon', () => {
     expect(weatherIcon(3, false)).toBe('cloud');
     expect(weatherIcon(80, true)).toBe('rain');
     expect(weatherIcon(80, false)).toBe('rain');
+  });
+});
+
+describe('getMarineCoordinates', () => {
+  it('desloca coordenadas do litoral do Nordeste para mar aberto ao norte', () => {
+    // Barra de Pernambuquinho (-4.975, -37.042)
+    const marine = getMarineCoordinates(-4.975, -37.042);
+    expect(marine.lat).toBeGreaterThan(-4.975); // Mais ao norte = valor menos negativo
+    expect(marine.lat).toBeCloseTo(-4.895, 2);
+  });
+
+  it('desloca coordenadas do litoral Sudeste para mar aberto ao sul', () => {
+    // Araruama / RJ (-22.9231, -42.2764)
+    const marine = getMarineCoordinates(-22.9231, -42.2764);
+    expect(marine.lat).toBeLessThan(-22.9231); // Mais ao sul = valor mais negativo
+    expect(marine.lat).toBeCloseTo(-23.0031, 2);
+  });
+});
+
+describe('tideTrendAt e interpolateTidePeak', () => {
+  const times = [
+    '2026-08-14T03:00',
+    '2026-08-14T04:00',
+    '2026-08-14T05:00',
+    '2026-08-14T06:00',
+    '2026-08-14T07:00',
+  ];
+  const levels = [1.2, 2.5, 3.4, 2.9, 1.5];
+
+  it('detecta pico de maré alta corretamente', () => {
+    // No índice 2 (05:00), 3.4 é maior que 2.5 e 2.9
+    expect(tideTrendAt(levels, 2)).toBe('peak_high');
+  });
+
+  it('interpola o minuto e altura do pico por parábola nos 3 pontos', () => {
+    const peak = interpolateTidePeak(times, levels, 2);
+    // Como 2.9 (posterior) é maior que 2.5 (anterior), o pico ocorreu ligeiramente antes de 05:00 (entre 04h e 05h) ou após 05:00?
+    // y0=2.5, y1=3.4, y2=2.9 => (2.5 - 2.9) / 2(2.5 - 6.8 + 2.9) = -0.4 / 2(-1.4) = +0.14h => ~8 minutos após 05:00 => 05:09
+    expect(peak.peakTime).toMatch(/^05:\d{2}$/);
+    expect(peak.peakHeightM).toBeGreaterThanOrEqual(3.4);
+  });
+
+  it('detecta pico de maré baixa corretamente e interpola', () => {
+    const lowLevels = [2.0, 1.0, 0.2, 0.8, 1.9];
+    expect(tideTrendAt(lowLevels, 2)).toBe('peak_low');
+    const peak = interpolateTidePeak(times, lowLevels, 2);
+    expect(peak.peakTime).toMatch(/^05:\d{2}$/);
+    expect(peak.peakHeightM).toBeLessThanOrEqual(0.3);
   });
 });
 

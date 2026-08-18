@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, createSession, verifyPassword } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 import { email as parseEmail } from '@/lib/validation';
 
 // Hash descartável de uma senha inexistente. Se o email não existe, ainda
@@ -12,7 +13,11 @@ export async function POST(request: Request) {
   return handle(async () => {
     const body = await readJson(request);
     const email = parseEmail(body);
+
+    rateLimiters.login(email);
+
     const rawPassword = (body as Record<string, unknown>)?.password;
+
 
     if (typeof rawPassword !== 'string' || rawPassword.length === 0) {
       throw new HttpError(400, 'Informe a senha.');

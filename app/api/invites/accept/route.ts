@@ -7,6 +7,7 @@ import {
   findUsableInvite,
   hashPassword,
 } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 import { bool, email as parseEmail, num, oneOf, password, str } from '@/lib/validation';
 import type { Discipline, RiderLevel } from '@/types';
 
@@ -27,8 +28,12 @@ const DISCIPLINES = [
  */
 export async function POST(request: Request) {
   return handle(async () => {
+    const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
+    rateLimiters.invite(ip);
+
     const body = await readJson(request);
     const token = str(body, 'token', { max: 200 });
+
 
     const invite = await findUsableInvite(token);
     if (!invite) {

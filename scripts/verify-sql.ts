@@ -85,6 +85,10 @@ async function main() {
     'safety_alerts',
     'events',
     'event_registrations',
+    'password_reset_tokens',
+    'audit_logs',
+    'content_reports',
+    'notification_preferences',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -230,6 +234,54 @@ async function main() {
             u.name AS used_by_name
      FROM invites i LEFT JOIN users u ON u.id = i.used_by
      ORDER BY i.created_at DESC LIMIT 100`
+  );
+
+  console.log('\nRecuperação de Senha & Ciclo de Vida:');
+  const resetToken = await db.query<{ id: string }>(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+     VALUES ($1, 'reset-hash-teste', NOW() + INTERVAL '2 hours') RETURNING id`,
+    [riderA]
+  );
+  check('criação de token de recuperação de senha', resetToken.rows.length === 1);
+
+  await expectOk(
+    db,
+    'validação de token de recuperação aberto',
+    `SELECT r.id, r.user_id, u.email
+     FROM password_reset_tokens r JOIN users u ON u.id = r.user_id
+     WHERE r.token_hash = $1 AND r.used_at IS NULL AND r.expires_at > NOW() LIMIT 1`,
+    ['reset-hash-teste']
+  );
+
+  const resetConsume = await db.query(
+    `UPDATE password_reset_tokens SET used_at = NOW()
+     WHERE token_hash = $1 AND used_at IS NULL RETURNING id`,
+    ['reset-hash-teste']
+  );
+  check('consumo de token de recuperação de senha', resetConsume.rows.length === 1);
+
+  const resetReconsume = await db.query(
+    `UPDATE password_reset_tokens SET used_at = NOW()
+     WHERE token_hash = $1 AND used_at IS NULL RETURNING id`,
+    ['reset-hash-teste']
+  );
+  check('segundo consumo do token é barrado', resetReconsume.rows.length === 0);
+
+  console.log('\nAuditoria e Notificações:');
+  await expectOk(
+    db,
+    'inserção de log de auditoria',
+    `INSERT INTO audit_logs (actor_id, action, target_type, target_id)
+     VALUES ($1, 'ROLE_CHANGED', 'user', $2) RETURNING id`,
+    [adminId, riderA]
+  );
+
+  await expectOk(
+    db,
+    'inserção de preferências de notificação',
+    `INSERT INTO notification_preferences (user_id, wind_alerts_enabled, wind_min_knots)
+     VALUES ($1, TRUE, 18.0) ON CONFLICT (user_id) DO NOTHING RETURNING user_id`,
+    [riderA]
   );
 
   console.log('\nIsolamento entre velejadores:');

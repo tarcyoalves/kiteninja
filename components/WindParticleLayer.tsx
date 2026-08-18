@@ -39,9 +39,16 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
   const particulasRef = useRef<Particula[]>([]);
   const frameRef = useRef<number>(0);
   const spotsRef = useRef<Spot[]>(spots);
+  const reprojetarRef = useRef<(() => void) | null>(null);
 
   // Mantém os spots atuais sem reiniciar a animação a cada refresh de clima.
   spotsRef.current = spots;
+
+  // Quando o conteúdo de spots chega ou atualiza (assíncrono da API), reprojeta o campo
+  // sem recriar as partículas (o que causaria piscada na tela).
+  useEffect(() => {
+    reprojetarRef.current?.();
+  }, [spots]);
 
   useEffect(() => {
     const container = map.getContainer();
@@ -58,12 +65,15 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
 
     let largura = 0;
     let altura = 0;
+    let isRodando = false;
+
     // Cache dos spots já projetados em pixel: projetar é caro e só muda quando o
-    // mapa se move, não a cada frame.
+    // mapa se move ou novos dados chegam.
     let projetados: { x: number; y: number; vx: number; vy: number; forca: number }[] = [];
 
     function dimensionar() {
       const { clientWidth, clientHeight } = container;
+      if (clientWidth === 0 || clientHeight === 0) return;
       // Limita o devicePixelRatio a 2: num celular com dpr 3 o custo triplica
       // sem ganho visível para partículas finas.
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -92,14 +102,15 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     }
 
     function nascer(p: Particula) {
-      p.x = Math.random() * largura;
-      p.y = Math.random() * altura;
+      p.x = Math.random() * (largura || 1);
+      p.y = Math.random() * (altura || 1);
       p.idade = 0;
       // Vidas diferentes evitam que todas as partículas pisquem em sincronia.
       p.vida = 60 + Math.random() * 90;
     }
 
     function popular() {
+      if (largura <= 0 || altura <= 0) return;
       // Densidade proporcional à área, com teto: numa tela grande não vale
       // gastar mais partículas do que o olho distingue.
       const alvo = Math.min(Math.round((largura * altura) / 5200), 320);
@@ -115,6 +126,8 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     }
 
     function desenhar() {
+      if (!isRodando || largura === 0 || altura === 0) return;
+
       // Em vez de limpar, pinta um véu translúcido: o resto do frame anterior
       // vira o rastro da partícula, sem precisar guardar histórico de posições.
       ctx!.globalCompositeOperation = 'destination-out';
@@ -161,14 +174,35 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       cancelAnimationFrame(frameRef.current);
       dimensionar();
       projetarSpots();
-      popular();
-      frameRef.current = requestAnimationFrame(desenhar);
+
+      if (particulasRef.current.length === 0) {
+        popular();
+      }
+
+      if (largura > 0 && altura > 0) {
+        isRodando = true;
+        frameRef.current = requestAnimationFrame(desenhar);
+      }
     }
 
     function parar() {
+      isRodando = false;
       cancelAnimationFrame(frameRef.current);
-      ctx!.clearRect(0, 0, largura, altura);
+      if (ctx && largura > 0 && altura > 0) {
+        ctx.clearRect(0, 0, largura, altura);
+      }
     }
+
+    function reprojetar() {
+      projetarSpots();
+      if (!isRodando && !paused && !document.hidden && !semMovimento.matches) {
+        const { clientWidth, clientHeight } = container;
+        if (clientWidth > 0 && clientHeight > 0) {
+          iniciar();
+        }
+      }
+    }
+    reprojetarRef.current = reprojetar;
 
     /* Durante arrasto/zoom as coordenadas de tela dos spots mudam a cada frame;
        animar nisso mostra vento em lugar errado e desperdiça CPU. Congela e
@@ -177,14 +211,16 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       parar();
     }
     function aoTerminarMover() {
-      if (!paused && !document.hidden) iniciar();
+      if (!paused && !document.hidden && !semMovimento.matches) {
+        iniciar();
+      }
     }
 
     /* Aba em segundo plano: o rAF já é suspenso pelo navegador, mas parar
        explicitamente garante que nada acumule ao voltar. */
     function aoTrocarVisibilidade() {
       if (document.hidden) parar();
-      else if (!paused) iniciar();
+      else if (!paused && !semMovimento.matches) iniciar();
     }
 
     map.on('movestart', aoMover);
@@ -197,14 +233,6 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     // Respeita quem pediu menos animação no sistema — e economiza bateria.
     const semMovimento = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-    /* Só inicia se a aba estiver visível AGORA. Montar com a aba em segundo
-       plano pedia um rAF que o navegador suspende na hora; como o callback
-       nunca roda, `desenhar` não reagenda e a animação morre de vez — nem
-       voltar para a aba ressuscitava, porque só `visibilitychange` reinicia
-       e ele não dispara se a aba já estava em foco quando o mapa montou.
-       Guarda de vida: um rAF de sentinela confirma que o loop de fato andou;
-       se não andou (aba oculta no mount, throttle agressivo), reinicia quando
-       o navegador voltar a entregar frames. */
     function iniciarQuandoPuder() {
       if (paused || semMovimento.matches) return;
       if (document.hidden) return; // visibilitychange assume daqui
@@ -219,12 +247,21 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     const observer = new ResizeObserver(() => {
       if (paused || document.hidden || semMovimento.matches) return;
       const { clientWidth, clientHeight } = container;
-      if (clientWidth > 0 && clientHeight > 0) iniciar();
+      if (clientWidth > 0 && clientHeight > 0) {
+        dimensionar();
+        if (particulasRef.current.length === 0) {
+          popular();
+        }
+        if (!isRodando) {
+          iniciar();
+        }
+      }
     });
     observer.observe(container);
 
     return () => {
-      cancelAnimationFrame(frameRef.current);
+      reprojetarRef.current = null;
+      parar();
       map.off('movestart', aoMover);
       map.off('zoomstart', aoMover);
       map.off('moveend', aoTerminarMover);

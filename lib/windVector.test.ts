@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { vetorVento, corPorForca } from './windVector';
+import { vetorVento, corPorForca, campoDeVento } from './windVector';
 
 /**
  * A convenção meteorológica é a fonte de erro aqui: o grau indica de ONDE o
@@ -81,3 +81,33 @@ describe('corPorForca', () => {
     }
   });
 });
+
+describe('campoDeVento', () => {
+  it('retorna zero quando a lista de spots projetados está vazia', () => {
+    const res = campoDeVento(100, 100, []);
+    expect(res).toEqual({ vx: 0, vy: 0, forca: 0 });
+  });
+
+  it('calcula o campo corretamente a partir de spots projetados com vento', () => {
+    const spotsProjetados = [
+      { x: 100, y: 100, vx: -1, vy: 0, forca: 20 },
+      { x: 200, y: 100, vx: -1, vy: 0, forca: 18 },
+    ];
+    const res = campoDeVento(150, 100, spotsProjetados);
+    expect(res.vx).toBeCloseTo(-1, 2);
+    expect(res.vy).toBeCloseTo(0, 2);
+    expect(res.forca).toBeCloseTo(19, 1);
+  });
+
+  it('permite atualizar o campo de vento quando novos spots chegam sem quebrar o cálculo', () => {
+    let spotsProjetados: { x: number; y: number; vx: number; vy: number; forca: number }[] = [];
+    expect(campoDeVento(50, 50, spotsProjetados).forca).toBe(0);
+
+    // Simula a chegada assíncrona dos dados
+    spotsProjetados = [{ x: 50, y: 50, vx: 0, vy: 1, forca: 22 }];
+    const atualizado = campoDeVento(50, 50, spotsProjetados);
+    expect(atualizado.forca).toBeCloseTo(22, 1);
+    expect(atualizado.vy).toBeCloseTo(1, 2);
+  });
+});
+

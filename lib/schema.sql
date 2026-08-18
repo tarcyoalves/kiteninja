@@ -9,8 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   email           TEXT NOT NULL UNIQUE,
   password_hash   TEXT NOT NULL,
   name            TEXT NOT NULL,
-  role            TEXT NOT NULL DEFAULT 'rider' CHECK (role IN ('admin', 'rider')),
+  role            TEXT NOT NULL DEFAULT 'rider' CHECK (role IN ('admin', 'moderator', 'instructor', 'rider')),
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+  deactivated_at  TIMESTAMPTZ,
   avatar_url      TEXT,
   rider_id        TEXT NOT NULL,
   nationality     TEXT NOT NULL DEFAULT 'Brasil',
@@ -19,6 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
   rider_level     TEXT NOT NULL DEFAULT 'Intermediário',
   home_spot       TEXT,
   disciplines     TEXT[] NOT NULL DEFAULT ARRAY['Kitesurf Twintip'],
+  quiver_kites    NUMERIC(3,1)[] NOT NULL DEFAULT '{}',
+  quiver_boards   TEXT[] NOT NULL DEFAULT '{}',
+  preferred_wind_unit TEXT NOT NULL DEFAULT 'knots' CHECK (preferred_wind_unit IN ('knots', 'kmh', 'mph', 'ms')),
   highest_jump_m  NUMERIC(4,1),
   bio             TEXT,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -26,6 +31,8 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (LOWER(email));
+CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
+CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active);
 
 -- ------------------------------------------------------- convites (1 uso só)
 -- O admin gera um link único. `token_hash` guarda SHA-256 do token: se o banco
@@ -295,3 +302,63 @@ CREATE TABLE IF NOT EXISTS user_presence (
 );
 
 CREATE INDEX IF NOT EXISTS idx_user_presence_seen ON user_presence (last_seen_at DESC);
+
+-- --------------------------------------------------- recuperação de senha
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  TEXT NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_password_reset_hash ON password_reset_tokens (token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_reset_open ON password_reset_tokens (expires_at)
+  WHERE used_at IS NULL;
+
+-- -------------------------------------------- log de auditoria administrativa
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id    UUID REFERENCES users(id) ON DELETE SET NULL,
+  action      TEXT NOT NULL,
+  target_type TEXT NOT NULL,
+  target_id   TEXT,
+  metadata    JSONB,
+  ip_address  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created ON audit_logs (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs (actor_id);
+
+-- ------------------------------------------- moderação e denúncias de conteúdo
+CREATE TABLE IF NOT EXISTS content_reports (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('post', 'comment', 'listing', 'alert', 'message', 'user')),
+  target_id   TEXT NOT NULL,
+  reason      TEXT NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'Pendente' CHECK (status IN ('Pendente', 'Investigando', 'Resolvido', 'Rejeitado')),
+  resolved_by UUID REFERENCES users(id) ON DELETE SET NULL,
+  resolved_at TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_reports_status ON content_reports (status, created_at DESC);
+
+-- ------------------------------------------------ preferências de notificação
+CREATE TABLE IF NOT EXISTS notification_preferences (
+  user_id                    UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  wind_alerts_enabled        BOOLEAN NOT NULL DEFAULT TRUE,
+  wind_min_knots             NUMERIC(4,1) NOT NULL DEFAULT 18.0,
+  favorite_spots_only        BOOLEAN NOT NULL DEFAULT TRUE,
+  community_replies_enabled  BOOLEAN NOT NULL DEFAULT TRUE,
+  safety_alerts_enabled      BOOLEAN NOT NULL DEFAULT TRUE,
+  event_reminders_enabled    BOOLEAN NOT NULL DEFAULT TRUE,
+  channel_push               BOOLEAN NOT NULL DEFAULT TRUE,
+  channel_email              BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+

@@ -48,7 +48,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const { user } = useAuth();
 
   const [activeSubTab, setActiveSubTab] = useState<'previsao' | 'mares' | 'webcams' | 'info'>('previsao');
-  // selectedDayIndex: atalho direto pelos botões de dia
+  // selectedDayIndex: dia ativo selecionado
   // scrolledDayIndex: dia que o scroll revelou (para manter em sync)
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [scrolledDayIndex, setScrolledDayIndex] = useState(0);
@@ -60,9 +60,12 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
-  // Refs para scroll snap: container central e elementos de cada dia
+  // Refs para scroll e seções de cada dia
   const forecastScrollRef = useRef<HTMLDivElement>(null);
   const daySectionRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+  const dayButtonsNavRef = useRef<HTMLDivElement>(null);
+  const dayButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const isUserScrollingRef = useRef(false);
 
   // Detecta prefers-reduced-motion uma vez ao montar
   useEffect(() => {
@@ -73,83 +76,79 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
     return () => media.removeEventListener('change', handler);
   }, []);
 
+  // Centraliza o botão do dia ativo no cabeçalho horizontal de dias
+  useEffect(() => {
+    if (activeSubTab !== 'previsao') return;
+    const btn = dayButtonRefs.current.get(selectedDayIndex);
+    if (btn && dayButtonsNavRef.current) {
+      btn.scrollIntoView({
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    }
+  }, [selectedDayIndex, activeSubTab, prefersReducedMotion]);
+
   // Sincroniza selectedDayIndex com scrolledDayIndex quando este muda via scroll
-  // Isso mantém os botões de dia highlightados conforme o usuário scrolla
   const syncDayFromScroll = useCallback((visibleIdx: number) => {
     setScrolledDayIndex(visibleIdx);
-    if (visibleIdx !== selectedDayIndex) {
-      setSelectedDayIndex(visibleIdx);
-    }
-  }, [selectedDayIndex]);
+    setSelectedDayIndex(visibleIdx);
+  }, []);
 
-  // Quando o usuário clica num botão de dia, rolar até esse dia
+  // Quando o usuário clica num botão de dia, rolar suavemente até a seção desse dia
   const scrollToDay = useCallback((dayIdx: number) => {
     const section = daySectionRefs.current.get(dayIdx);
     if (!section || !forecastScrollRef.current) return;
-
-    // Se o idx é o mesmo, não precisa rolar
-    if (dayIdx === scrolledDayIndex) return;
 
     section.scrollIntoView({
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
       block: 'start',
     });
-  }, [scrolledDayIndex, prefersReducedMotion]);
+  }, [prefersReducedMotion]);
 
-  // Atualiza o índice selecionado quando o usuário clica num botão de dia
   const handleDayButtonClick = useCallback((dayIdx: number) => {
     setSelectedDayIndex(dayIdx);
+    setScrolledDayIndex(dayIdx);
     scrollToDay(dayIdx);
   }, [scrollToDay]);
 
-  // IntersectionObserver para detectar qual dia está visível durante o scroll.
-  // Isso permite que o usuário navegue entre dias scrollando E os botões de dia
-  // se atualizem para refletir a posição atual.
+  // IntersectionObserver para detectar qual dia está em foco no topo da visualização
   useEffect(() => {
     const container = forecastScrollRef.current;
-    if (!container) return;
+    if (!container || activeSubTab !== 'previsao') return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        // Encontra o dia mais visível (com maior área visível)
-        let maxVisible = 0;
-        let mostVisibleIdx = 0;
+        let maxRatio = 0;
+        let mostVisibleIdx = -1;
 
         entries.forEach((entry) => {
           const dayIdx = Number(entry.target.getAttribute('data-day-index'));
           if (isNaN(dayIdx)) return;
 
-          // Calcula quanto do elemento está visível
-          const rect = entry.boundingClientRect;
-          const containerRect = container.getBoundingClientRect();
-          const visibleHeight = Math.min(rect.bottom, containerRect.bottom) - Math.max(rect.top, containerRect.top);
-          const visibleRatio = visibleHeight / rect.height;
-
-          if (visibleRatio > maxVisible) {
-            maxVisible = visibleRatio;
+          if (entry.intersectionRatio > maxRatio) {
+            maxRatio = entry.intersectionRatio;
             mostVisibleIdx = dayIdx;
           }
         });
 
-        // Só atualiza se a mudança for significativa (mais de 30% visível)
-        if (maxVisible > 0.3) {
+        if (mostVisibleIdx >= 0 && maxRatio > 0.15) {
           syncDayFromScroll(mostVisibleIdx);
         }
       },
       {
         root: container,
-        rootMargin: '0px',
-        threshold: [0, 0.25, 0.5, 0.75, 1],
+        rootMargin: '-5% 0px -40% 0px',
+        threshold: [0.1, 0.25, 0.5, 0.75, 1],
       }
     );
 
-    // Registra todos os elementos de dia como observáveis
     daySectionRefs.current.forEach((section) => {
       observer.observe(section);
     });
 
     return () => observer.disconnect();
-  }, [spot?.daysForecast, syncDayFromScroll]);
+  }, [spot?.daysForecast, activeSubTab, syncDayFromScroll]);
 
   useEffect(() => {
     if (!spot) return;
@@ -551,18 +550,25 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
           </div>
         </div>
 
-        {/* TAB 1: PREVISÃO (Hour by hour forecast matching Screenshot 2) */}
+        {/* TAB 1: PREVISÃO (Hour by hour forecast contínuo para todos os dias) */}
         {activeSubTab === 'previsao' && (
-          <div className="p-3 space-y-3">
-            {/* Days Selector */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+          <div className="p-3 space-y-4">
+            {/* Days Selector Sticky Bar */}
+            <div
+              ref={dayButtonsNavRef}
+              className="sticky top-0 z-20 -mx-3 px-3 py-2 bg-[#0F172A]/95 backdrop-blur-md border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto"
+            >
               {spot.daysForecast.map((day, idx) => (
                 <button
                   key={day.shortDate}
-                  onClick={() => setSelectedDayIndex(idx)}
-                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all ${
+                  ref={(el) => {
+                    if (el) dayButtonRefs.current.set(idx, el);
+                    else dayButtonRefs.current.delete(idx);
+                  }}
+                  onClick={() => handleDayButtonClick(idx)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap transition-all shrink-0 ${
                     selectedDayIndex === idx
-                      ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
+                      ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25 scale-105'
                       : 'bg-[#1E293B] text-slate-300 border border-slate-700/70 hover:bg-slate-700'
                   }`}
                 >
@@ -571,177 +577,199 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
               ))}
             </div>
 
-            {/* Date Headline matching screenshot 2: "SEXTA-FEIRA, 14/08" */}
-            <div className="flex items-center justify-between pt-1">
-              <h2 className="text-sm font-black uppercase tracking-wide text-white flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                <span>{selectedDay.dateStr}</span>
-              </h2>
-                <span className="text-[11px] text-slate-400 font-medium">
-                Hora a hora
-              </span>
-            </div>
+            {/* Lista contínua de dias navegável por scroll */}
+            {spot.daysForecast.map((day, dayIdx) => {
+              const dayFilteredHours = getPreparedHours(day.hours);
+              const dayCurrentHourBlockIdx = dayIdx === 0 ? resolveCurrentHourBlock(dayFilteredHours, nowHour) : -1;
+              const dayJanelas = encontrarJanelasDePico(dayFilteredHours);
+              const dayIndicesDePico = new Set<number>();
+              for (const j of dayJanelas) {
+                for (const i of j.indices) dayIndicesDePico.add(i);
+              }
+              const dayIdxPicoMaximo = dayIndicesDePico.size > 0 ? indiceDoPicoMaximo(dayFilteredHours) : -1;
+              const dayTextoResumoPico = resumoDePico(dayFilteredHours);
+              const dayChartHours = day.hours;
 
-            {/* A resposta que o velejador quer primeiro: a que horas venta de
-                verdade. Só aparece quando existe janela forte — num dia fraco
-                a faixa seria ruído. */}
-            {textoResumoPico && (
-              <div className="flex items-center gap-2 rounded-2xl border border-amber-400/35 bg-amber-500/10 px-3 py-2.5">
-                <Wind size={15} className="shrink-0 text-amber-300" aria-hidden="true" />
-                <p className="text-xs font-black text-amber-200">
-                  Melhor janela hoje: <span className="text-white">{textoResumoPico}</span>
-                </p>
-              </div>
-            )}
+              return (
+                <div
+                  key={day.shortDate || dayIdx}
+                  ref={(el) => {
+                    if (el) daySectionRefs.current.set(dayIdx, el);
+                    else daySectionRefs.current.delete(dayIdx);
+                  }}
+                  data-day-index={dayIdx}
+                  id={`forecast-day-${dayIdx}`}
+                  className={`space-y-3 ${
+                    dayIdx > 0 ? 'pt-4 border-t border-slate-800' : ''
+                  }`}
+                >
+                  {/* Date Headline matching screenshot 2: "SEXTA-FEIRA, 14/08" */}
+                  <div className="flex items-center justify-between pt-1">
+                    <h2 className="text-sm font-black uppercase tracking-wide text-white flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                      <span>{day.dateStr}</span>
+                    </h2>
+                    <span className="text-[11px] text-slate-400 font-medium">
+                      Hora a hora
+                    </span>
+                  </div>
 
-            {/* Forma da curva antes da tabela: a rampa da térmica e a queda do
-                fim de tarde aparecem de relance, sem ler 24 linhas. */}
-            <WindTrend
-              hours={chartHours}
-              currentHour={selectedDayIndex === 0 ? nowHour : undefined}
-            />
-
-            {/* Forecast Table matching screenshot 2 */}
-            <div className="bg-[#1E293B] rounded-2xl border border-slate-700/80 overflow-hidden shadow-xl">
-              {/* Table Header Columns */}
-              <div className="grid grid-cols-6 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider py-2.5 bg-[#0F172A]/80 border-b border-slate-700/80">
-                <span>Hora</span>
-                <span className="text-left pl-3">Vento</span>
-                <span>Céu</span>
-                <span>Ar</span>
-                <span>Ondas</span>
-                <span>Marés</span>
-              </div>
-
-              {/* Rows */}
-              <div className="divide-y divide-slate-800">
-                {filteredHours.map((row, hIdx) => {
-                  const rowKnots = convertWind(row.knots);
-                  const rowGusts = convertWind(row.gustKnots);
-                  const rowWindColors = getWindColorClass(row.knots);
-                  // Destaca o bloco de 3h que contém a hora atual, para o
-                  // velejador achar "agora" sem contar linhas na praia.
-                  const isNow = hIdx === currentHourBlockIdx;
-                  // Pico de vento forte: é o que o velejador procura primeiro.
-                  const isPico = indicesDePico.has(hIdx);
-                  const isPicoMaximo = hIdx === idxPicoMaximo;
-
-                  return (
-                    <div
-                      key={hIdx}
-                      aria-current={isNow ? 'time' : undefined}
-                      /* Ordem importa: "agora" em ciano é referência temporal e
-                         vence o pico; fora dele, a barra âmbar à esquerda marca
-                         a janela de vento forte e o pico máximo ganha fundo. */
-                      className={`relative grid grid-cols-6 items-center py-2.5 text-center text-xs transition-colors ${
-                        isNow
-                          ? 'bg-cyan-500/10 ring-1 ring-inset ring-cyan-400/40'
-                          : isPicoMaximo
-                          ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400/45'
-                          : isPico
-                          ? 'bg-amber-500/[0.07]'
-                          : 'hover:bg-slate-700/30'
-                      } ${isPico ? 'border-l-[3px] border-l-amber-400' : ''}`}
-                    >
-                      {/* Col 1: Tempo / Hora in pill */}
-                      <div className="flex justify-center">
-                        <span className="px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-black text-[11px]">
-                          {row.hour}
-                        </span>
-                      </div>
-
-                      {/* Col 2: Vento (Arrow + Knots + Max + Color bar beneath) */}
-                      <div className="text-left pl-2 pr-1 relative">
-                        <div className="flex items-center gap-1.5">
-                          <div
-                            className="w-4 h-4 flex items-center justify-center shrink-0 text-white"
-                            style={{ transform: `rotate(${row.directionDeg - 90}deg)` }}
-                          >
-                            <Navigation size={13} className="fill-white transform rotate-45" />
-                          </div>
-                          <div className="flex flex-col leading-none">
-                            <span className="font-black text-xs text-white">
-                              {rowKnots.value}{rowKnots.unitStr}
-                            </span>
-                            <span className="text-[10px] text-slate-400">
-                              max{rowGusts.value}{rowGusts.unitStr}
-                            </span>
-                          </div>
-                        </div>
-                        {/* Colored Speed Bar matching screenshot 2 */}
-                        <div className="mt-1.5 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full ${rowWindColors.bg}`}
-                            style={{ width: `${Math.min(100, (row.knots / 30) * 100)}%` }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Col 3: Sky Condition Icon */}
-                      <div className="flex justify-center">
-                        {renderWeatherIcon(row.conditionIcon, 20)}
-                      </div>
-
-                      {/* Col 4: Ar (Orange temp box + hPa matching screenshot 2) */}
-                      <div className="flex flex-col items-center justify-center">
-                        <div className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[11px] leading-tight shadow-xs">
-                          {row.temperature}°C
-                        </div>
-                <span className="text-[10px] text-slate-400 font-mono mt-0.5">
-                          {row.pressureHpa}hPa
-                        </span>
-                      </div>
-
-                      {/* Col 5: Ondas (direction arrow + height + period) */}
-                      <div className="flex flex-col items-center leading-none">
-                        <div className="flex items-center gap-0.5">
-                          <div
-                            className="w-3 h-3 flex items-center justify-center text-slate-300"
-                            style={{ transform: `rotate(${row.waveDirDeg - 90}deg)` }}
-                          >
-                            <Navigation size={10} className="fill-slate-300 transform rotate-45" />
-                          </div>
-                          <span className="font-black text-[11px] text-white">
-                            {row.waveHeightM}m
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-slate-400 mt-0.5">{row.wavePeriodS}s</span>
-                      </div>
-
-                      {/* Col 6: Marés (Arrow + Height + Peak Time if high/low) */}
-                      <div className="flex flex-col items-center justify-center leading-tight">
-                        {row.tidePeakTime ? (
-                          <div className="flex flex-col items-center">
-                            <span className="text-emerald-400 font-black text-sm">
-                              {row.tideTrend === 'peak_high' ? '⇈' : '⇊'}
-                            </span>
-                            <span className="text-[10px] font-bold text-white">
-                              {row.tidePeakTime}
-                            </span>
-                            <span className="text-[10px] font-extrabold text-emerald-400">
-                              {row.tidePeakHeight}
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center">
-                            <span
-                              className={`text-xs font-black ${
-                                row.tideTrend === 'up' ? 'text-teal-400' : 'text-amber-400'
-                              }`}
-                            >
-                              {row.tideTrend === 'up' ? '↗' : '↘'}
-                            </span>
-                            <span className="text-[11px] font-bold text-white">
-                              {row.tideHeightM}m
-                            </span>
-                          </div>
-                        )}
-                      </div>
+                  {/* Melhor janela do dia */}
+                  {dayTextoResumoPico && (
+                    <div className="flex items-center gap-2 rounded-2xl border border-amber-400/35 bg-amber-500/10 px-3 py-2.5">
+                      <Wind size={15} className="shrink-0 text-amber-300" aria-hidden="true" />
+                      <p className="text-xs font-black text-amber-200">
+                        Melhor janela: <span className="text-white">{dayTextoResumoPico}</span>
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            </div>
+                  )}
+
+                  {/* Forma da curva antes da tabela */}
+                  <WindTrend
+                    hours={dayChartHours}
+                    currentHour={dayIdx === 0 ? nowHour : undefined}
+                  />
+
+                  {/* Forecast Table matching screenshot 2 */}
+                  <div className="bg-[#1E293B] rounded-2xl border border-slate-700/80 overflow-hidden shadow-xl">
+                    {/* Table Header Columns */}
+                    <div className="grid grid-cols-6 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider py-2.5 bg-[#0F172A]/80 border-b border-slate-700/80">
+                      <span>Hora</span>
+                      <span className="text-left pl-3">Vento</span>
+                      <span>Céu</span>
+                      <span>Ar</span>
+                      <span>Ondas</span>
+                      <span>Marés</span>
+                    </div>
+
+                    {/* Rows */}
+                    <div className="divide-y divide-slate-800">
+                      {dayFilteredHours.map((row, hIdx) => {
+                        const rowKnots = convertWind(row.knots);
+                        const rowGusts = convertWind(row.gustKnots);
+                        const rowWindColors = getWindColorClass(row.knots);
+                        // Destaca o bloco de 3h que contém a hora atual (apenas no primeiro dia)
+                        const isNow = hIdx === dayCurrentHourBlockIdx;
+                        // Pico de vento forte
+                        const isPico = dayIndicesDePico.has(hIdx);
+                        const isPicoMaximo = hIdx === dayIdxPicoMaximo;
+
+                        return (
+                          <div
+                            key={hIdx}
+                            aria-current={isNow ? 'time' : undefined}
+                            className={`relative grid grid-cols-6 items-center py-2.5 text-center text-xs transition-colors ${
+                              isNow
+                                ? 'bg-cyan-500/10 ring-1 ring-inset ring-cyan-400/40'
+                                : isPicoMaximo
+                                ? 'bg-amber-500/15 ring-1 ring-inset ring-amber-400/45'
+                                : isPico
+                                ? 'bg-amber-500/[0.07]'
+                                : 'hover:bg-slate-700/30'
+                            } ${isPico ? 'border-l-[3px] border-l-amber-400' : ''}`}
+                          >
+                            {/* Col 1: Tempo / Hora in pill */}
+                            <div className="flex justify-center">
+                              <span className="px-2.5 py-1 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-black text-[11px]">
+                                {row.hour}
+                              </span>
+                            </div>
+
+                            {/* Col 2: Vento (Arrow + Knots + Max + Color bar beneath) */}
+                            <div className="text-left pl-2 pr-1 relative">
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className="w-4 h-4 flex items-center justify-center shrink-0 text-white"
+                                  style={{ transform: `rotate(${row.directionDeg - 90}deg)` }}
+                                >
+                                  <Navigation size={13} className="fill-white transform rotate-45" />
+                                </div>
+                                <div className="flex flex-col leading-none">
+                                  <span className="font-black text-xs text-white">
+                                    {rowKnots.value}{rowKnots.unitStr}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400">
+                                    max{rowGusts.value}{rowGusts.unitStr}
+                                  </span>
+                                </div>
+                              </div>
+                              {/* Colored Speed Bar matching screenshot 2 */}
+                              <div className="mt-1.5 w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full ${rowWindColors.bg}`}
+                                  style={{ width: `${Math.min(100, (row.knots / 30) * 100)}%` }}
+                                />
+                              </div>
+                            </div>
+
+                            {/* Col 3: Sky Condition Icon */}
+                            <div className="flex justify-center">
+                              {renderWeatherIcon(row.conditionIcon, 20)}
+                            </div>
+
+                            {/* Col 4: Ar (Orange temp box + hPa matching screenshot 2) */}
+                            <div className="flex flex-col items-center justify-center">
+                              <div className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black text-[11px] leading-tight shadow-xs">
+                                {row.temperature}°C
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                {row.pressureHpa}hPa
+                              </span>
+                            </div>
+
+                            {/* Col 5: Ondas (direction arrow + height + period) */}
+                            <div className="flex flex-col items-center leading-none">
+                              <div className="flex items-center gap-0.5">
+                                <div
+                                  className="w-3 h-3 flex items-center justify-center text-slate-300"
+                                  style={{ transform: `rotate(${row.waveDirDeg - 90}deg)` }}
+                                >
+                                  <Navigation size={10} className="fill-slate-300 transform rotate-45" />
+                                </div>
+                                <span className="font-black text-[11px] text-white">
+                                  {row.waveHeightM}m
+                                </span>
+                              </div>
+                              <span className="text-[10px] text-slate-400 mt-0.5">{row.wavePeriodS}s</span>
+                            </div>
+
+                            {/* Col 6: Marés (Arrow + Height + Peak Time if high/low) */}
+                            <div className="flex flex-col items-center justify-center leading-tight">
+                              {row.tidePeakTime ? (
+                                <div className="flex flex-col items-center">
+                                  <span className="text-emerald-400 font-black text-sm">
+                                    {row.tideTrend === 'peak_high' ? '⇈' : '⇊'}
+                                  </span>
+                                  <span className="text-[10px] font-bold text-white">
+                                    {row.tidePeakTime}
+                                  </span>
+                                  <span className="text-[10px] font-extrabold text-emerald-400">
+                                    {row.tidePeakHeight}
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center">
+                                  <span
+                                    className={`text-xs font-black ${
+                                      row.tideTrend === 'up' ? 'text-teal-400' : 'text-amber-400'
+                                    }`}
+                                  >
+                                    {row.tideTrend === 'up' ? '↗' : '↘'}
+                                  </span>
+                                  <span className="text-[11px] font-bold text-white">
+                                    {row.tideHeightM}m
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 

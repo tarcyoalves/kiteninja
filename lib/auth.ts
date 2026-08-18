@@ -4,13 +4,15 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { sql } from './db';
+import { HttpError } from './errors';
+
 
 export const SESSION_COOKIE = 'kiteninja_session';
 const SESSION_DAYS = 30;
 const INVITE_DAYS = 7;
 const BCRYPT_ROUNDS = 12;
 
-export type Role = 'admin' | 'rider';
+export type Role = 'admin' | 'moderator' | 'instructor' | 'rider';
 
 export interface SessionUser {
   id: string;
@@ -31,15 +33,15 @@ export function verifyPassword(plain: string, hash: string): Promise<boolean> {
 }
 
 /**
- * Tokens opacos (sessão e convite) são guardados como SHA-256 no banco.
+ * Tokens opacos (sessão, convite e recuperação) são guardados como SHA-256 no banco.
  * Não usamos bcrypt aqui: o token já tem 256 bits de entropia, então não há
  * ataque de dicionário a mitigar, e SHA-256 permite lookup por índice.
  */
-function hashToken(token: string): string {
+export function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function newToken(): string {
+export function newToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
@@ -96,6 +98,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ${hashToken(token)}
       AND s.expires_at > NOW()
+      AND u.is_active = TRUE
     LIMIT 1
   `;
 
@@ -131,6 +134,49 @@ export async function destroySession(): Promise<void> {
     await sql`DELETE FROM auth_sessions WHERE token_hash = ${hashToken(token)}`;
   }
   jar.delete(SESSION_COOKIE);
+}
+
+/** Invalida todas as sessões de um usuário (usado na troca de senha e recuperação). */
+export async function invalidateAllUserSessions(userId: string): Promise<void> {
+  await sql`DELETE FROM auth_sessions WHERE user_id = ${userId}`;
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE);
+}
+
+/** Lista sessões ativas do usuário com indicação da sessão atual. */
+export async function listUserSessions(userId: string): Promise<
+  Array<{ id: string; userAgent: string | null; createdAt: string; isCurrent: boolean }>
+> {
+  const jar = await cookies();
+  const currentToken = jar.get(SESSION_COOKIE)?.value;
+  const currentHash = currentToken ? hashToken(currentToken) : null;
+
+  const rows = await sql`
+    SELECT id, user_agent, created_at, token_hash
+    FROM auth_sessions
+    WHERE user_id = ${userId} AND expires_at > NOW()
+    ORDER BY created_at DESC
+  `;
+
+  return rows.map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: String(row.id),
+      userAgent: row.user_agent ? String(row.user_agent) : null,
+      createdAt: String(row.created_at),
+      isCurrent: currentHash ? safeEqual(String(row.token_hash), currentHash) : false,
+    };
+  });
+}
+
+/** Revoga uma sessão específica de um usuário. */
+export async function revokeUserSession(userId: string, sessionId: string): Promise<boolean> {
+  const rows = await sql`
+    DELETE FROM auth_sessions
+    WHERE id = ${sessionId} AND user_id = ${userId}
+    RETURNING id
+  `;
+  return rows.length > 0;
 }
 
 // ------------------------------------------------------------------ convites
@@ -203,14 +249,85 @@ export async function consumeInvite(inviteId: string, userId: string): Promise<b
   return rows.length > 0;
 }
 
+// ---------------------------------------------------- recuperação de senha
+
+const RESET_TOKEN_HOURS = 2;
+
+/** Cria um token de recuperação de senha para um e-mail cadastrado. */
+export async function createPasswordResetToken(email: string): Promise<string | null> {
+  const rows = await sql`
+    SELECT id FROM users
+    WHERE LOWER(email) = ${email.toLowerCase().trim()} AND is_active = TRUE
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+
+  const userId = String((rows[0] as Record<string, unknown>).id);
+  const token = newToken();
+  const expiresAt = new Date(Date.now() + RESET_TOKEN_HOURS * 3600_000);
+
+  // Invalida tokens anteriores não usados
+  await sql`
+    UPDATE password_reset_tokens
+    SET used_at = NOW()
+    WHERE user_id = ${userId} AND used_at IS NULL
+  `;
+
+  await sql`
+    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+    VALUES (${userId}, ${hashToken(token)}, ${expiresAt.toISOString()})
+  `;
+
+  return token;
+}
+
+/** Valida se um token de recuperação está aberto e retorna o usuário associado. */
+export async function findUsablePasswordReset(
+  token: string
+): Promise<{ userId: string; email: string } | null> {
+  if (!token) return null;
+
+  const rows = await sql`
+    SELECT r.id, r.user_id, u.email
+    FROM password_reset_tokens r
+    JOIN users u ON u.id = r.user_id
+    WHERE r.token_hash = ${hashToken(token)}
+      AND r.used_at IS NULL
+      AND r.expires_at > NOW()
+      AND u.is_active = TRUE
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) return null;
+  const row = rows[0] as Record<string, unknown>;
+  return { userId: String(row.user_id), email: String(row.email) };
+}
+
+/** Consome o token de recuperação, atualiza a senha e encerra todas as sessões. */
+export async function consumePasswordReset(token: string, newPasswordHash: string): Promise<boolean> {
+  const reset = await findUsablePasswordReset(token);
+  if (!reset) return false;
+
+  const updated = await sql`
+    UPDATE password_reset_tokens
+    SET used_at = NOW()
+    WHERE token_hash = ${hashToken(token)} AND used_at IS NULL
+    RETURNING id
+  `;
+  if (updated.length === 0) return false;
+
+  await sql`
+    UPDATE users
+    SET password_hash = ${newPasswordHash}, must_change_password = FALSE, updated_at = NOW()
+    WHERE id = ${reset.userId}
+  `;
+
+  await invalidateAllUserSessions(reset.userId);
+  return true;
+}
+
 // ------------------------------------------------------------------ erros
 
-export class HttpError extends Error {
-  constructor(
-    public status: number,
-    message: string
-  ) {
-    super(message);
-    this.name = 'HttpError';
-  }
-}
+export { HttpError } from './errors';
+
+

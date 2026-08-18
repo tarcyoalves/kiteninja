@@ -21,6 +21,8 @@ const API_DIR = join(process.cwd(), 'app', 'api');
 const PUBLICAS: Record<string, string> = {
   'auth/login/route.ts': 'é como a sessão nasce',
   'auth/logout/route.ts': 'encerrar sessão não pode depender de sessão válida',
+  'auth/recover-password/route.ts': 'solicitação de redefinição para quem perdeu acesso',
+  'auth/reset-password/route.ts': 'redefinição de senha com token de uso único',
   'invites/validate/route.ts': 'o convidado ainda não tem conta',
   'invites/accept/route.ts': 'cria a conta a partir do convite',
 };
@@ -178,3 +180,71 @@ describe('autorização das rotas de API', () => {
     expect(falhas).toEqual([]);
   });
 });
+
+import {
+  canCreateOfficialEvent,
+  canDeleteComment,
+  canDeletePost,
+  canManageListing,
+  canManageUsers,
+  canModerate,
+  canResolveAlert,
+} from './authz';
+
+describe('matriz RBAC (lib/authz.ts)', () => {
+  const admin = { id: 'u-admin', role: 'admin' as const };
+  const moderator = { id: 'u-mod', role: 'moderator' as const };
+  const instructor = { id: 'u-inst', role: 'instructor' as const };
+  const rider = { id: 'u-rider', role: 'rider' as const };
+  const stranger = { id: 'u-stranger', role: 'rider' as const };
+
+  it('canModerate autoriza apenas admin e moderator', () => {
+    expect(canModerate('admin')).toBe(true);
+    expect(canModerate('moderator')).toBe(true);
+    expect(canModerate('instructor')).toBe(false);
+    expect(canModerate('rider')).toBe(false);
+  });
+
+  it('canManageUsers autoriza estritamente admin', () => {
+    expect(canManageUsers('admin')).toBe(true);
+    expect(canManageUsers('moderator')).toBe(false);
+    expect(canManageUsers('instructor')).toBe(false);
+    expect(canManageUsers('rider')).toBe(false);
+  });
+
+  it('canCreateOfficialEvent autoriza admin, moderator e instructor', () => {
+    expect(canCreateOfficialEvent('admin')).toBe(true);
+    expect(canCreateOfficialEvent('moderator')).toBe(true);
+    expect(canCreateOfficialEvent('instructor')).toBe(true);
+    expect(canCreateOfficialEvent('rider')).toBe(false);
+  });
+
+  it('canDeletePost autoriza o autor do post e moderadores/admins, mas não terceiros', () => {
+    expect(canDeletePost(rider, 'u-rider')).toBe(true);
+    expect(canDeletePost(rider, 'u-other')).toBe(false);
+    expect(canDeletePost(moderator, 'u-other')).toBe(true);
+    expect(canDeletePost(admin, 'u-other')).toBe(true);
+  });
+
+  it('canDeleteComment autoriza o autor do comentário e moderadores/admins', () => {
+    expect(canDeleteComment(rider, 'u-rider')).toBe(true);
+    expect(canDeleteComment(stranger, 'u-rider')).toBe(false);
+    expect(canDeleteComment(moderator, 'u-rider')).toBe(true);
+    expect(canDeleteComment(admin, 'u-rider')).toBe(true);
+  });
+
+  it('canResolveAlert autoriza admin, moderador ou o próprio autor', () => {
+    expect(canResolveAlert(admin)).toBe(true);
+    expect(canResolveAlert(moderator)).toBe(true);
+    expect(canResolveAlert(rider, 'u-rider')).toBe(true);
+    expect(canResolveAlert(rider, 'u-other')).toBe(false);
+  });
+
+  it('canManageListing autoriza o autor ou admin/moderador', () => {
+    expect(canManageListing(rider, 'u-rider')).toBe(true);
+    expect(canManageListing(rider, 'u-other')).toBe(false);
+    expect(canManageListing(admin, 'u-other')).toBe(true);
+    expect(canManageListing(moderator, 'u-other')).toBe(true);
+  });
+});
+
