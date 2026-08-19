@@ -21,8 +21,8 @@ export function GET() {
     // standalone remove a barra de endereço: aberto pelo atalho, parece app.
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#0F172A',
-    theme_color: '#0F172A',
+    background_color: '#0B1220',
+    theme_color: '#0B1220',
     categories: ['sports', 'weather', 'travel'],
     icons: [
       { src: '/brand/logo-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
