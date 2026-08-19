@@ -69,8 +69,8 @@ export const BottomNav: React.FC = () => {
 
   const isTabActive = (tab: ActiveTab) => activeTab === tab && !selectedSpot;
 
-  // Quando o teclado virtual está aberto, o menu inferior é ocultado para não competir com a digitação
-  if (isKeyboardOpen) return null;
+  // Quando o teclado virtual está aberto OU na tela cheia de chat, o menu inferior é ocultado
+  if (isKeyboardOpen || activeTab === 'chat') return null;
 
   return (
     /* Barra Flutuante estilo Instagram rebaixada e elegante */

@@ -98,6 +98,26 @@ const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined
 const TAB_INICIAL: ActiveTab = 'favoritos';
 
 const UUID_RE = /^[0-9a-f-]{36}$/i;
+const FAVS_STORAGE_KEY = 'kiteninja_user_favorites';
+
+function getLocalFavorites(): Set<string> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(FAVS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return new Set(parsed);
+    }
+  } catch {}
+  return null;
+}
+
+function saveLocalFavorites(ids: string[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(FAVS_STORAGE_KEY, JSON.stringify(ids));
+  } catch {}
+}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -114,7 +134,16 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
 
-  const [spots, setSpots] = useState<Spot[]>(INITIAL_SPOTS);
+  const [spots, setSpots] = useState<Spot[]>(() => {
+    const localFavs = getLocalFavorites();
+    if (localFavs) {
+      return INITIAL_SPOTS.map((s) => ({
+        ...s,
+        isFavorite: localFavs.has(s.id),
+      }));
+    }
+    return INITIAL_SPOTS;
+  });
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStateFilter, setSelectedStateFilter] = useState('ALL');
@@ -225,6 +254,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       const url = forceRefresh ? `/api/spots?refresh=1&_t=${Date.now()}` : '/api/spots';
       const data = await api<{ spots: Spot[] }>(url, forceRefresh ? { cache: 'no-store' } : undefined);
       if (Array.isArray(data?.spots) && data.spots.length > 0) {
+        const favIds = data.spots.filter((s) => s.isFavorite).map((s) => s.id);
+        if (favIds.length > 0) {
+          saveLocalFavorites(favIds);
+        }
         setSpots((prev) => {
           if (!prev.length) return data.spots;
           const prevMap = new Map(prev.map((p) => [p.id, p]));
@@ -316,7 +349,11 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const toggleFavorite = (spotId: string) => {
     // Otimista: a tela reage no toque e desfaz se o servidor recusar.
     const wasFavorite = spots.find((sp) => sp.id === spotId)?.isFavorite ?? false;
-    setSpots((prev) => prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: !sp.isFavorite } : sp)));
+    setSpots((prev) => {
+      const next = prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: !sp.isFavorite } : sp));
+      saveLocalFavorites(next.filter((s) => s.isFavorite).map((s) => s.id));
+      return next;
+    });
     if (selectedSpot?.id === spotId) {
       setSelectedSpot((prev) => (prev ? { ...prev, isFavorite: !prev.isFavorite } : null));
     }
@@ -326,10 +363,18 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       body: JSON.stringify({ spotId }),
     })
       .then((res) => {
-        setSpots((prev) => prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: res.isFavorite } : sp)));
+        setSpots((prev) => {
+          const next = prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: res.isFavorite } : sp));
+          saveLocalFavorites(next.filter((s) => s.isFavorite).map((s) => s.id));
+          return next;
+        });
       })
       .catch(() => {
-        setSpots((prev) => prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: wasFavorite } : sp)));
+        setSpots((prev) => {
+          const next = prev.map((sp) => (sp.id === spotId ? { ...sp, isFavorite: wasFavorite } : sp));
+          saveLocalFavorites(next.filter((s) => s.isFavorite).map((s) => s.id));
+          return next;
+        });
       });
   };
 

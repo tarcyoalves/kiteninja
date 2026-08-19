@@ -25,9 +25,9 @@ export async function GET(request: Request) {
         (SELECT COUNT(*)::int FROM users) AS total_users,
         (SELECT COUNT(*)::int FROM users WHERE is_active = TRUE) AS active_users,
         (SELECT COUNT(*)::int FROM user_presence WHERE last_seen_at > NOW() - INTERVAL '5 minutes') AS online_now,
-        (SELECT COUNT(*)::int FROM users WHERE last_seen_at > NOW() - INTERVAL '24 hours' OR last_login_at > NOW() - INTERVAL '24 hours') AS active_today,
-        (SELECT COUNT(*)::int FROM users WHERE last_seen_at > NOW() - INTERVAL '7 days' OR last_login_at > NOW() - INTERVAL '7 days') AS active_week,
-        (SELECT COUNT(*)::int FROM sessions) AS total_sessions,
+        (SELECT COUNT(*)::int FROM users WHERE (last_seen_at IS NOT NULL AND last_seen_at > NOW() - INTERVAL '24 hours') OR (last_login_at IS NOT NULL AND last_login_at > NOW() - INTERVAL '24 hours')) AS active_today,
+        (SELECT COUNT(*)::int FROM users WHERE (last_seen_at IS NOT NULL AND last_seen_at > NOW() - INTERVAL '7 days') OR (last_login_at IS NOT NULL AND last_login_at > NOW() - INTERVAL '7 days')) AS active_week,
+        (SELECT COUNT(*)::int FROM sessions_log) AS total_sessions,
         (SELECT COUNT(*)::int FROM posts) AS total_posts,
         (SELECT COUNT(*)::int FROM chat_messages) AS total_messages
     `;
@@ -67,7 +67,7 @@ export async function GET(request: Request) {
         p.room AS current_room,
         p.at_spot_id AS current_spot_id,
         (p.last_seen_at IS NOT NULL AND p.last_seen_at > NOW() - INTERVAL '5 minutes') AS is_online,
-        (SELECT COUNT(*)::int FROM sessions ses WHERE ses.user_id = u.id) AS total_user_sessions,
+        (SELECT COUNT(*)::int FROM sessions_log ses WHERE ses.user_id = u.id) AS total_user_sessions,
         (SELECT COUNT(*)::int FROM posts pos WHERE pos.user_id = u.id) AS total_user_posts,
         (SELECT COUNT(*)::int FROM chat_messages msg WHERE msg.user_id = u.id) AS total_user_messages
       FROM users u

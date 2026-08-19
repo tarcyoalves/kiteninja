@@ -734,7 +734,7 @@ export const ChatView: React.FC = () => {
               paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 6}px` : undefined,
             }}
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
-              keyboardHeight > 0 ? 'pb-2' : 'pb-18 safe-area-pb'
+              keyboardHeight > 0 ? 'pb-2' : 'pb-3.5 safe-area-pb'
             }`}
           >
             {sendError && (
