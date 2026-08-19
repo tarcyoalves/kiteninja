@@ -19,12 +19,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     await sql`
       INSERT INTO sos_responders (sos_id, user_id, state, lat, lng, responded_at)
       VALUES (${sosId}, ${user.id}, ${state}, ${lat ?? null}, ${lng ?? null}, NOW())
-      ON CONFLICT (sos_id, user_id) 
-      DO UPDATE SET 
-        state = ${state},
-        lat = ${lat ?? null},
-        lng = ${lng ?? null},
-        responded_at = NOW()
+      ON CONFLICT (sos_id, user_id) DO UPDATE
+        SET state = EXCLUDED.state,
+            lat = EXCLUDED.lat,
+            lng = EXCLUDED.lng,
+            responded_at = NOW()
+        WHERE sos_responders.user_id = ${user.id}
     `;
 
     if (state === 'a_caminho') {

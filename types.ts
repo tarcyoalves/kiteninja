@@ -146,6 +146,8 @@ export interface UserProfile {
   maxKnotsRidden: number;
   highestJumpM?: number;
   bio?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
 }
 
 export interface SessionLog {

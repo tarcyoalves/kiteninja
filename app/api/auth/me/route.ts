@@ -10,7 +10,8 @@ export async function GET() {
     const rows = await sql`
       SELECT id, email, name, role, must_change_password, avatar_url, rider_id,
              nationality, country_flag, weight_kg, rider_level, home_spot,
-             disciplines, highest_jump_m, bio
+             disciplines, highest_jump_m, bio,
+             emergency_contact_name, emergency_contact_phone
       FROM users WHERE id = ${session.id} LIMIT 1
     `;
 
@@ -44,6 +45,8 @@ export async function GET() {
         disciplines: row.disciplines ?? [],
         highestJumpM: row.highest_jump_m ? Number(row.highest_jump_m) : undefined,
         bio: row.bio ?? undefined,
+        emergencyContactName: row.emergency_contact_name ? String(row.emergency_contact_name) : undefined,
+        emergencyContactPhone: row.emergency_contact_phone ? String(row.emergency_contact_phone) : undefined,
         totalSessions: Number(s.total_sessions),
         totalHours: Math.round((Number(s.total_minutes) / 60) * 10) / 10,
         totalKm: Math.round(Number(s.total_km) * 10) / 10,

@@ -62,6 +62,16 @@ interface KiteDataContextType {
   setLatestIncomingMessage: (msg: ChatMessage | null) => void;
   clearUnreadChat: () => void;
 
+  // SOS Emergency System
+  myActiveSos: SosAlertData | null;
+  incomingSosAlert: SosAlertData | null;
+  allActiveSosList: SosAlertData[];
+  setMyActiveSos: (sos: SosAlertData | null) => void;
+  dismissIncomingSos: () => void;
+  respondToSos: (sosId: string, state: 'a_caminho' | 'nao_posso') => Promise<void>;
+  cancelMySos: () => Promise<void>;
+  fetchActiveSos: () => Promise<void>;
+
   // Modals & Drawers
   isSidebarOpen: boolean;
   setIsSidebarOpen: (open: boolean) => void;
@@ -91,6 +101,33 @@ interface KiteDataContextType {
   refreshWindData: () => void;
   isRefreshing: boolean;
   isHydrated: boolean;
+}
+
+export interface SosResponderData {
+  userId: string;
+  name: string;
+  state: 'notificado' | 'a_caminho' | 'no_local' | 'nao_posso';
+  distanceKm: number | null;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface SosAlertData {
+  id: string;
+  userId: string;
+  authorName: string;
+  lat: number | null;
+  lng: number | null;
+  accuracyM: number | null;
+  spotId: string | null;
+  spotName: string | null;
+  message: string | null;
+  status: 'ativo' | 'em_atendimento' | 'resolvido' | 'cancelado' | 'falso_alarme';
+  radiusKm: number;
+  createdAt: string;
+  responders: SosResponderData[];
+  temCoordenada: boolean;
+  distanceKm: number | null;
 }
 
 const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined);
@@ -132,7 +169,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
 
   const [spots, setSpots] = useState<Spot[]>(() => {
     const localFavs = getLocalFavorites();
@@ -154,6 +191,12 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [events, setEvents] = useState<KiteEvent[]>([]);
   const [windUnit, setWindUnit] = useState<WindUnit>('nós');
   const [beachMode, setBeachMode] = useState<boolean>(false);
+
+  // SOS Emergency States
+  const [myActiveSos, setMyActiveSos] = useState<SosAlertData | null>(null);
+  const [incomingSosAlert, setIncomingSosAlert] = useState<SosAlertData | null>(null);
+  const [allActiveSosList, setAllActiveSosList] = useState<SosAlertData[]>([]);
+  const dismissedSosIdsRef = useRef<Set<string>>(new Set());
 
   // Modais e navegação
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -513,6 +556,77 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .catch(() => loadFeedAndEvents());
   };
 
+  // --- Funções do Sistema SOS ---
+  const fetchActiveSos = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const data = await api<{ alerts: SosAlertData[] }>('/api/sos/active', { cache: 'no-store' });
+      const list = data?.alerts || [];
+      setAllActiveSosList(list);
+
+      // SOS ativo emitido pelo próprio usuário
+      const mySos = list.find(
+        (a) => a.userId === user?.id && (a.status === 'ativo' || a.status === 'em_atendimento')
+      );
+      setMyActiveSos(mySos || null);
+
+      // SOS recebido de outro velejador (ainda não dispensado pelo usuário)
+      const incoming = list.find(
+        (a) =>
+          a.userId !== user?.id &&
+          (a.status === 'ativo' || a.status === 'em_atendimento') &&
+          !dismissedSosIdsRef.current.has(a.id)
+      );
+      setIncomingSosAlert(incoming || null);
+    } catch {
+      // Falha temporária de rede
+    }
+  }, [isAuthenticated, user?.id]);
+
+  const dismissIncomingSos = useCallback(() => {
+    if (incomingSosAlert) {
+      dismissedSosIdsRef.current.add(incomingSosAlert.id);
+    }
+    setIncomingSosAlert(null);
+  }, [incomingSosAlert]);
+
+  const respondToSos = useCallback(
+    async (sosId: string, state: 'a_caminho' | 'nao_posso') => {
+      try {
+        await api(`/api/sos/${sosId}/respond`, {
+          method: 'POST',
+          body: JSON.stringify({ state }),
+        });
+        await fetchActiveSos();
+      } catch (err) {
+        console.error('[sos] Erro ao responder SOS:', err);
+      }
+    },
+    [fetchActiveSos]
+  );
+
+  const cancelMySos = useCallback(async () => {
+    if (!myActiveSos) return;
+    try {
+      await api(`/api/sos/${myActiveSos.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'cancelado', resolutionNote: 'Cancelado pelo autor' }),
+      });
+      setMyActiveSos(null);
+      await fetchActiveSos();
+    } catch (err) {
+      console.error('[sos] Erro ao cancelar SOS:', err);
+    }
+  }, [myActiveSos, fetchActiveSos]);
+
+  // Polling regular de SOS a cada 12 segundos quando logado
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    fetchActiveSos();
+    const interval = setInterval(fetchActiveSos, 12000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchActiveSos]);
+
   const refreshWindData = () => {
     setIsRefreshing(true);
     loadSpots(true).finally(() => setIsRefreshing(false));
@@ -554,6 +668,14 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         latestIncomingMessage,
         setLatestIncomingMessage,
         clearUnreadChat,
+        myActiveSos,
+        incomingSosAlert,
+        allActiveSosList,
+        setMyActiveSos,
+        dismissIncomingSos,
+        respondToSos,
+        cancelMySos,
+        fetchActiveSos,
         isSidebarOpen,
         setIsSidebarOpen,
         isLoggerOpen,

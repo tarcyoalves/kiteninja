@@ -89,6 +89,9 @@ async function main() {
     'audit_logs',
     'content_reports',
     'notification_preferences',
+    'sos_alerts',
+    'sos_responders',
+    'push_subscriptions',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -157,6 +160,18 @@ async function main() {
     'severity fora do CHECK é rejeitada',
     `INSERT INTO safety_alerts (user_id, title, spot_name, severity, description)
      VALUES ($1, 'T', 'S', 'catastrofe', 'D')`,
+    [riderA]
+  );
+  await expectFail(
+    db,
+    'sos status fora do CHECK é rejeitado',
+    `INSERT INTO sos_alerts (user_id, status) VALUES ($1, 'socorro_invalido')`,
+    [riderA]
+  );
+  await expectFail(
+    db,
+    'sos_responder state fora do CHECK é rejeitado',
+    `INSERT INTO sos_responders (sos_id, user_id, state) VALUES (gen_random_uuid(), $1, 'voando')`,
     [riderA]
   );
 
@@ -472,6 +487,90 @@ async function main() {
      WHERE a.status = 'Ativo' ORDER BY a.created_at DESC`
   );
 
+  console.log('\nSistema de Socorro (SOS) e Web Push:');
+  const sosNullCoords = await expectOk(
+    db,
+    'SOS é aceito sem coordenadas (GPS demorou/falhou)',
+    `INSERT INTO sos_alerts (user_id, status, radius_km) VALUES ($1, 'ativo', 5) RETURNING id`,
+    [riderA]
+  );
+  check('SOS sem coordenada tem 1 linha', sosNullCoords.length === 1);
+
+  const sosComCoords = await db.query<{ id: string }>(
+    `INSERT INTO sos_alerts (user_id, lat, lng, accuracy_m, spot_id, message, status, radius_km)
+     VALUES ($1, -4.9572, -36.8833, 15.5, 'ponta-do-mel', 'prancha quebrada', 'ativo', 5) RETURNING id`,
+    [riderA]
+  );
+  const sosId = sosComCoords.rows[0].id;
+  check('criação de SOS com coordenadas e spot', Boolean(sosId));
+
+  await expectOk(
+    db,
+    'sos_responders: notifica rider B',
+    `INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
+     VALUES ($1, $2, 'notificado', 3.2)`,
+    [sosId, riderB]
+  );
+
+  await expectFail(
+    db,
+    'sos_responders: PK composta (sos_id, user_id) rejeita duplicata sem ON CONFLICT',
+    `INSERT INTO sos_responders (sos_id, user_id, state) VALUES ($1, $2, 'notificado')`,
+    [sosId, riderB]
+  );
+
+  await expectOk(
+    db,
+    'sos_responders: UPSERT para state=a_caminho atualiza sem duplicar',
+    `INSERT INTO sos_responders (sos_id, user_id, state, lat, lng, responded_at)
+     VALUES ($1, $2, 'a_caminho', -4.9500, -36.8800, NOW())
+     ON CONFLICT (sos_id, user_id) DO UPDATE
+       SET state = EXCLUDED.state, lat = EXCLUDED.lat, lng = EXCLUDED.lng, responded_at = EXCLUDED.responded_at`,
+    [sosId, riderB]
+  );
+
+  const respondersCount = await db.query<{ cnt: number }>(
+    `SELECT COUNT(*)::int AS cnt FROM sos_responders WHERE sos_id = $1`,
+    [sosId]
+  );
+  check('sos_responders mantém 1 linha por usuário após upsert', Number(respondersCount.rows[0].cnt) === 1);
+
+  await expectOk(
+    db,
+    'inscrição de Web Push criada com sucesso',
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
+     VALUES ($1, 'https://push.services.mozilla.com/123', 'p256key', 'authkey', 'Firefox Mobile')
+     RETURNING id`,
+    [riderB]
+  );
+
+  await expectFail(
+    db,
+    'push_subscriptions: endpoint UNIQUE rejeita duplicata direta',
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+     VALUES ($1, 'https://push.services.mozilla.com/123', 'k', 'a')`,
+    [riderB]
+  );
+
+  await expectOk(
+    db,
+    'push_subscriptions: UPSERT por endpoint atualiza sem erro',
+    `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth, user_agent, last_used_at, failure_count)
+     VALUES ($1, 'https://push.services.mozilla.com/123', 'p256_new', 'auth_new', 'Chrome', NOW(), 0)
+     ON CONFLICT (endpoint) DO UPDATE
+       SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth, last_used_at = NOW(), failure_count = 0`,
+    [riderB]
+  );
+
+  await expectOk(
+    db,
+    'atualização de contato de emergência no perfil',
+    `UPDATE users
+     SET emergency_contact_name = 'Maria Velejadora', emergency_contact_phone = '84999998888'
+     WHERE id = $1 RETURNING emergency_contact_name, emergency_contact_phone`,
+    [riderA]
+  );
+
   console.log('\nCascata:');
   await db.query(`INSERT INTO post_comments (post_id, user_id, text) VALUES ($1, $2, 'oi')`, [
     postId,
@@ -487,6 +586,12 @@ async function main() {
 
   const orphanSessions = await db.query(`SELECT id FROM sessions_log WHERE user_id = $1`, [riderA]);
   check('sessões morrem com o autor', orphanSessions.rows.length === 0);
+
+  const orphanSos = await db.query(`SELECT id FROM sos_alerts WHERE user_id = $1`, [riderA]);
+  check('sos_alerts morre com o autor', orphanSos.rows.length === 0);
+
+  const orphanPush = await db.query(`SELECT id FROM push_subscriptions WHERE user_id = $1`, [riderA]);
+  check('push_subscriptions morrem com o usuário', orphanPush.rows.length === 0);
 
   await db.close();
 }

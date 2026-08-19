@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       await sql`
         UPDATE sos_alerts
         SET lat = ${updateLat}, lng = ${updateLng}, accuracy_m = COALESCE(${accuracyM ?? null}, accuracy_m)
-        WHERE id = ${row.id}
+        WHERE id = ${row.id} AND user_id = ${user.id}
       `;
       return {
         sos: {
@@ -107,8 +107,8 @@ export async function POST(request: Request) {
     }
 
     await sql`
-      INSERT INTO audit_logs (action, target_type, target_id, user_id)
-      VALUES ('sos.created', 'sos_alert', ${sosId}, ${user.id})
+      INSERT INTO audit_logs (actor_id, action, target_type, target_id)
+      VALUES (${user.id}, 'sos.created', 'sos_alert', ${sosId})
     `;
 
     // O envio de push nunca pode falhar e interromper a gravação do SOS
@@ -124,7 +124,7 @@ export async function POST(request: Request) {
           title: txt.titulo,
           body: txt.corpo,
           requireInteraction: true,
-          url: \`/sos/\${sosId}\`
+          url: `/?tab=mapa&sos=${sosId}`,
         });
       } catch (err) {
         console.error('[sos] Falha silenciosa no push', err);

@@ -17,6 +17,23 @@ import { useKiteData } from '@/context/KiteDataContext';
 export type MapLayer = 'vento' | 'rajadas' | 'ondas';
 export type MapStyle = 'oceanico' | 'satelite' | 'escuro';
 
+/** Dados de SOS ativo para renderização no mapa */
+export interface ActiveSosMapData {
+  id: string;
+  lat: number | null;
+  lng: number | null;
+  accuracyM?: number | null;
+  authorName?: string;
+  status: string;
+  responders?: Array<{
+    userId: string;
+    name?: string;
+    state: string;
+    lat: number | null;
+    lng: number | null;
+  }>;
+}
+
 /** Posição do usuário obtida via Geolocation API */
 export interface UserPosition {
   lat: number;
@@ -38,6 +55,7 @@ interface LeafletMapProps {
   locateStatus: 'idle' | 'loading' | 'success' | 'error' | 'denied';
   nearestSpotInfo: { spot: Spot; distanceKm: number } | null;
   userPosition: UserPosition | null;
+  activeSosList?: ActiveSosMapData[];
 }
 
 /** Componente interno para controllable center (usado pelo botão Localizar) */
@@ -150,6 +168,47 @@ function createUserLocationIcon(reduceMotion: boolean): L.DivIcon {
   });
 }
 
+/** Criar ícone pulsante vermelho para alerta de SOS ativo.
+ *  Só deve ser instanciado quando existirem coordenadas lat/lng válidas. */
+function createSosMarkerIcon(reduceMotion: boolean, authorName?: string): L.DivIcon {
+  const pulseClass = reduceMotion ? '' : 'animate-ping';
+  const html = `
+    <div class="relative flex items-center justify-center">
+      <div class="absolute w-8 h-8 rounded-full bg-rose-500/50 ${pulseClass}"></div>
+      <div class="relative px-2.5 py-1 rounded-full bg-rose-600 border-2 border-white shadow-2xl shadow-rose-600/80 flex items-center gap-1 text-white font-black text-[11px] whitespace-nowrap">
+        <span>🆘</span>
+        <span>SOS${authorName ? ` • ${authorName}` : ''}</span>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: 'custom-spot-marker',
+    iconSize: [80, 32],
+    iconAnchor: [40, 16],
+  });
+}
+
+/** Criar ícone para responder a caminho de um SOS */
+function createResponderMarkerIcon(name?: string): L.DivIcon {
+  const html = `
+    <div class="relative flex items-center justify-center">
+      <div class="relative px-2 py-0.5 rounded-full bg-emerald-600 border border-white shadow-lg flex items-center gap-1 text-white font-bold text-[10px] whitespace-nowrap">
+        <span>🏄</span>
+        <span>${name || 'A caminho'}</span>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: 'custom-spot-marker',
+    iconSize: [60, 24],
+    iconAnchor: [30, 12],
+  });
+}
+
 export const LeafletMap: React.FC<LeafletMapProps> = ({
   spots,
   selectedSpot,
@@ -160,6 +219,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   locateStatus,
   nearestSpotInfo,
   userPosition,
+  activeSosList = [],
 }) => {
   /* Animação ligada por padrão: é o principal ganho de leitura do mapa. Fica
      desligável porque partícula em canvas custa bateria, e na praia isso pesa. */
@@ -369,6 +429,48 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               }}
             />
           ))}
+
+          {/* Marcadores de Alertas SOS Ativos (APENAS se houver coordenadas lat/lng reais) */}
+          {activeSosList.map((sos) => {
+            if (sos.lat === null || sos.lng === null) return null;
+            return (
+              <React.Fragment key={`sos-${sos.id}`}>
+                {/* Círculo de precisão do SOS */}
+                {sos.accuracyM && sos.accuracyM > 0 && (
+                  <CircleMarker
+                    center={[sos.lat, sos.lng]}
+                    radius={Math.max(20, Math.min(100, sos.accuracyM / 4))}
+                    pathOptions={{
+                      color: '#f43f5e',
+                      fillColor: '#f43f5e',
+                      fillOpacity: 0.2,
+                      weight: 2,
+                      dashArray: '4, 6',
+                    }}
+                  />
+                )}
+                {/* Pino do SOS pulsante com z-index de máxima prioridade */}
+                <Marker
+                  position={[sos.lat, sos.lng]}
+                  icon={createSosMarkerIcon(reduceMotion, sos.authorName)}
+                  zIndexOffset={3000}
+                />
+
+                {/* Pinos dos velejadores que responderam a caminho com coordenadas reais */}
+                {sos.responders?.map((resp) => {
+                  if (resp.lat === null || resp.lng === null || resp.state === 'nao_posso') return null;
+                  return (
+                    <Marker
+                      key={`resp-${sos.id}-${resp.userId}`}
+                      position={[resp.lat, resp.lng]}
+                      icon={createResponderMarkerIcon(resp.name)}
+                      zIndexOffset={2500}
+                    />
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
 
           {/* User Location Marker and Accuracy Circle (when located) */}
           {userPosition && (

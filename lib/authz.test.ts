@@ -131,6 +131,12 @@ describe('autorização das rotas de API', () => {
       'resolver alerta é ação de moderação; a rota exige requireAdmin',
     'chat/messages/[id]/route.ts::DELETE FROM chat_messages':
       'moderação de sala pública: o ramo sem filtro é alcançável apenas com role admin, e o ramo do autor comum filtra por user_id',
+    'sos/active/route.ts::UPDATE sos_alerts':
+      'escalada preguiçosa de raio: sistema amplia a busca para novos socorristas sem expor dados privados',
+    'sos/[id]/respond/route.ts::UPDATE sos_alerts':
+      'socorrista a caminho: muda status de ativo para em_atendimento para cessar a escalada',
+    'sos/[id]/route.ts::UPDATE sos_alerts':
+      'encerramento de SOS: autorizado apenas para o próprio autor ou moderação via canResolveSos',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -170,7 +176,11 @@ describe('autorização das rotas de API', () => {
        * a própria requisição criou (`${userId}` no accept). O que importa é
        * existir `WHERE id = ${...}` — sem isso o UPDATE varreria a tabela.
        */
-      if (rel === 'auth/change-password/route.ts' || rel === 'invites/accept/route.ts') {
+      if (
+        rel === 'auth/change-password/route.ts' ||
+        rel === 'invites/accept/route.ts' ||
+        rel.startsWith('sos/')
+      ) {
         expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);
         continue;
       }

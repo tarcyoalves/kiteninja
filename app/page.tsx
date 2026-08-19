@@ -12,6 +12,9 @@ import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
 import { NewPostModal } from "../components/NewPostModal";
 import { NewListingModal } from "../components/NewListingModal";
 import { InAppPushToast } from "../components/InAppPushToast";
+import { SosButton } from "../components/SosButton";
+import { SosPanel } from "../components/SosPanel";
+import { SosIncomingAlert } from "../components/SosIncomingAlert";
 import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
@@ -34,7 +37,24 @@ const MainContent: React.FC = () => {
     selectedSpot,
     setSelectedSpot,
     beachMode,
+    myActiveSos,
+    incomingSosAlert,
+    dismissIncomingSos,
+    respondToSos,
+    cancelMySos,
+    fetchActiveSos,
+    setActiveTab,
   } = useKiteData();
+
+  const { user } = useAuth();
+  const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
+
+  // Reabre o painel se um novo SOS do usuário for detectado
+  React.useEffect(() => {
+    if (myActiveSos) {
+      setIsSosPanelOpen(true);
+    }
+  }, [myActiveSos]);
 
   return (
     /*
@@ -75,6 +95,49 @@ const MainContent: React.FC = () => {
           <EventsAndAlertsView />
         )}
       </main>
+
+      {/* Botão SOS de Emergência (press-and-hold de 800ms) */}
+      <SosButton
+        hasActiveSos={Boolean(myActiveSos)}
+        onSosTriggered={() => {
+          setIsSosPanelOpen(true);
+          fetchActiveSos();
+        }}
+      />
+
+      {/* Painel do SOS Ativo emitido pelo próprio usuário (193/185 em destaque) */}
+      {myActiveSos && isSosPanelOpen && (
+        <SosPanel
+          sos={myActiveSos}
+          emergencyContactPhone={user?.emergencyContactPhone || null}
+          onClose={() => setIsSosPanelOpen(false)}
+          onCancel={cancelMySos}
+        />
+      )}
+
+      {/* Alerta SOS Recebido de Outro Velejador Próximo (Modal Interruptivo) */}
+      {incomingSosAlert && (
+        <SosIncomingAlert
+          sos={{
+            id: incomingSosAlert.id,
+            authorName: incomingSosAlert.authorName,
+            distanceKm: incomingSosAlert.distanceKm,
+            spotName: incomingSosAlert.spotName,
+            accuracyM: incomingSosAlert.accuracyM,
+            lat: incomingSosAlert.lat,
+            lng: incomingSosAlert.lng,
+            message: incomingSosAlert.message,
+            createdAt: incomingSosAlert.createdAt,
+            temCoordenada: incomingSosAlert.temCoordenada,
+          }}
+          onRespond={respondToSos}
+          onViewMap={() => {
+            setSelectedSpot(null);
+            setActiveTab("mapa");
+          }}
+          onDismiss={dismissIncomingSos}
+        />
+      )}
 
       {/* Fixed Bottom Tab Navigation */}
       <BottomNav />

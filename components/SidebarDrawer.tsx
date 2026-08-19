@@ -48,6 +48,94 @@ export const SidebarDrawer: React.FC = () => {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
 
+  // Contato de Emergência
+  const [emergencyName, setEmergencyName] = useState(user?.emergencyContactName || '');
+  const [emergencyPhone, setEmergencyPhone] = useState(user?.emergencyContactPhone || '');
+  const [savingContact, setSavingContact] = useState(false);
+  const [contactSaved, setContactSaved] = useState(false);
+
+  // Web Push
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isStandalone =
+    typeof window !== 'undefined' &&
+    (Boolean((window.navigator as unknown as { standalone?: boolean }).standalone) ||
+      window.matchMedia('(display-mode: standalone)').matches);
+
+  useEffect(() => {
+    if (user) {
+      setEmergencyName(user.emergencyContactName || '');
+      setEmergencyPhone(user.emergencyContactPhone || '');
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPushEnabled(Notification.permission === 'granted');
+    }
+  }, []);
+
+  const handleSaveContact = async () => {
+    setSavingContact(true);
+    try {
+      await updateProfile({
+        emergencyContactName: emergencyName.trim(),
+        emergencyContactPhone: emergencyPhone.trim(),
+      });
+      setContactSaved(true);
+      setTimeout(() => setContactSaved(false), 3000);
+    } catch {
+      // Ignora erro
+    } finally {
+      setSavingContact(false);
+    }
+  };
+
+  const handleTogglePush = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+      alert('Notificações Push não são suportadas neste navegador.');
+      return;
+    }
+
+    setPushBusy(true);
+    try {
+      const perm = await Notification.requestPermission();
+      setPushEnabled(perm === 'granted');
+
+      if (perm === 'granted') {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+
+        const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+        if (vapidKey) {
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: vapidKey,
+          });
+
+          const subJson = sub.toJSON();
+          if (subJson.endpoint && subJson.keys?.p256dh && subJson.keys?.auth) {
+            await fetch('/api/push/subscribe', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                endpoint: subJson.endpoint,
+                p256dh: subJson.keys.p256dh,
+                auth: subJson.keys.auth,
+              }),
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[push] Erro ao ativar notificações:', err);
+    } finally {
+      setPushBusy(false);
+    }
+  };
+
   /**
    * Contagem real de velejadores online, para o badge do Chat.
    *
@@ -390,7 +478,84 @@ export const SidebarDrawer: React.FC = () => {
         </div>
 
         {/* Footer Settings & Auth */}
-        <div className="p-3 bg-[#1E293B]/90 border-t border-slate-800 text-xs space-y-2">
+        <div className="p-3 bg-[#1E293B]/90 border-t border-slate-800 text-xs space-y-3">
+          {/* Seção SOS e Contato de Emergência (apenas para usuário logado) */}
+          {user && (
+            <div className="p-3 rounded-2xl bg-[#0F172A] border border-rose-500/30 space-y-2.5">
+              <div className="flex items-center gap-2 text-rose-400 font-black">
+                <Shield size={15} />
+                <span className="text-[11px] uppercase tracking-wider">Segurança & Emergência</span>
+              </div>
+
+              {/* Contato de Emergência */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] text-slate-400 font-bold block">
+                  Contato de Emergência (Recebe sua posição):
+                </span>
+                <input
+                  type="text"
+                  placeholder="Nome do contato (ex: Maria)"
+                  value={emergencyName}
+                  onChange={(e) => setEmergencyName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:border-cyan-400"
+                />
+                <input
+                  type="text"
+                  placeholder="WhatsApp com DDD (ex: 84999998888)"
+                  value={emergencyPhone}
+                  onChange={(e) => setEmergencyPhone(e.target.value)}
+                  className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder:text-slate-500 focus:outline-hidden focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveContact}
+                  disabled={savingContact}
+                  className="w-full py-1.5 rounded-lg bg-rose-600/30 hover:bg-rose-600/40 border border-rose-500/50 text-rose-300 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-50"
+                >
+                  {savingContact ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : contactSaved ? (
+                    <span className="text-emerald-400 font-bold">Salvo com sucesso!</span>
+                  ) : (
+                    <span>Salvar Contato de Emergência</span>
+                  )}
+                </button>
+              </div>
+
+              {/* Ativação de Notificações Push */}
+              <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400 font-bold">Alertas SOS Próximos:</span>
+                  <button
+                    type="button"
+                    onClick={handleTogglePush}
+                    disabled={pushBusy}
+                    className={`px-2.5 py-1 rounded-lg font-bold text-[10px] transition-all flex items-center gap-1 ${
+                      pushEnabled
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/30'
+                    }`}
+                  >
+                    {pushBusy ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : pushEnabled ? (
+                      'Ativo'
+                    ) : (
+                      'Ativar Notificações'
+                    )}
+                  </button>
+                </div>
+
+                {/* Instrução especial para iPhone / iOS Safari */}
+                {isIos && !isStandalone && (
+                  <p className="text-[10px] text-amber-300/90 leading-tight bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
+                    📱 <strong>No iPhone:</strong> para receber push de socorro, instale o app tocando em <strong>Compartilhar ➔ Adicionar à Tela de Início</strong>.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between text-slate-400 px-1 font-medium">
             <span>Unidade de Vento:</span>
             <button
@@ -404,7 +569,7 @@ export const SidebarDrawer: React.FC = () => {
           <div className="flex items-center justify-between text-slate-400 px-1 font-medium">
             <span>Modo Sol Forte (Praia):</span>
             <button
-              onClick={() => setBeachMode(prev => !prev)}
+              onClick={() => setBeachMode((prev) => !prev)}
               className={`px-2.5 py-0.5 rounded-lg font-bold transition-all ${
                 beachMode ? 'bg-amber-400 text-black' : 'bg-[#0F172A] border border-slate-700 text-slate-300'
               }`}

@@ -29,7 +29,7 @@ interface MapViewProps {
 }
 
 export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
-  const { spots, convertWind, beachMode } = useKiteData();
+  const { spots, convertWind, beachMode, allActiveSosList } = useKiteData();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
   const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
   const [locateStatus, setLocateStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
@@ -194,6 +194,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
           locateStatus={locateStatus}
           nearestSpotInfo={nearestSpotInfo}
           userPosition={userPosition}
+          activeSosList={allActiveSosList}
         />
       </Suspense>
 

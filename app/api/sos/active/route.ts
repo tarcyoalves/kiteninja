@@ -115,7 +115,7 @@ export async function GET() {
                   title: txt.titulo,
                   body: txt.corpo,
                   requireInteraction: true,
-                  url: \`/sos/\${sosId}\`
+                  url: `/?tab=mapa&sos=${sosId}`,
                 });
               } catch (err) {
                 console.error('[sos] Push falhou na escalada', err);

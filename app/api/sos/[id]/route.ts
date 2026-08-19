@@ -40,8 +40,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     `;
 
     await sql`
-      INSERT INTO audit_logs (action, target_type, target_id, user_id)
-      VALUES ('sos.resolved', 'sos_alert', ${sosId}, ${user.id})
+      INSERT INTO audit_logs (actor_id, action, target_type, target_id)
+      VALUES (${user.id}, 'sos.resolved', 'sos_alert', ${sosId})
     `;
 
     return { ok: true };
