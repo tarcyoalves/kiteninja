@@ -17,12 +17,28 @@
   }
 }
 
+/* Altura real ocupada pelo menu inferior flutuante: `bottom-1.5` (6px) mais a
+   pílula de 58px. Fica como variável porque três lugares precisam reservar
+   exatamente esta folga, e um número solto em cada um deles já divergiu antes. */
+:root {
+  --bottom-nav-height: 64px;
+}
+
 .safe-area-pb {
   padding-bottom: env(safe-area-inset-bottom, 0.5rem);
 }
 
 .safe-area-pt {
   padding-top: env(safe-area-inset-top, 0.5rem);
+}
+
+/* Folga para conteúdo que termina logo acima do menu inferior.
+   Precisa ser UMA declaração somando as duas medidas: escrever
+   `pb-[76px] safe-area-pb` juntos não funciona — as duas regras disputam a
+   mesma propriedade e a última a vencer na cascata apaga a outra, deixando só
+   o inset (~34px no iPhone) e o menu por cima do campo de mensagem. */
+.pb-above-nav {
+  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
 }
 
 /* Topo de overlay em tela cheia (modal, drawer, lightbox).

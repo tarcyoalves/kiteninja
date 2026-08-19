@@ -734,7 +734,7 @@ export const ChatView: React.FC = () => {
               paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 6}px` : undefined,
             }}
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
-              keyboardHeight > 0 ? 'pb-2' : 'pb-[76px] safe-area-pb'
+              keyboardHeight > 0 ? 'pb-2' : 'pb-above-nav'
             }`}
           >
             {sendError && (
@@ -871,7 +871,7 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
   const ativos = online.filter((o) => isPresenceOnline(o.lastSeenAt, now));
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 pb-24 space-y-3">
+    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 pb-above-nav space-y-3">
       {/* Card: Marcar meu spot atual */}
       <div className={`p-4 rounded-2xl border ${cardBg} shadow-sm`}>
         <div className="flex items-center gap-2 mb-1.5">
