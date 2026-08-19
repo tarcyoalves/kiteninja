@@ -53,11 +53,11 @@ const MainContent: React.FC = () => {
       {/* Header — shrink-0 no próprio componente, sempre visível */}
       <Header />
 
-      {/* Área central do app: chat termina acima da barra flutuante sem sobreposição */}
+      {/* Área central do app: chat termina com folga ampla acima da barra flutuante */}
       <main
         className={`w-full max-w-lg mx-auto ${
           activeTab === "chat"
-            ? "flex-1 min-h-0 overflow-hidden flex flex-col pb-[74px]"
+            ? "flex-1 min-h-0 overflow-hidden flex flex-col pb-[92px]"
             : activeTab === "mapa"
             ? "flex-1 min-h-0 overflow-hidden flex flex-col"
             : "app-scroll"

@@ -55,8 +55,8 @@ export const BottomNav: React.FC = () => {
   const isTabActive = (tab: ActiveTab) => activeTab === tab && !selectedSpot;
 
   return (
-    /* Barra Flutuante estilo Instagram (Pill Glassmorphism) */
-    <div className="fixed bottom-4 inset-x-0 z-chrome pointer-events-none flex justify-center px-4 safe-area-pb">
+    /* Barra Flutuante estilo Instagram rebaixada e elegante */
+    <div className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
       <nav
         ref={navRef}
         className={`pointer-events-auto w-full max-w-[390px] h-[58px] px-2 rounded-full flex items-center justify-between transition-all duration-300 shadow-2xl shadow-black/70 border backdrop-blur-2xl ${
