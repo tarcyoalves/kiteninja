@@ -24,6 +24,8 @@ export async function PATCH(request: Request) {
     const homeSpot = str(body, 'homeSpot', { optional: true, max: 120 });
     const bio = str(body, 'bio', { optional: true, max: 500 });
     const highestJumpM = num(body, 'highestJumpM', { min: 0, max: 40, optional: true });
+    const emergencyContactName = str(body, 'emergencyContactName', { optional: true, max: 120 });
+    const emergencyContactPhone = str(body, 'emergencyContactPhone', { optional: true, max: 30 });
 
     /**
      * Foto de perfil. Aceita data URL JPEG/PNG/WebP comprimida ou URLs HTTPS seguras (ex: Dicebear, Vercel Blob).
@@ -74,6 +76,8 @@ export async function PATCH(request: Request) {
         quiver_kites        = COALESCE(${quiverKites && quiverKites.length > 0 ? quiverKites : null}, quiver_kites),
         quiver_boards       = COALESCE(${quiverBoards && quiverBoards.length > 0 ? quiverBoards : null}, quiver_boards),
         preferred_wind_unit = COALESCE(${preferredWindUnit || null}, preferred_wind_unit),
+        emergency_contact_name  = COALESCE(${emergencyContactName || null}, emergency_contact_name),
+        emergency_contact_phone = COALESCE(${emergencyContactPhone || null}, emergency_contact_phone),
         updated_at          = NOW()
       WHERE id = ${user.id}
     `;
