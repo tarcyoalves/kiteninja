@@ -29,6 +29,7 @@ import {
   introJaVista,
   marcarIntroVista,
 } from "../components/SplashIntro";
+import { useKeyboardVisible } from "../lib/useKeyboardVisible";
 const MainContent: React.FC = () => {
   const {
     activeTab,
@@ -45,6 +46,9 @@ const MainContent: React.FC = () => {
 
   const { user } = useAuth();
   const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
+  // Marca o estado do teclado no shell para o CSS zerar a folga do menu
+  // (que é desmontado quando o teclado abre) e não deixar faixa vazia embaixo.
+  const tecladoAberto = useKeyboardVisible();
 
   // Reabre o painel se um novo SOS do usuário for detectado
   React.useEffect(() => {
@@ -61,6 +65,7 @@ const MainContent: React.FC = () => {
      * instalado como web app.
      */
     <div
+      data-teclado={tecladoAberto ? "aberto" : "fechado"}
       className={`app-shell font-sans flex flex-col antialiased transition-colors ${
         beachMode
           ? "bg-[#020617] text-white"

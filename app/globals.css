@@ -168,6 +168,13 @@ select {
   padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
 
+/* Com o teclado aberto o menu inferior é desmontado (BottomNav retorna null),
+   então a folga reservada para ele vira uma faixa vazia no rodapé. O shell
+   marca este estado e a folga cai para o mínimo. */
+.app-shell[data-teclado='aberto'] .app-scroll {
+  padding-bottom: 0.5rem;
+}
+
 /* Telas que ocupam a área central sem rolagem própria (o mapa). */
 .app-viewport {
   height: 100%;

@@ -53,6 +53,24 @@ export function useKeyboardVisible(): boolean {
     const onFocusOut = () => {
       focado = false;
       recalcular();
+
+      // O iOS ROLA a viewport de layout para revelar o campo focado e NÃO
+      // desfaz essa rolagem ao fechar o teclado. Como o .app-shell é
+      // position:fixed, ele fica ancorado na viewport deslocada e sobra uma
+      // faixa vazia no rodapé — que persiste até trocando de aba, porque a
+      // rolagem é do documento, não do componente. Zeramos na mão.
+      //
+      // O rAF duplo é necessário: o iOS ainda está animando o teclado para
+      // fora quando focusout dispara, e um scrollTo imediato é desfeito por ele.
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (window.scrollY !== 0) window.scrollTo(0, 0);
+        });
+      });
+      // Rede de segurança para o fim da animação do teclado (~300ms no iOS).
+      setTimeout(() => {
+        if (window.scrollY !== 0) window.scrollTo(0, 0);
+      }, 350);
     };
 
     document.addEventListener('focusin', onFocusIn);

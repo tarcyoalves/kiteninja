@@ -466,12 +466,26 @@ const SplashVideo: React.FC<{
       role="status"
       aria-label="Abertura do KiteNinja"
     >
+      {/* Quadro de capa: aparece INSTANTANEAMENTE (é data URL, já vem no JSON)
+          enquanto o vídeo carrega. Sem ele a tela fica preta esperando, que é o
+          que dava a sensação de abertura lenta — os vídeos são .mov sem
+          faststart (moov no fim), então o Safari só mostra o 1o quadro depois de
+          baixar quase o arquivo todo. */}
+      {video.posterDataUrl && !isPlaying && (
+        <img
+          src={video.posterDataUrl}
+          alt=""
+          aria-hidden="true"
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      )}
       <video
         ref={ref}
         src={video.url}
         muted
         autoPlay
         playsInline
+        poster={video.posterDataUrl}
         preload="auto"
         aria-hidden="true"
         className={`absolute inset-0 w-full h-full object-cover block transition-opacity duration-300 ${
