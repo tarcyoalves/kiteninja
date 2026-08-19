@@ -703,8 +703,8 @@ export const ChatView: React.FC = () => {
             ))}
           </div>
 
-          {/* 4. Campo de Digitação Fixo e Elevado acima do Menu Flutuante */}
-          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2 pb-20 safe-area-pb">
+          {/* 4. Campo de Digitação Fixo e Estável */}
+          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 py-2.5 shadow-lg">
             {sendError && (
               <p
                 role="alert"

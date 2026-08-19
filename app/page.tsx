@@ -53,10 +53,12 @@ const MainContent: React.FC = () => {
       {/* Header — shrink-0 no próprio componente, sempre visível */}
       <Header />
 
-      {/* Área central do app: quando for chat ou mapa, desativa scroll externo para evitar conflito de visualViewport */}
+      {/* Área central do app: chat termina acima da barra flutuante sem sobreposição */}
       <main
         className={`w-full max-w-lg mx-auto ${
-          activeTab === "chat" || activeTab === "mapa"
+          activeTab === "chat"
+            ? "flex-1 min-h-0 overflow-hidden flex flex-col pb-[74px]"
+            : activeTab === "mapa"
             ? "flex-1 min-h-0 overflow-hidden flex flex-col"
             : "app-scroll"
         }`}
