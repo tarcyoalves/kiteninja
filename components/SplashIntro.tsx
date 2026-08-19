@@ -443,7 +443,7 @@ const SplashVideo: React.FC<{
 
   return (
     <div
-      className={`fixed inset-0 w-screen h-screen z-splash bg-black overflow-hidden select-none transition-opacity duration-400 ${
+      className={`fixed inset-0 z-splash bg-black overflow-hidden select-none transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
       style={{
@@ -452,9 +452,8 @@ const SplashVideo: React.FC<{
         left: 0,
         right: 0,
         bottom: 0,
-        width: '100vw',
-        height: '100dvh',
-        minHeight: '-webkit-fill-available',
+        width: '100%',
+        height: '100%',
         zIndex: 99999,
         backgroundColor: '#000000',
         overflow: 'hidden',

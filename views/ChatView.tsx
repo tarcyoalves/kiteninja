@@ -779,7 +779,7 @@ export const ChatView: React.FC = () => {
                     }
                   }}
                   placeholder={`Mensagem em ${roomLabel}...`}
-                  className="w-full h-11 px-3.5 pr-10 rounded-xl bg-[#1E293B] border border-slate-700 text-[15px] text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-all"
+                  className="w-full h-11 px-3.5 pr-10 rounded-xl bg-[#1E293B] border border-slate-700 text-[16px] text-white placeholder-slate-400 focus:outline-hidden focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400/50 transition-all"
                 />
 
                 {draft.length > 0 && (
