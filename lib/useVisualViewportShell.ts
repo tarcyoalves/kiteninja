@@ -55,16 +55,33 @@ export function useVisualViewportShell(): void {
       });
     };
 
+    // No iOS, focar um input dentro de um elemento `position: fixed` faz o
+    // Safari ROLAR a viewport de layout inteira para cima para revelar o campo.
+    // Ao fechar o teclado ele nem sempre desfaz essa rolagem: o shell fixo fica
+    // deslocado e sobra a tarja embaixo — que o usuário "conserta" puxando a
+    // tela para baixo. Forçar o scroll de volta ao topo desfaz isso por nós.
+    const recolocarNoTopo = () => {
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+
     // Ao perder o foco o teclado fecha: limpa imediatamente e reconfere depois
     // que a animação do iOS assenta (ele às vezes para de emitir eventos no
     // meio, mas como o default é "cheio", basta garantir que ficou limpo).
     const escalonados: number[] = [];
     const onFocusOut = () => {
       limpar();
+      recolocarNoTopo();
       escalonados.forEach(clearTimeout);
       escalonados.length = 0;
       for (const ms of [120, 320, 520]) {
-        escalonados.push(window.setTimeout(atualizar, ms));
+        escalonados.push(
+          window.setTimeout(() => {
+            atualizar();
+            recolocarNoTopo();
+          }, ms)
+        );
       }
     };
 
