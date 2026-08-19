@@ -25,20 +25,34 @@ export const BottomNav: React.FC = () => {
     setIsCalculatorOpen,
   } = useKiteData();
   const { user } = useAuth();
-  const navRef = useRef<HTMLElement | null>(null);
+  // No wrapper (não no <nav>): o wrapper já inclui o padding da safe-area
+  // (safe-area-pb) por baixo da pílula, então medir dele dá a distância real
+  // até o topo da pílula em qualquer iPhone, com ou sem notch.
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   // Com interactive-widget=resizes-content o teclado encolhe a viewport em vez
   // de sobrepô-la, então a diferença de altura fica ~0 e não serve de sinal.
   // O hook combina foco em campo editável (toque) + diferença de viewport.
   const isKeyboardOpen = useKeyboardVisible();
 
-  /* Publica a altura da barra flutuante em --nav-h */
+  /*
+   * Publica em --nav-h a distância real do fundo da tela até o topo da
+   * pílula — não a altura da pílula em si mais um número solto.
+   *
+   * Era `nav.height + 20`, que ignorava a safe-area (o "queixo" do iPhone) e o
+   * `bottom-1.5` do wrapper. Num iPhone com notch (safe-area ~34px) isso
+   * subestimava a distância real em ~20px: o SpotDetailModal (que usa
+   * `.bottom-nav-gap { bottom: var(--nav-h) }` para parar bem acima do menu)
+   * na verdade parava 20px ABAIXO do topo da pílula — cobrindo o terço
+   * superior dela. Resultado: a borda reta do modal cortava o menu
+   * flutuante ao meio, como uma linha por cima dos ícones.
+   */
   useEffect(() => {
-    const el = navRef.current;
+    const el = wrapperRef.current;
     if (!el) return;
 
     const publicar = () => {
-      const h = el.getBoundingClientRect().height;
-      document.documentElement.style.setProperty('--nav-h', `${Math.round(h + 20)}px`);
+      const distanciaAoTopo = window.innerHeight - el.getBoundingClientRect().top;
+      document.documentElement.style.setProperty('--nav-h', `${Math.round(distanciaAoTopo)}px`);
     };
 
     publicar();
@@ -64,9 +78,8 @@ export const BottomNav: React.FC = () => {
 
   return (
     /* Barra Flutuante estilo Instagram rebaixada e elegante */
-    <div className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
+    <div ref={wrapperRef} className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
       <nav
-        ref={navRef}
         className={`pointer-events-auto w-full max-w-[390px] h-[58px] px-2 rounded-full flex items-center justify-between transition-all duration-300 shadow-2xl shadow-black/70 border backdrop-blur-2xl ${
           beachMode
             ? 'bg-[#020617]/90 border-slate-700/80 text-slate-300'
