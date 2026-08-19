@@ -110,4 +110,12 @@ export const rateLimiters = {
       60 * 60 * 1000,
       'Limite de solicitações de recuperação de senha excedido. Aguarde 1 hora.'
     ),
+
+  sos: (userId: string) =>
+    enforceRateLimit(
+      `sos:${userId}`,
+      3,
+      60 * 60 * 1000,
+      'Limite de chamadas SOS atingido. Aguarde 1 hora — ligue 193 (Bombeiros) ou 185 (Marinha) se precisar de socorro imediato.'
+    ),
 };

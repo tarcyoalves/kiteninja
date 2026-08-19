@@ -387,3 +387,89 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
   updated_at                 TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- ---------------------------------------------------------------- SOS (socorro)
+-- Contato de emergência opcional: o velejador cadastra no perfil, em momento
+-- calmo. Se um SOS for disparado, o app oferece compartilhar a posição com
+-- esse contato via link/WhatsApp. Nome e telefone ficam em users porque são
+-- atributos do velejador, não do SOS.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
+
+-- Pedido de socorro. Coordenada é NULLABLE de propósito: o GPS pode não
+-- resolver a tempo (dentro d'água, sinal ruim, celular sacudindo) e um SOS
+-- sem posição é infinitamente melhor que nenhum SOS. O servidor calcula
+-- spot_id com nearestSpot() se houver coordenada; nunca aceita do cliente.
+CREATE TABLE IF NOT EXISTS sos_alerts (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lat             NUMERIC(9,6),
+  lng             NUMERIC(9,6),
+  -- Precisão relatada pelo navegador em metros. 2 km de erro muda a
+  -- interpretação de quem vai ajudar: "a 300m daqui" vs "em algum lugar num
+  -- raio de 2 km".
+  accuracy_m      NUMERIC(7,2),
+  spot_id         TEXT REFERENCES spots(id) ON DELETE SET NULL,
+  -- Opcional: ninguém digita se afogando, mas serve para "prancha quebrada,
+  -- sem vento, derivando" quando o velejador está seguro mas precisa de ajuda.
+  message         TEXT,
+  status          TEXT NOT NULL DEFAULT 'ativo'
+                    CHECK (status IN ('ativo', 'em_atendimento', 'resolvido', 'cancelado', 'falso_alarme')),
+  -- Raio atual da escalada dinâmica. Começa em 5 km; se ninguém confirmar em
+  -- 2 min, sobe para 15 km; depois de mais 2 min, 50 km. Um pedido não pode
+  -- morrer sem resposta em praia vazia.
+  radius_km       NUMERIC(6,2) NOT NULL DEFAULT 5,
+  escalated_at    TIMESTAMPTZ,
+  resolved_at     TIMESTAMPTZ,
+  resolved_by     UUID REFERENCES users(id) ON DELETE SET NULL,
+  resolution_note TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Parcial: 99% das consultas querem só os ativos. Sem WHERE, o índice
+-- carregaria todos os SOS já resolvidos desde o início dos tempos.
+CREATE INDEX IF NOT EXISTS idx_sos_active
+  ON sos_alerts (created_at DESC)
+  WHERE status IN ('ativo', 'em_atendimento');
+
+CREATE INDEX IF NOT EXISTS idx_sos_user
+  ON sos_alerts (user_id, created_at DESC);
+
+-- Quem viu e quem vai. PK composta sem coluna id — mesmo padrão de favorites,
+-- post_likes e event_registrations: a existência da linha é o estado.
+CREATE TABLE IF NOT EXISTS sos_responders (
+  sos_id       UUID NOT NULL REFERENCES sos_alerts(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  state        TEXT NOT NULL CHECK (state IN ('notificado', 'a_caminho', 'no_local', 'nao_posso')),
+  -- Distância no momento da notificação, em km. Serve para o pedinte saber
+  -- quem está mais perto e estimar tempo de chegada.
+  distance_km  NUMERIC(6,2),
+  lat          NUMERIC(9,6),
+  lng          NUMERIC(9,6),
+  notified_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  responded_at TIMESTAMPTZ,
+  PRIMARY KEY (sos_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_sos_responders_sos ON sos_responders (sos_id);
+
+-- Inscrições de Web Push (VAPID). Cada navegador/dispositivo gera um endpoint
+-- único; endpoint UNIQUE evita duplicar a mesma inscrição a cada reload ou
+-- revisita.
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint      TEXT NOT NULL UNIQUE,
+  p256dh        TEXT NOT NULL,
+  auth          TEXT NOT NULL,
+  -- Para o velejador reconhecer "meu celular" numa lista de dispositivos.
+  user_agent    TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at  TIMESTAMPTZ,
+  -- Endpoint que falha várias vezes está morto (usuário desinstalou ou o
+  -- browser revogou a inscrição). Limpe em vez de tentar para sempre.
+  failure_count INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
+

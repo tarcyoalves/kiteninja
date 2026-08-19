@@ -52,3 +52,9 @@ export function canManageListing(user: UserAuthContext, listingAuthorId: string)
   if (user.id === listingAuthorId) return true;
   return canModerate(user.role);
 }
+
+/** Verifica se o usuário pode encerrar um SOS (próprio autor, moderador ou admin). */
+export function canResolveSos(user: UserAuthContext, sosAuthorId: string): boolean {
+  if (user.id === sosAuthorId) return true;
+  return canModerate(user.role);
+}

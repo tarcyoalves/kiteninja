@@ -191,6 +191,7 @@ import {
   canManageUsers,
   canModerate,
   canResolveAlert,
+  canResolveSos,
 } from './authz';
 
 describe('matriz RBAC (lib/authz.ts)', () => {
@@ -247,6 +248,14 @@ describe('matriz RBAC (lib/authz.ts)', () => {
     expect(canManageListing(rider, 'u-other')).toBe(false);
     expect(canManageListing(admin, 'u-other')).toBe(true);
     expect(canManageListing(moderator, 'u-other')).toBe(true);
+  });
+
+  it('canResolveSos autoriza o autor, moderador e admin, mas não instrutor/rider comum', () => {
+    expect(canResolveSos(admin, 'u-other')).toBe(true);
+    expect(canResolveSos(moderator, 'u-other')).toBe(true);
+    expect(canResolveSos(rider, 'u-rider')).toBe(true);
+    expect(canResolveSos(rider, 'u-other')).toBe(false);
+    expect(canResolveSos(instructor, 'u-other')).toBe(false);
   });
 });
 
