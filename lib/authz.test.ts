@@ -185,8 +185,16 @@ describe('autorização das rotas de API', () => {
         continue;
       }
 
+      /*
+       * Vale a checagem crua (requireAdmin / role === 'admin') e também os
+       * helpers de lib/authz, que decidem o papel no lugar da rota: foi
+       * trocando a checagem inline por canResolveAlert que a rota de alertas
+       * parou de devolver 403 para moderador.
+       */
       const exigeAdmin =
-        /requireAdmin/.test(r.src) || /role\s*===\s*['"]admin['"]/.test(r.src);
+        /requireAdmin/.test(r.src) ||
+        /role\s*===\s*['"]admin['"]/.test(r.src) ||
+        /can(?:Resolve|Moderate|Manage|Delete)\w*\(/.test(r.src);
       if (!exigeAdmin) falhas.push(rel);
     }
     expect(falhas).toEqual([]);

@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser, requireAdmin } from '@/lib/auth';
+import { requireUser } from '@/lib/auth';
+import { canResolveAlert } from '@/lib/authz';
 import { HttpError } from '@/lib/auth';
 
 export async function PATCH(
@@ -29,8 +30,11 @@ export async function PATCH(
     const authorId = String(alert.user_id);
     const currentStatus = String(alert.status);
 
-    // Only allow if user is author or admin
-    if (authorId !== user.id && user.role !== 'admin') {
+    // Moderador também resolve alerta de terceiro: quem decide isso é
+    // canResolveAlert (autor, moderador ou admin). A checagem inline que
+    // existia aqui esquecia o papel 'moderator' e devolvia 403 para ele,
+    // contrariando o RBAC que lib/authz.test.ts já cobra.
+    if (!canResolveAlert({ id: user.id, role: user.role }, authorId)) {
       throw new HttpError(403, 'Você não tem permissão para modificar este alerta.');
     }
 
