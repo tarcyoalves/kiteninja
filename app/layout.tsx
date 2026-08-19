@@ -10,20 +10,12 @@ const plusJakarta = Plus_Jakarta_Sans({
 
 export const viewport: Viewport = {
   width: "device-width",
-  // Minimum-scale=1 evita zoom acidental com duplo toque; maximum-scale=5
-  // mantém a acessibilidade (pessoas que precisam ampliar o texto conseguem).
-  // O viewportFit=cover é o que faz env(safe-area-inset-*) funcionar no iOS.
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
-  // Faz a viewport (e o 100dvh do app-shell) ENCOLHER quando o teclado virtual
-  // abre, em vez de o teclado cobrir o conteúdo. Assim o flexbox do chat
-  // reposiciona o campo de digitação logo acima do teclado nativamente, sem
-  // hack de padding — que era o que criava o vão embaixo da tela.
-  interactiveWidget: "resizes-content",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0F172A" },
-    { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
+    { media: "(prefers-color-scheme: light)", color: "#0B1220" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B1220" },
   ],
 };
 
@@ -80,7 +72,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className={`${plusJakarta.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-[#0F172A] text-slate-100">
+      <body className="min-h-full flex flex-col bg-[#0B1220] text-slate-100">
         {children}
       </body>
     </html>
