@@ -395,6 +395,16 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
 
+-- A CHECK constraint de users.role em produção nasceu só com 'admin'/'rider',
+-- antes de 'moderator'/'instructor' entrarem no código. CREATE TABLE IF NOT
+-- EXISTS nunca atualiza constraint de tabela já existente, então o banco
+-- ficou defasado do schema em texto: promover alguém a moderador quebrava
+-- com "new row for relation users violates check constraint". DROP + ADD é
+-- idempotente, roda de novo sem erro.
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check
+  CHECK (role IN ('admin', 'moderator', 'instructor', 'rider'));
+
 -- user_presence não tinha coordenada nenhuma, só "estou neste spot". A
 -- seleção de candidatos para notificar um SOS precisa saber ONDE cada
 -- velejador está de verdade, não só o spot declarado — por isso lat/lng
