@@ -136,9 +136,6 @@ export const ChatView: React.FC = () => {
       atBottomRef.current = true;
       setUnread(0);
     }
-    if (endRef.current) {
-      endRef.current.scrollIntoView({ behavior, block: 'end' });
-    }
   }, []);
 
   // O shell (100dvh) encolhe com o teclado via interactiveWidget=resizes-content,

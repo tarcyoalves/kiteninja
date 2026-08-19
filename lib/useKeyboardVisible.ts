@@ -38,10 +38,23 @@ export function useKeyboardVisible(): boolean {
 
     let focado = false;
 
+    const zerarScroll = () => {
+      if (typeof window === 'undefined') return;
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      }
+      if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+      if (document.documentElement.scrollTop !== 0) document.documentElement.scrollTop = 0;
+    };
+
     const recalcular = () => {
       const vv = window.visualViewport;
       const porViewport = vv ? window.innerHeight - vv.height > DIFF_LIMIAR_PX : false;
-      setVisivel(focado || porViewport);
+      const aberto = focado || porViewport;
+      setVisivel(aberto);
+      if (!aberto) {
+        zerarScroll();
+      }
     };
 
     const onFocusIn = (e: FocusEvent) => {
@@ -50,37 +63,35 @@ export function useKeyboardVisible(): boolean {
         recalcular();
       }
     };
+
     const onFocusOut = () => {
       focado = false;
       recalcular();
+      zerarScroll();
 
-      // O iOS ROLA a viewport de layout para revelar o campo focado e NÃO
-      // desfaz essa rolagem ao fechar o teclado. Como o .app-shell é
-      // position:fixed, ele fica ancorado na viewport deslocada e sobra uma
-      // faixa vazia no rodapé — que persiste até trocando de aba, porque a
-      // rolagem é do documento, não do componente. Zeramos na mão.
-      //
-      // O rAF duplo é necessário: o iOS ainda está animando o teclado para
-      // fora quando focusout dispara, e um scrollTo imediato é desfeito por ele.
       requestAnimationFrame(() => {
+        zerarScroll();
         requestAnimationFrame(() => {
-          if (window.scrollY !== 0) window.scrollTo(0, 0);
+          zerarScroll();
         });
       });
-      // Rede de segurança para o fim da animação do teclado (~300ms no iOS).
-      setTimeout(() => {
-        if (window.scrollY !== 0) window.scrollTo(0, 0);
-      }, 350);
+
+      // Prazos para acompanhar as etapas da animação de recolhimento do teclado no iOS
+      [100, 250, 400].forEach((ms) => {
+        setTimeout(zerarScroll, ms);
+      });
     };
 
     document.addEventListener('focusin', onFocusIn);
     document.addEventListener('focusout', onFocusOut);
     window.visualViewport?.addEventListener('resize', recalcular);
+    window.visualViewport?.addEventListener('scroll', recalcular);
 
     return () => {
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('focusout', onFocusOut);
       window.visualViewport?.removeEventListener('resize', recalcular);
+      window.visualViewport?.removeEventListener('scroll', recalcular);
     };
   }, []);
 

@@ -242,32 +242,27 @@ export function marcarIntroVista(): void {
  * Realiza rodízio inteligente a cada abertura do app.
  */
 export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
-  // Decide NA HORA, de forma síncrona, a partir do vídeo cacheado da última
-  // abertura. Sem tela preta esperando a API: se já vimos um vídeo antes, ele
-  // toca imediatamente ao abrir o app. Só quem nunca abriu (sem cache) espera
-  // o primeiro fetch — e mesmo esse cai na animação em ~700ms se a rede demorar.
+  // Decide NA HORA, de forma síncrona, a partir do vídeo cacheado da última abertura.
+  // Sem tela preta esperando a API: se já vimos um vídeo antes, ele toca imediatamente.
   const cacheInicial =
     typeof window !== 'undefined' ? lerVideoCacheado() : null;
 
   const [decisao, setDecisao] = useState<'carregando' | 'video' | 'animacao'>(
     cacheInicial ? 'video' : 'carregando'
   );
+  // O vídeo selecionado para ESTA sessão de reprodução nunca deve mudar no meio do caminho
   const [video, setVideo] = useState<IntroVideo | null>(cacheInicial);
 
-  // Busca a config atual para (a) atualizar o cache e (b) resolver o rodízio do
-  // PRÓXIMO vídeo. Roda em segundo plano — não bloqueia a abertura que já começou
-  // do cache. Prazo curto pra primeira abertura (sem cache) não ficar presa.
   useEffect(() => {
     let ativo = true;
     const ctrl = new AbortController();
-    // Sem cache, a decisão está travada em 'carregando': damos só 700ms antes de
-    // cair na animação, pra primeira abertura nunca ficar na tela preta.
+    // Sem cache, dá até 2.5s antes de cair na animação
     const prazoAnimacao = cacheInicial
       ? null
       : setTimeout(() => {
           if (ativo) setDecisao((d) => (d === 'carregando' ? 'animacao' : d));
-        }, 700);
-    const prazoFetch = setTimeout(() => ctrl.abort(), 2500);
+        }, 2500);
+    const prazoFetch = setTimeout(() => ctrl.abort(), 3000);
 
     (async () => {
       try {
@@ -296,7 +291,7 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
         // Se ainda não decidimos (primeira abertura, sem cache), decide agora.
         setDecisao((d) => {
-          if (d !== 'carregando') return d; // já está tocando o cache — não interrompe
+          if (d !== 'carregando') return d; // já está tocando o cache — não interrompe nem reinicia
           if (selecionado) {
             setVideo(selecionado);
             return 'video';
@@ -322,7 +317,7 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
       clearTimeout(prazoFetch);
       if (prazoAnimacao) clearTimeout(prazoAnimacao);
     };
-  }, [cacheInicial]);
+  }, []);
 
   if (decisao === 'carregando') {
     return <div className="fixed inset-0 z-splash bg-[#0B1220]" aria-hidden="true" />;
@@ -334,7 +329,6 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
         video={video}
         onDone={onDone}
         onFalha={() => {
-          // Vídeo cacheado não tocou (URL expirou, etc.): limpa e cai na animação.
           salvarVideoCacheado(null);
           setDecisao('animacao');
         }}
@@ -346,8 +340,7 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 };
 
 /**
- * Toca apenas o trecho escolhido no editor. Não recortamos o arquivo: o corte é
- * metadado, então o admin reajusta depois sem subir o vídeo de novo.
+ * Toca apenas o trecho escolhido no editor. Reprodução fluida e sem travamentos.
  */
 const SplashVideo: React.FC<{
   video: IntroVideo;
@@ -355,10 +348,11 @@ const SplashVideo: React.FC<{
   onFalha: () => void;
 }> = ({ video, onDone, onFalha }) => {
   const ref = useRef<HTMLVideoElement | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const doneRef = useRef(onDone);
   doneRef.current = onDone;
+  const falhaRef = useRef(onFalha);
+  falhaRef.current = onFalha;
 
   useEffect(() => {
     const reduzMovimento =
@@ -391,23 +385,26 @@ const SplashVideo: React.FC<{
     };
 
     const iniciar = () => {
+      if (encerrado) return;
       const inicio = video.inicioSeg < (el.duration || 999) ? video.inicioSeg : 0;
-      if (Math.abs(el.currentTime - inicio) > 0.2) {
+      // Só ajusta currentTime se o início for relevante (>0.3s)
+      // Evita forçar seek desnecessário em vídeos que começam em 0s
+      if (inicio > 0.3 && Math.abs(el.currentTime - inicio) > 0.2) {
         el.currentTime = inicio;
       }
 
       el.play()
         .then(() => {
-          setIsPlaying(true);
+          cancelAnimationFrame(raf);
           raf = requestAnimationFrame(vigiar);
         })
         .catch(() => {
-          onFalha();
+          falhaRef.current();
         });
     };
 
-    const onSeekedOrPlaying = () => {
-      setIsPlaying(true);
+    const onEnded = () => {
+      finalizar();
     };
 
     const limite = setTimeout(
@@ -416,23 +413,22 @@ const SplashVideo: React.FC<{
     );
 
     el.addEventListener('loadedmetadata', iniciar);
-    el.addEventListener('playing', onSeekedOrPlaying);
-    el.addEventListener('seeked', onSeekedOrPlaying);
-    el.addEventListener('error', onFalha);
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('error', () => falhaRef.current());
 
     if (el.readyState >= 2) {
+      iniciar();
+    } else {
       iniciar();
     }
 
     return () => {
       el.removeEventListener('loadedmetadata', iniciar);
-      el.removeEventListener('playing', onSeekedOrPlaying);
-      el.removeEventListener('seeked', onSeekedOrPlaying);
-      el.removeEventListener('error', onFalha);
+      el.removeEventListener('ended', onEnded);
       cancelAnimationFrame(raf);
       clearTimeout(limite);
     };
-  }, [video, onFalha]);
+  }, [video.url, video.inicioSeg, video.fimSeg]);
 
   function pular() {
     marcarIntroVista();
@@ -466,19 +462,6 @@ const SplashVideo: React.FC<{
       role="status"
       aria-label="Abertura do KiteNinja"
     >
-      {/* Quadro de capa: aparece INSTANTANEAMENTE (é data URL, já vem no JSON)
-          enquanto o vídeo carrega. Sem ele a tela fica preta esperando, que é o
-          que dava a sensação de abertura lenta — os vídeos são .mov sem
-          faststart (moov no fim), então o Safari só mostra o 1o quadro depois de
-          baixar quase o arquivo todo. */}
-      {video.posterDataUrl && !isPlaying && (
-        <img
-          src={video.posterDataUrl}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      )}
       <video
         ref={ref}
         src={video.url}
@@ -488,9 +471,7 @@ const SplashVideo: React.FC<{
         poster={video.posterDataUrl}
         preload="auto"
         aria-hidden="true"
-        className={`absolute inset-0 w-full h-full object-cover block transition-opacity duration-300 ${
-          isPlaying ? 'opacity-100' : 'opacity-0'
-        }`}
+        className="absolute inset-0 w-full h-full object-cover block"
         style={{
           position: 'absolute',
           top: 0,
