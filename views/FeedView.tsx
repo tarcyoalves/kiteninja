@@ -62,7 +62,7 @@ export const FeedView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-full pb-24 relative">
+    <div className="flex flex-col min-h-full feed-pad-bottom relative">
       {/* Feed List matching Screenshot 3 */}
       <div className="space-y-4 max-w-lg mx-auto w-full pt-2">
         {posts.length === 0 && (
@@ -265,8 +265,10 @@ export const FeedView: React.FC = () => {
         ))}
       </div>
 
-      {/* Floating Blue "Publicar" Button matching Screenshot 3 */}
-      <div className="fixed bottom-20 left-0 right-0 z-20 flex justify-center pointer-events-none">
+      {/* Floating Blue "Publicar" Button matching Screenshot 3.
+          publish-fab-bottom (globals.css) posiciona acima do menu flutuante
+          usando --nav-h + safe area — bottom fixo deixava o menu cobri-lo. */}
+      <div className="fixed publish-fab-bottom left-0 right-0 z-20 flex justify-center pointer-events-none">
         <button
           onClick={() => {
             if (!user) {

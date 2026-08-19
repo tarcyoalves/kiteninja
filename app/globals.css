@@ -178,6 +178,19 @@ select {
   bottom: var(--nav-h, 4.75rem);
 }
 
+/* Botão flutuante "Publicar Relato" (feed): fica acima da barra de navegação.
+   Usa --nav-h (publicado pelo BottomNav, já com folga) + a safe area do iPhone,
+   porque um `bottom` fixo ignorava o inset e o menu cobria o botão. */
+.publish-fab-bottom {
+  bottom: calc(var(--nav-h, 4.75rem) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+}
+
+/* Folga no fim do feed para o último relato não ficar atrás do FAB "Publicar"
+   nem da barra de navegação (o FAB fica logo acima do nav). */
+.feed-pad-bottom {
+  padding-bottom: calc(var(--nav-h, 4.75rem) + env(safe-area-inset-bottom, 0px) + 4rem);
+}
+
 /* O Leaflet injeta o container de atribuição no DOM mesmo com attribution="",
    e ele aparece como uma tarja branca no canto. Esconde o container; o crédito
    OpenStreetMap/CARTO exigido pela licença ODbL vive em "Informação do Spot". */
