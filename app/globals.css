@@ -126,10 +126,14 @@ select {
    miolo rola. vh fica como fallback para navegador sem dvh (a ordem importa:
    quem entende dvh sobrescreve). */
 .app-shell {
-  height: 100vh;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   height: 100dvh;
-  /* Segura a rolagem elástica do iOS no shell; o scroll real é no miolo. */
+  /* Segura a rolagem elástica e o deslocamento de viewport do iOS no shell */
   overflow: hidden;
+  overscroll-behavior: none;
 }
 
 /* Área central rolável, entre header e menu flutuante. */

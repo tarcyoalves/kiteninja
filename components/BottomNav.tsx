@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Compass,
   Flame,
@@ -25,6 +25,21 @@ export const BottomNav: React.FC = () => {
   } = useKiteData();
   const { user } = useAuth();
   const navRef = useRef<HTMLElement | null>(null);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  // Detecta se o teclado virtual está aberto no mobile (iOS / Android)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+
+    const onResize = () => {
+      const diff = window.innerHeight - vv.height;
+      setIsKeyboardOpen(diff > 140);
+    };
+
+    vv.addEventListener('resize', onResize);
+    return () => vv.removeEventListener('resize', onResize);
+  }, []);
 
   /* Publica a altura da barra flutuante em --nav-h */
   useEffect(() => {
@@ -53,6 +68,9 @@ export const BottomNav: React.FC = () => {
   };
 
   const isTabActive = (tab: ActiveTab) => activeTab === tab && !selectedSpot;
+
+  // Quando o teclado virtual está aberto, o menu inferior é ocultado para não competir com a digitação
+  if (isKeyboardOpen) return null;
 
   return (
     /* Barra Flutuante estilo Instagram rebaixada e elegante */

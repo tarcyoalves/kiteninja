@@ -100,6 +100,7 @@ export const ChatView: React.FC = () => {
   const [atSpotId, setAtSpotId] = useState<string>('');
   const [unread, setUnread] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -135,6 +136,30 @@ export const ChatView: React.FC = () => {
       endRef.current.scrollIntoView({ behavior, block: 'end' });
     }
   }, []);
+
+  // Adapta o chat dinamicamente ao teclado virtual no iOS/Android
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+
+    const updateHeight = () => {
+      const kh = window.innerHeight - vv.height;
+      const open = kh > 130;
+      setKeyboardHeight(open ? Math.round(kh) : 0);
+      if (open) {
+        requestAnimationFrame(() => scrollToEnd('auto'));
+        setTimeout(() => scrollToEnd('smooth'), 120);
+        setTimeout(() => scrollToEnd('smooth'), 280);
+      }
+    };
+
+    vv.addEventListener('resize', updateHeight);
+    vv.addEventListener('scroll', updateHeight);
+    return () => {
+      vv.removeEventListener('resize', updateHeight);
+      vv.removeEventListener('scroll', updateHeight);
+    };
+  }, [scrollToEnd]);
 
   /** Marca se o velejador está no fim; autoriza o auto-scroll */
   const handleScroll = useCallback(() => {
@@ -703,8 +728,15 @@ export const ChatView: React.FC = () => {
             ))}
           </div>
 
-          {/* 4. Campo de Digitação Fixo e Estável */}
-          <div className="shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 py-2.5 shadow-lg">
+          {/* 4. Campo de Digitação Fixo e Estável com Elevação Dinâmica do Teclado */}
+          <div
+            style={{
+              paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 6}px` : undefined,
+            }}
+            className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
+              keyboardHeight > 0 ? 'pb-2' : 'pb-18 safe-area-pb'
+            }`}
+          >
             {sendError && (
               <p
                 role="alert"
@@ -728,6 +760,10 @@ export const ChatView: React.FC = () => {
                   type="text"
                   value={draft}
                   maxLength={CHAT_TEXT_MAX}
+                  onFocus={() => {
+                    setTimeout(() => scrollToEnd('smooth'), 120);
+                    setTimeout(() => scrollToEnd('smooth'), 280);
+                  }}
                   onChange={(e) => {
                     setDraft(e.target.value);
                     if (sendError) setSendError(null);
