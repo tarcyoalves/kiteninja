@@ -1,8 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import Link from 'next/link';
-import { ArrowLeft, Check, Copy, Link2, Trash2, TriangleAlert } from 'lucide-react';
+import { Check, Copy, Link2, Trash2, TriangleAlert } from 'lucide-react';
 
 interface InviteRow {
   id: string;
@@ -21,7 +20,7 @@ const STATUS_STYLE: Record<InviteRow['status'], string> = {
   revogado: 'bg-rose-500/15 text-rose-400 border-rose-500/30',
 };
 
-export function InviteManager({ adminName }: { adminName: string }) {
+export function InviteManager() {
   const [invites, setInvites] = useState<InviteRow[]>([]);
   const [email, setEmail] = useState('');
   const [note, setNote] = useState('');
@@ -106,22 +105,11 @@ export function InviteManager({ adminName }: { adminName: string }) {
     'font-semibold text-base focus:outline-none focus:border-cyan-400';
 
   return (
-    <main className="min-h-screen bg-[#0F172A] text-slate-100 p-4 pb-10">
-      <div className="w-full max-w-md mx-auto space-y-5">
-        <header className="flex items-center gap-3 py-2">
-          <Link
-            href="/"
-            aria-label="Voltar ao app"
-            className="p-2 rounded-xl bg-slate-800 text-slate-300"
-          >
-            <ArrowLeft size={18} aria-hidden="true" />
-          </Link>
-          <div>
-            <h1 className="text-lg font-black">Convites</h1>
-            <p className="text-xs text-slate-400">{adminName}</p>
-          </div>
-        </header>
-
+    // Este componente só existe como aba dentro de AdminDashboard, que já tem seu
+    // próprio <main> rolável (.app-scroll) e cabeçalho com "Voltar ao app" + nome
+    // do admin. Um <main>/<header> próprios aqui duplicavam os dois na tela toda
+    // vez que a aba "Convites" ficava ativa — por isso saíram.
+    <div className="w-full max-w-md mx-auto space-y-5">
         <form onSubmit={generate} className="space-y-3 p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
           <h2 className="font-bold text-sm">Gerar novo link</h2>
 
@@ -241,7 +229,6 @@ export function InviteManager({ adminName }: { adminName: string }) {
             </article>
           ))}
         </section>
-      </div>
-    </main>
+    </div>
   );
 }

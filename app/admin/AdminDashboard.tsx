@@ -11,13 +11,19 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
   const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura'>('convites');
 
   return (
-    <main
-      style={{
-        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.25rem)',
-        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)',
-      }}
-      className="min-h-screen bg-[#0F172A] text-slate-100 px-4 sm:px-6 flex flex-col items-center"
-    >
+    // O app inteiro herda `body { overflow: hidden }` (globals.css) pensado para o
+    // shell do app principal, que só deixa o miolo `.app-scroll` rolar. Esta página
+    // usava `min-h-screen` direto no <main>, sem nenhum contêiner rolável por baixo
+    // do overflow:hidden do body — resultado: conteúdo mais alto que a tela ficava
+    // preso, sem scroll nenhum. Reaproveitamos o mesmo par `.app-shell` + `.app-scroll`
+    // já usado em app/page.tsx em vez de inventar CSS novo.
+    <div className="app-shell flex flex-col">
+      <main
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 1.25rem)',
+        }}
+        className="app-scroll bg-[#0F172A] text-slate-100 px-4 sm:px-6 flex flex-col items-center"
+      >
       <div className="w-full max-w-4xl space-y-6">
         {/* Header */}
         <header className="flex items-center justify-between pb-2 border-b border-slate-800/80">
@@ -89,10 +95,11 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         </div>
 
         {/* Content Body */}
-        {tab === 'convites' && <InviteManager adminName={adminName} />}
+        {tab === 'convites' && <InviteManager />}
         {tab === 'usuarios' && <UserManager />}
         {tab === 'abertura' && <IntroVideoManager />}
       </div>
-    </main>
+      </main>
+    </div>
   );
 }
