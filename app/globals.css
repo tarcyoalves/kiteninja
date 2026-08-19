@@ -145,17 +145,14 @@ select {
   position: fixed;
   left: 0;
   right: 0;
-  width: 100%;
-  /* Fallback para navegador sem VisualViewport: dvh acompanha a barra de
-     endereço. A ordem importa — quem entende dvh sobrescreve o vh. */
   top: 0;
-  height: 100%;
+  width: 100%;
+  /* dvh acompanha a viewport visível; no PWA standalone do iOS, o
+     interactiveWidget=resizes-content (layout.tsx) faz o dvh ENCOLHER quando o
+     teclado abre, então o flexbox reposiciona o composer nativamente. vh é só
+     fallback para quem não entende dvh — a ordem importa (dvh sobrescreve). */
+  height: 100vh;
   height: 100dvh;
-  /* Quando o hook publica --app-height/--app-offset-top (iOS Safari com teclado),
-     o shell passa a ocupar exatamente a área visível e cola nela, cancelando o
-     deslocamento que o iOS faz ao focar o input. */
-  top: var(--app-offset-top, 0px);
-  height: var(--app-height, 100dvh);
   /* Segura a rolagem elástica e o deslocamento de viewport do iOS no shell */
   overflow: hidden;
   overscroll-behavior: none;

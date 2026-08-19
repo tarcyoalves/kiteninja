@@ -27,11 +27,15 @@ export async function getIntroVideoConfig(): Promise<IntroVideoConfig> {
   return parseIntroVideoConfig(rows[0].value);
 }
 
+/** Escolhe o primeiro vídeo ativo de uma config já lida (sem novo hit no banco). */
+export function primeiroVideoAtivo(config: IntroVideoConfig): IntroVideo | null {
+  return config.videos.find((v) => v.ativo) ?? null;
+}
+
 /** Lê o primeiro vídeo ativo ou null se não houver vídeo utilizável. */
 export async function getIntroVideo(): Promise<IntroVideo | null> {
   const config = await getIntroVideoConfig();
-  const ativos = config.videos.filter((v) => v.ativo);
-  return ativos[0] ?? null;
+  return primeiroVideoAtivo(config);
 }
 
 /** Lê o registro cru da configuração para o painel admin. */

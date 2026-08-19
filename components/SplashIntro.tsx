@@ -206,6 +206,28 @@ export function introJaVista(): boolean {
 }
 
 const LAST_VIDEO_STORAGE_KEY = 'kiteninja:ultimo_video_intro';
+/** Cache do vídeo inteiro para tocar na hora na próxima abertura, sem esperar a API. */
+const CACHE_VIDEO_STORAGE_KEY = 'kiteninja:cache_video_intro';
+
+/** Lê o vídeo cacheado da última abertura, se houver e ainda for válido. */
+function lerVideoCacheado(): IntroVideo | null {
+  try {
+    const cru = localStorage.getItem(CACHE_VIDEO_STORAGE_KEY);
+    if (!cru) return null;
+    return parseIntroVideo(JSON.parse(cru));
+  } catch {
+    return null;
+  }
+}
+
+function salvarVideoCacheado(v: IntroVideo | null): void {
+  try {
+    if (v) localStorage.setItem(CACHE_VIDEO_STORAGE_KEY, JSON.stringify(v));
+    else localStorage.removeItem(CACHE_VIDEO_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 export function marcarIntroVista(): void {
   try {
@@ -220,59 +242,87 @@ export function marcarIntroVista(): void {
  * Realiza rodízio inteligente a cada abertura do app.
  */
 export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
-  const [decisao, setDecisao] = useState<'carregando' | 'video' | 'animacao'>('carregando');
-  const [video, setVideo] = useState<IntroVideo | null>(null);
+  // Decide NA HORA, de forma síncrona, a partir do vídeo cacheado da última
+  // abertura. Sem tela preta esperando a API: se já vimos um vídeo antes, ele
+  // toca imediatamente ao abrir o app. Só quem nunca abriu (sem cache) espera
+  // o primeiro fetch — e mesmo esse cai na animação em ~700ms se a rede demorar.
+  const cacheInicial =
+    typeof window !== 'undefined' ? lerVideoCacheado() : null;
 
+  const [decisao, setDecisao] = useState<'carregando' | 'video' | 'animacao'>(
+    cacheInicial ? 'video' : 'carregando'
+  );
+  const [video, setVideo] = useState<IntroVideo | null>(cacheInicial);
+
+  // Busca a config atual para (a) atualizar o cache e (b) resolver o rodízio do
+  // PRÓXIMO vídeo. Roda em segundo plano — não bloqueia a abertura que já começou
+  // do cache. Prazo curto pra primeira abertura (sem cache) não ficar presa.
   useEffect(() => {
     let ativo = true;
     const ctrl = new AbortController();
-    const prazo = setTimeout(() => ctrl.abort(), 2500);
+    // Sem cache, a decisão está travada em 'carregando': damos só 700ms antes de
+    // cair na animação, pra primeira abertura nunca ficar na tela preta.
+    const prazoAnimacao = cacheInicial
+      ? null
+      : setTimeout(() => {
+          if (ativo) setDecisao((d) => (d === 'carregando' ? 'animacao' : d));
+        }, 700);
+    const prazoFetch = setTimeout(() => ctrl.abort(), 2500);
 
     (async () => {
       try {
         const res = await fetch('/api/intro-video', { signal: ctrl.signal });
         if (!res.ok) throw new Error('sem configuração');
         const data = (await res.json()) as { config?: unknown; video?: unknown };
-
         const config: IntroVideoConfig = parseIntroVideoConfig(data.config || data.video);
 
         let ultimoId: string | null = null;
         try {
           ultimoId = localStorage.getItem(LAST_VIDEO_STORAGE_KEY);
         } catch {
-          // ignore localStorage error
+          // ignore
         }
 
         const selecionado = escolherVideoParaExibicao(config, ultimoId);
-
         if (!ativo) return;
 
-        if (selecionado) {
-          try {
-            if (selecionado.id) {
-              localStorage.setItem(LAST_VIDEO_STORAGE_KEY, selecionado.id);
-            }
-          } catch {
-            // ignore
+        // Guarda o escolhido como cache pra PRÓXIMA abertura tocar na hora.
+        salvarVideoCacheado(selecionado);
+        try {
+          if (selecionado?.id) localStorage.setItem(LAST_VIDEO_STORAGE_KEY, selecionado.id);
+        } catch {
+          // ignore
+        }
+
+        // Se ainda não decidimos (primeira abertura, sem cache), decide agora.
+        setDecisao((d) => {
+          if (d !== 'carregando') return d; // já está tocando o cache — não interrompe
+          if (selecionado) {
+            setVideo(selecionado);
+            return 'video';
           }
-          setVideo(selecionado);
-          setDecisao('video');
-        } else {
-          setDecisao('animacao');
+          return 'animacao';
+        });
+
+        // Sem nenhum vídeo configurado: limpa o cache e mostra a animação.
+        if (!selecionado) {
+          salvarVideoCacheado(null);
+          if (ativo) setDecisao('animacao');
         }
       } catch {
-        if (ativo) setDecisao('animacao');
+        if (ativo) setDecisao((d) => (d === 'carregando' ? 'animacao' : d));
       } finally {
-        clearTimeout(prazo);
+        clearTimeout(prazoFetch);
       }
     })();
 
     return () => {
       ativo = false;
       ctrl.abort();
-      clearTimeout(prazo);
+      clearTimeout(prazoFetch);
+      if (prazoAnimacao) clearTimeout(prazoAnimacao);
     };
-  }, []);
+  }, [cacheInicial]);
 
   if (decisao === 'carregando') {
     return <div className="fixed inset-0 z-splash bg-[#0B1220]" aria-hidden="true" />;
@@ -283,7 +333,11 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
       <SplashVideo
         video={video}
         onDone={onDone}
-        onFalha={() => setDecisao('animacao')}
+        onFalha={() => {
+          // Vídeo cacheado não tocou (URL expirou, etc.): limpa e cai na animação.
+          salvarVideoCacheado(null);
+          setDecisao('animacao');
+        }}
       />
     );
   }

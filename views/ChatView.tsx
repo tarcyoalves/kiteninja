@@ -141,7 +141,7 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
-  // A altura do shell já acompanha a área visível (useVisualViewportShell),
+  // O shell (100dvh) encolhe com o teclado via interactiveWidget=resizes-content,
   // então o composer fica naturalmente acima do teclado — sem hack de padding.
   // Aqui só reagimos à mudança da viewport para manter a conversa rolada até o
   // fim enquanto o teclado abre/fecha (senão a última mensagem some atrás dele).
@@ -480,7 +480,7 @@ export const ChatView: React.FC = () => {
             }`}
           >
             <Radio size={15} className="shrink-0" />
-            <span>Na Água</span>
+            <span>Online</span>
             {onlineCount > 0 && (
               <span
                 className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black ${
@@ -735,10 +735,10 @@ export const ChatView: React.FC = () => {
             ))}
           </div>
 
-          {/* 4. Campo de Digitação Fixo. O shell já encolhe com o teclado
-              (useVisualViewportShell), então o composer só precisa alternar a
-              folga de baixo: colado quando o teclado está aberto (menu some),
-              acima do menu quando fechado. */}
+          {/* 4. Campo de Digitação Fixo. O shell (100dvh) encolhe com o teclado
+              via interactiveWidget=resizes-content, então o composer só precisa
+              alternar a folga de baixo: colado quando o teclado está aberto
+              (menu some), acima do menu quando fechado. */}
           <div
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
               keyboardVisivel ? 'pb-2' : 'pb-above-nav'
@@ -864,7 +864,7 @@ interface OnlinePanelProps {
   onWave: (userName: string) => void;
 }
 
-/** Aba "Online / Na Água Agora" */
+/** Aba "Online — quem está com o app aberto agora" */
 const OnlinePanel: React.FC<OnlinePanelProps> = ({
   online,
   now,
@@ -934,9 +934,9 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
           <div className="w-12 h-12 mx-auto rounded-full bg-slate-800 flex items-center justify-center text-slate-500 mb-3">
             <Users size={24} />
           </div>
-          <p className="font-black text-slate-100 text-sm">Nenhum velejador na água agora</p>
+          <p className="font-black text-slate-100 text-sm">Nenhum velejador online agora</p>
           <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
-            Quando você ou outros membros abrirem o KiteNinja na praia, aparecerão aqui em tempo real.
+            Quando você ou outros membros abrirem o KiteNinja, aparecerão aqui em tempo real.
           </p>
         </div>
       ) : (
