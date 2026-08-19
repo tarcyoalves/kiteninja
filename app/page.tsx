@@ -12,7 +12,6 @@ import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
 import { NewPostModal } from "../components/NewPostModal";
 import { NewListingModal } from "../components/NewListingModal";
 import { InAppPushToast } from "../components/InAppPushToast";
-import { SosButton } from "../components/SosButton";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
 import { SpotsView } from "../views/SpotsView";
@@ -42,7 +41,6 @@ const MainContent: React.FC = () => {
     dismissIncomingSos,
     respondToSos,
     cancelMySos,
-    fetchActiveSos,
     setActiveTab,
   } = useKiteData();
 
@@ -96,14 +94,9 @@ const MainContent: React.FC = () => {
         )}
       </main>
 
-      {/* Botão SOS de Emergência (press-and-hold de 800ms) */}
-      <SosButton
-        hasActiveSos={Boolean(myActiveSos)}
-        onSosTriggered={() => {
-          setIsSosPanelOpen(true);
-          fetchActiveSos();
-        }}
-      />
+      {/* O gatilho de SOS agora vive dentro do menu do avatar (SidebarDrawer),
+          na seção "Segurança & Emergência". O botão flutuante foi removido
+          porque cobria a área de envio do chat. */}
 
       {/* Painel do SOS Ativo emitido pelo próprio usuário (193/185 em destaque) */}
       {myActiveSos && isSosPanelOpen && (

@@ -22,10 +22,13 @@ import {
   Camera,
   ChevronRight,
   Loader2,
+  Phone,
+  Siren,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
+import { useSosHold } from '../lib/useSosHold';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -41,9 +44,21 @@ export const SidebarDrawer: React.FC = () => {
     setWindUnit,
     selectedSpot,
     setSelectedSpot,
+    myActiveSos,
+    fetchActiveSos,
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
+
+  // Gatilho de SOS (press-and-hold). Ao disparar, fecha o menu e leva ao mapa
+  // para o velejador acompanhar quem está a caminho.
+  const sos = useSosHold({
+    hasActiveSos: Boolean(myActiveSos),
+    onSosTriggered: () => {
+      fetchActiveSos();
+      setIsSidebarOpen(false);
+    },
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
@@ -486,6 +501,80 @@ export const SidebarDrawer: React.FC = () => {
                 <Shield size={15} />
                 <span className="text-[11px] uppercase tracking-wider">Segurança & Emergência</span>
               </div>
+
+              {/* Gatilho de SOS — segure para pedir socorro. Substitui o antigo
+                  botão flutuante que cobria a área de envio do chat. */}
+              {myActiveSos ? (
+                <div className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-600/20 border border-rose-500/50">
+                  <Siren size={16} className="text-rose-300 animate-pulse shrink-0" />
+                  <span className="text-[11px] text-rose-200 font-bold leading-tight">
+                    SOS ativo. Acompanhe quem está a caminho no mapa.
+                  </span>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onPointerDown={sos.startHold}
+                  onPointerUp={sos.cancelHold}
+                  onPointerLeave={sos.cancelHold}
+                  onPointerCancel={sos.cancelHold}
+                  disabled={sos.sending}
+                  className={`relative w-full py-2.5 rounded-xl font-black text-xs flex items-center justify-center gap-2 border-2 transition-all active:scale-95 select-none overflow-hidden ${
+                    sos.sending
+                      ? 'bg-rose-800 border-rose-400/60 cursor-wait text-white'
+                      : sos.holdProgress > 0
+                      ? 'bg-rose-600 border-rose-300 text-white'
+                      : 'bg-rose-600/90 hover:bg-rose-500 border-rose-400/60 text-white'
+                  }`}
+                  aria-label="SOS — segure para pedir socorro"
+                >
+                  {/* Barra de progresso do hold preenchendo o botão da esquerda p/ direita */}
+                  {sos.holdProgress > 0 && sos.holdProgress < 1 && (
+                    <span
+                      className="absolute inset-y-0 left-0 bg-white/25"
+                      style={{ width: `${sos.holdProgress * 100}%` }}
+                    />
+                  )}
+                  {sos.sending ? (
+                    <Loader2 size={15} className="animate-spin relative" />
+                  ) : (
+                    <Siren size={15} className="relative" />
+                  )}
+                  <span className="relative tracking-wider">
+                    {sos.sending ? 'ENVIANDO SOS...' : 'SOS — SEGURE PARA PEDIR SOCORRO'}
+                  </span>
+                </button>
+              )}
+
+              {/* Erro de rede: números de emergência para discagem direta */}
+              {sos.error && (
+                <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-2">
+                  <p className="text-[11px] text-rose-200 font-bold leading-tight">{sos.error}</p>
+                  <div className="flex gap-2">
+                    <a
+                      href="tel:193"
+                      className="flex-1 py-1.5 rounded-lg bg-rose-600 text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                    >
+                      <Phone size={13} />
+                      193
+                    </a>
+                    <a
+                      href="tel:185"
+                      className="flex-1 py-1.5 rounded-lg bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
+                    >
+                      <Phone size={13} />
+                      185
+                    </a>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => sos.setError(null)}
+                    className="w-full text-[10px] text-slate-400 py-0.5"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              )}
 
               {/* Contato de Emergência */}
               <div className="space-y-1.5 pt-1">
