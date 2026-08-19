@@ -116,16 +116,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (!res.ok) return { ok: false, error: data.error ?? 'Não foi possível trocar a senha.' };
 
-        // A troca encerra todas as sessões, inclusive esta: é preciso entrar de novo.
-        setUser(null);
-        setIsAdmin(false);
-        setMustChangePassword(false);
+        // A troca mantém a sessão atual viva (só as outras são encerradas no
+        // servidor), então basta atualizar o estado a partir do /me para o
+        // bloqueio de "precisa trocar a senha" sumir sem pedir novo login.
+        await refresh();
         return { ok: true };
       } catch {
         return { ok: false, error: 'Falha de conexão.' };
       }
     },
-    []
+    [refresh]
   );
 
   const updateProfile = useCallback(

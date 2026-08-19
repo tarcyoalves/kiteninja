@@ -24,6 +24,7 @@ import { ChatView } from "../views/ChatView";
 import { useKiteData } from "../context/KiteDataContext";
 import { useAuth } from "../context/AuthContext";
 import { LoginGate } from "../components/LoginGate";
+import { ForcePasswordChangeModal } from "../components/ForcePasswordChangeModal";
 import {
   SplashIntro,
   introJaVista,
@@ -167,7 +168,7 @@ const MainContent: React.FC = () => {
  * com o app já pronto e hidratado na tela, sem qualquer atraso ou tela preta.
  */
 const Gate: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, mustChangePassword } = useAuth();
   const [introDone, setIntroDone] = React.useState(false);
 
   // Enquanto verifica o cookie inicial da sessão, mantém fundo escuro sólido
@@ -187,6 +188,11 @@ const Gate: React.FC = () => {
       )}
       {!isAuthenticated ? (
         <LoginGate />
+      ) : mustChangePassword ? (
+        // Senha temporária ainda ativa: bloqueia o app inteiro até a troca,
+        // igual ao LoginGate bloqueia quem não está logado. Nada de SOS, feed
+        // ou qualquer outra tela nasce atrás dessa flag.
+        <ForcePasswordChangeModal />
       ) : (
         <KiteDataProvider>
           <MainContent />

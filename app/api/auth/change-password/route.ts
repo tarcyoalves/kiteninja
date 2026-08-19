@@ -1,6 +1,14 @@
+import { cookies } from 'next/headers';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { HttpError, hashPassword, requireUser, verifyPassword } from '@/lib/auth';
+import {
+  HttpError,
+  SESSION_COOKIE,
+  hashPassword,
+  hashToken,
+  requireUser,
+  verifyPassword,
+} from '@/lib/auth';
 import { password as parsePassword } from '@/lib/validation';
 
 export async function POST(request: Request) {
@@ -35,9 +43,21 @@ export async function POST(request: Request) {
     `;
 
     // Encerra as outras sessões: se a senha foi trocada por suspeita de acesso
-    // indevido, o invasor perde o acesso imediatamente.
-    await sql`DELETE FROM auth_sessions WHERE user_id = ${user.id}`;
+    // indevido, o invasor perde o acesso imediatamente. A sessão atual (a que
+    // acabou de provar conhecer a senha antiga) fica de fora do DELETE — sem
+    // isso, a própria troca de senha obrigatória derrubaria quem a está
+    // fazendo, e o bloqueio nunca sumiria sem um novo login.
+    const jar = await cookies();
+    const currentToken = jar.get(SESSION_COOKIE)?.value;
+    if (currentToken) {
+      await sql`
+        DELETE FROM auth_sessions
+        WHERE user_id = ${user.id} AND token_hash <> ${hashToken(currentToken)}
+      `;
+    } else {
+      await sql`DELETE FROM auth_sessions WHERE user_id = ${user.id}`;
+    }
 
-    return { ok: true, reauth: true };
+    return { ok: true };
   });
 }
