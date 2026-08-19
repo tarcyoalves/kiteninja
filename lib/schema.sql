@@ -395,6 +395,18 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
 
+-- user_presence não tinha coordenada nenhuma, só "estou neste spot". A
+-- seleção de candidatos para notificar um SOS precisa saber ONDE cada
+-- velejador está de verdade, não só o spot declarado — por isso lat/lng
+-- aqui. pos_updated_at é separado de last_seen_at porque o heartbeat bate
+-- a cada poucos segundos (só prova "app aberto"), mas o navegador só manda
+-- coordenada nova quando o GPS de fato se move; sem o campo próprio não dá
+-- para saber se a última posição gravada ainda é fresca o suficiente para
+-- confiar nela na hora de notificar um socorro.
+ALTER TABLE user_presence ADD COLUMN IF NOT EXISTS lat NUMERIC(9,6);
+ALTER TABLE user_presence ADD COLUMN IF NOT EXISTS lng NUMERIC(9,6);
+ALTER TABLE user_presence ADD COLUMN IF NOT EXISTS pos_updated_at TIMESTAMPTZ;
+
 -- Pedido de socorro. Coordenada é NULLABLE de propósito: o GPS pode não
 -- resolver a tempo (dentro d'água, sinal ruim, celular sacudindo) e um SOS
 -- sem posição é infinitamente melhor que nenhum SOS. O servidor calcula

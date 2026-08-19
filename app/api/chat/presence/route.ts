@@ -3,6 +3,7 @@ import { handle, readOptionalJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { PRESENCE_WINDOW_MS, isValidRoomName, presenceCutoff } from '@/lib/chat';
 import { touchPresence } from '@/lib/presence';
+import { num } from '@/lib/validation';
 
 /**
  * Heartbeat. Marca "estou com o app aberto" e, opcionalmente, em qual spot.
@@ -38,7 +39,15 @@ export async function POST(request: Request) {
       atSpotId = spotRaw;
     }
 
-    await touchPresence(user.id, room, atSpotId);
+    // Posição opcional: o app reaproveita a última coordenada que o GPS do
+    // MapView já capturou (sem novo watchPosition, sem novo pedido de
+    // permissão). Sem coordenada nova, touchPresence preserva a anterior —
+    // é o que a seleção de candidatos de um SOS usa como fallback quando
+    // não há at_spot_id (lib/sosCandidates.ts).
+    const lat = num(payload, 'lat', { optional: true, min: -90, max: 90 });
+    const lng = num(payload, 'lng', { optional: true, min: -180, max: 180 });
+
+    await touchPresence(user.id, room, atSpotId, lat, lng);
 
     return { ok: true, windowMs: PRESENCE_WINDOW_MS };
   });

@@ -3,8 +3,9 @@ import { handle, readOptionalJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { num, str } from '@/lib/validation';
 import { rateLimiters } from '@/lib/rateLimit';
-import { nearestSpot, haversineKm } from '@/lib/geo';
-import { boundingBox, JANELA_PRESENCA_MS, textoDoAlerta } from '@/lib/sos';
+import { nearestSpot } from '@/lib/geo';
+import { textoDoAlerta } from '@/lib/sos';
+import { selectSosCandidates } from '@/lib/sosCandidates';
 import { sendPushToUsers } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
@@ -76,27 +77,13 @@ export async function POST(request: Request) {
 
     let candidatos: Array<{ userId: string; dist: number }> = [];
     if (lat !== null && lng !== null) {
-      const box = boundingBox(lat, lng, radiusKm);
-      // O pré-filtro pela bounding box evita calcular a fórmula Haversine para o mundo todo
-      const candidateRows = await sql`
-        SELECT user_id, lat, lng
-        FROM user_presence
-        WHERE user_id != ${user.id}
-        AND last_seen_at >= NOW() - INTERVAL '${JANELA_PRESENCA_MS} milliseconds'
-        AND lat BETWEEN ${box.minLat} AND ${box.maxLat}
-        AND lng BETWEEN ${box.minLng} AND ${box.maxLng}
-      `;
-
-      candidatos = candidateRows
-        .map(c => {
-          const cLat = Number(c.lat);
-          const cLng = Number(c.lng);
-          return {
-            userId: String(c.user_id),
-            dist: haversineKm({ lat, lng }, { lat: cLat, lng: cLng })
-          };
-        })
-        .filter(c => c.dist <= radiusKm);
+      // Considera tanto quem tem posição real recente quanto quem só
+      // declarou um spot ("estou em Ponta do Mel") — ver lib/sosCandidates.ts.
+      candidatos = await selectSosCandidates({
+        excludeUserId: user.id,
+        origin: { lat, lng },
+        radiusKm,
+      });
     }
 
     for (const c of candidatos) {

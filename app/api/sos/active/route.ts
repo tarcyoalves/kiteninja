@@ -2,8 +2,8 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
-import { deveEscalar, proximoRaio, JANELA_PRESENCA_MS, boundingBox, textoDoAlerta } from '@/lib/sos';
-import { haversineKm } from '@/lib/geo';
+import { deveEscalar, proximoRaio, textoDoAlerta } from '@/lib/sos';
+import { selectSosCandidates } from '@/lib/sosCandidates';
 import { sendPushToUsers } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
@@ -21,7 +21,11 @@ export async function GET() {
       FROM sos_alerts sa
       JOIN users u ON u.id = sa.user_id
       LEFT JOIN sos_responders sr ON sr.sos_id = sa.id
-      WHERE sa.status = 'ativo'
+      -- 'em_atendimento' entra na listagem: um socorrista confirmar "a
+      -- caminho" não pode fazer o alerta sumir da tela de ninguém, nem da
+      -- do próprio acidentado. Só 'resolvido'/'cancelado'/'falso_alarme'
+      -- saem da lista de ativos.
+      WHERE sa.status IN ('ativo', 'em_atendimento')
         AND (sa.user_id = ${user.id} OR sr.user_id = ${user.id})
     `;
 
@@ -59,7 +63,10 @@ export async function GET() {
         criadoEm: new Date(String(row.created_at)),
         escaladoEm: escalatedAt,
         agora: new Date(),
-        temResponsavel
+        temResponsavel,
+        // 'em_atendimento' nunca escala, mesmo se o responsável recuar depois
+        // (ver comentário em lib/sos.ts).
+        statusAtual: String(row.status) as 'ativo' | 'em_atendimento'
       })) {
         const nextRadius = proximoRaio(radiusKm);
         if (nextRadius !== null) {
@@ -72,24 +79,16 @@ export async function GET() {
           escalatedAt = new Date();
 
           if (lat !== null && lng !== null) {
-            const box = boundingBox(lat, lng, radiusKm);
-            const candidateRows = await sql`
-              SELECT user_id, lat, lng
-              FROM user_presence
-              WHERE user_id != ${sosUserId}
-              AND last_seen_at >= NOW() - INTERVAL '${JANELA_PRESENCA_MS} milliseconds'
-              AND lat BETWEEN ${box.minLat} AND ${box.maxLat}
-              AND lng BETWEEN ${box.minLng} AND ${box.maxLng}
-            `;
-            
             const existingResponders = new Set(responders.map(rr => rr.userId));
 
-            const newCandidatos = candidateRows
-              .map(c => ({
-                userId: String(c.user_id),
-                dist: haversineKm({ lat, lng }, { lat: Number(c.lat), lng: Number(c.lng) })
-              }))
-              .filter(c => c.dist <= radiusKm && !existingResponders.has(c.userId));
+            // Mesma seleção de candidatos do disparo inicial (posição real
+            // ou fallback pelo spot) — ver lib/sosCandidates.ts.
+            const newCandidatos = await selectSosCandidates({
+              excludeUserId: sosUserId,
+              origin: { lat, lng },
+              radiusKm,
+              alreadyNotified: existingResponders,
+            });
 
             for (const c of newCandidatos) {
               await sql`

@@ -571,6 +571,167 @@ async function main() {
     [riderA]
   );
 
+  console.log('\nSeleção de candidatos do SOS (bug real: query antiga estourava, lat/lng não existiam):');
+
+  const riderPos = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('pos@t.local', '$2b$12$x', 'Rider Pos', '2001') RETURNING id`
+    )
+  ).rows[0].id;
+  const riderSpot = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('spot@t.local', '$2b$12$x', 'Rider Spot', '2002') RETURNING id`
+    )
+  ).rows[0].id;
+  const riderOld = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('old@t.local', '$2b$12$x', 'Rider Old', '2003') RETURNING id`
+    )
+  ).rows[0].id;
+  const riderNoPos = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('nopos@t.local', '$2b$12$x', 'Rider Sem Posição', '2004') RETURNING id`
+    )
+  ).rows[0].id;
+
+  // (a) posição real dentro da janela, bem perto da origem do SOS
+  await db.query(
+    `INSERT INTO user_presence (user_id, last_seen_at, lat, lng, pos_updated_at)
+     VALUES ($1, NOW(), -4.9580, -36.8830, NOW())`,
+    [riderPos]
+  );
+  // (b) sem posição fresca, mas com at_spot_id conhecido (fallback pelo spot)
+  await db.query(
+    `INSERT INTO user_presence (user_id, last_seen_at, at_spot_id)
+     VALUES ($1, NOW(), 'ponta-do-mel')`,
+    [riderSpot]
+  );
+  // Presença fora da janela (16 min, janela é 15 min) — não pode entrar mesmo tendo posição
+  await db.query(
+    `INSERT INTO user_presence (user_id, last_seen_at, lat, lng, pos_updated_at)
+     VALUES ($1, NOW() - INTERVAL '16 minutes', -4.9580, -36.8830, NOW() - INTERVAL '16 minutes')`,
+    [riderOld]
+  );
+  // Presença fresca, mas sem posição real E sem spot declarado — não há como saber se está no raio
+  await db.query(`INSERT INTO user_presence (user_id, last_seen_at) VALUES ($1, NOW())`, [riderNoPos]);
+
+  // Réplica exata da query de lib/sosCandidates.ts (o cutoff é calculado em JS,
+  // igual à produção, para não cair no mesmo bug de INTERVAL parametrizado).
+  const janelaPresencaMs = 15 * 60 * 1000;
+  const cutoff = new Date(Date.now() - janelaPresencaMs).toISOString();
+  const origin = { lat: -4.9572, lng: -36.8833 };
+  const raioKm = 5;
+  const deltaLat = raioKm / 111;
+  const deltaLng = Math.abs(raioKm / (111 * Math.cos((origin.lat * Math.PI) / 180)));
+  const box = {
+    minLat: origin.lat - deltaLat,
+    maxLat: origin.lat + deltaLat,
+    minLng: origin.lng - deltaLng,
+    maxLng: origin.lng + deltaLng,
+  };
+
+  const candRows = await expectOk(
+    db,
+    'seleção de candidatos do SOS: query real roda contra Postgres sem erro',
+    `SELECT user_id, cand_lat, cand_lng FROM (
+       SELECT
+         p.user_id AS user_id,
+         COALESCE(
+           CASE WHEN p.pos_updated_at >= $2 THEN p.lat END,
+           s.lat
+         ) AS cand_lat,
+         COALESCE(
+           CASE WHEN p.pos_updated_at >= $2 THEN p.lng END,
+           s.lng
+         ) AS cand_lng
+       FROM user_presence p
+       LEFT JOIN spots s ON s.id = p.at_spot_id
+       WHERE p.user_id != $1
+         AND p.last_seen_at >= $2
+     ) candidato
+     WHERE cand_lat IS NOT NULL AND cand_lng IS NOT NULL
+       AND cand_lat BETWEEN $3 AND $4
+       AND cand_lng BETWEEN $5 AND $6`,
+    [riderA, cutoff, box.minLat, box.maxLat, box.minLng, box.maxLng]
+  );
+
+  const candIds = new Set(candRows.map((r) => String(r.user_id)));
+  check('candidato com posição real dentro da janela aparece', candIds.has(riderPos));
+  check('candidato sem posição fresca mas com at_spot_id conhecido aparece (fallback pelo spot)', candIds.has(riderSpot));
+  check('candidato com presença fora da janela NÃO aparece, mesmo com lat/lng gravados', !candIds.has(riderOld));
+  check('candidato sem posição e sem spot NÃO aparece', !candIds.has(riderNoPos));
+
+  const spotCandRow = candRows.find((r) => String(r.user_id) === riderSpot);
+  check(
+    'fallback por spot traz as coordenadas do spot (não NULL)',
+    Boolean(spotCandRow && spotCandRow.cand_lat !== null && spotCandRow.cand_lng !== null)
+  );
+
+  console.log('\ntouchPresence: heartbeat sem coordenada preserva a última posição (lib/presence.ts):');
+
+  // Réplica do UPSERT de touchPresence: primeiro heartbeat com coordenada,
+  // segundo sem — a posição não pode ser apagada só porque o navegador não
+  // reenviou coordenada nesse tique.
+  await db.query(
+    `INSERT INTO user_presence (user_id, last_seen_at, room, at_spot_id, lat, lng, pos_updated_at)
+     VALUES ($1, NOW(), NULL, NULL, $2, $3, NOW())
+     ON CONFLICT (user_id) DO UPDATE
+       SET last_seen_at = NOW(), room = NULL, at_spot_id = NULL,
+           lat = COALESCE($2, user_presence.lat), lng = COALESCE($3, user_presence.lng),
+           pos_updated_at = COALESCE(NOW(), user_presence.pos_updated_at)`,
+    [riderPos, -4.96, -36.88]
+  );
+  await db.query(
+    `INSERT INTO user_presence (user_id, last_seen_at, room, at_spot_id, lat, lng, pos_updated_at)
+     VALUES ($1, NOW(), NULL, NULL, $2, $3, NULL)
+     ON CONFLICT (user_id) DO UPDATE
+       SET last_seen_at = NOW(), room = NULL, at_spot_id = NULL,
+           lat = COALESCE($2, user_presence.lat), lng = COALESCE($3, user_presence.lng),
+           pos_updated_at = COALESCE(NULL, user_presence.pos_updated_at)`,
+    [riderPos, null, null]
+  );
+  const preservedPos = await db.query<{ lat: string; lng: string }>(
+    `SELECT lat, lng FROM user_presence WHERE user_id = $1`,
+    [riderPos]
+  );
+  check(
+    'heartbeat sem lat/lng não apaga a posição gravada no heartbeat anterior',
+    Number(preservedPos.rows[0]?.lat) === -4.96 && Number(preservedPos.rows[0]?.lng) === -36.88
+  );
+
+  console.log('\nListagem de SOS ativos inclui em_atendimento (bug real: alerta sumia quando alguém ia socorrer):');
+
+  await db.query(`UPDATE sos_alerts SET status = 'em_atendimento' WHERE id = $1`, [sosId]);
+
+  const newListing = await expectOk(
+    db,
+    'listagem de ativos (query corrigida) inclui status em_atendimento',
+    `SELECT DISTINCT sa.id, sa.status
+     FROM sos_alerts sa
+     LEFT JOIN sos_responders sr ON sr.sos_id = sa.id
+     WHERE sa.status IN ('ativo', 'em_atendimento')
+       AND (sa.user_id = $1 OR sr.user_id = $1)`,
+    [riderA]
+  );
+  check('SOS em_atendimento aparece para o próprio autor', newListing.some((r) => String(r.id) === sosId));
+
+  const oldListing = await db.query(
+    `SELECT DISTINCT sa.id, sa.status
+     FROM sos_alerts sa
+     LEFT JOIN sos_responders sr ON sr.sos_id = sa.id
+     WHERE sa.status = 'ativo'
+       AND (sa.user_id = $1 OR sr.user_id = $1)`,
+    [riderA]
+  );
+  check(
+    'confirma o bug: a query antiga (só status = ativo) escondia o SOS em_atendimento',
+    !oldListing.rows.some((r) => String((r as Record<string, unknown>).id) === sosId)
+  );
+
   console.log('\nCascata:');
   await db.query(`INSERT INTO post_comments (post_id, user_id, text) VALUES ($1, $2, 'oi')`, [
     postId,

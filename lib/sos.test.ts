@@ -56,6 +56,38 @@ describe('deveEscalar', () => {
     const result2 = deveEscalar({ raioKm: 15, criadoEm, escaladoEm: escaladoEm2, agora, temResponsavel: false });
     expect(result2).toBe(true);
   });
+
+  it('nunca escala um SOS já em_atendimento, mesmo com temResponsavel false e prazo vencido', () => {
+    // Cenário real: alguém confirmou "a caminho" (status virou em_atendimento),
+    // depois mudou para "não posso" — temResponsavel volta a false, mas o
+    // alerta não pode voltar a escalar por causa disso (bug já visto em produção).
+    const criadoEm = new Date('2024-01-01T12:00:00Z'); // 10 mins atrás, prazo vencido
+    const result = deveEscalar({
+      raioKm: 5,
+      criadoEm,
+      escaladoEm: null,
+      agora,
+      temResponsavel: false,
+      statusAtual: 'em_atendimento',
+    });
+    expect(result).toBe(false);
+  });
+
+  it('escala normalmente quando statusAtual é ativo (ou omitido)', () => {
+    const criadoEm = new Date('2024-01-01T12:05:00Z'); // 5 mins atrás (prazo vencido)
+    const comStatus = deveEscalar({
+      raioKm: 5,
+      criadoEm,
+      escaladoEm: null,
+      agora,
+      temResponsavel: false,
+      statusAtual: 'ativo',
+    });
+    expect(comStatus).toBe(true);
+
+    const semStatus = deveEscalar({ raioKm: 5, criadoEm, escaladoEm: null, agora, temResponsavel: false });
+    expect(semStatus).toBe(true);
+  });
 });
 
 describe('ordenarCandidatos', () => {

@@ -101,6 +101,15 @@ interface KiteDataContextType {
   refreshWindData: () => void;
   isRefreshing: boolean;
   isHydrated: boolean;
+
+  /**
+   * Última posição de GPS conhecida, capturada pelo watchPosition do MapView.
+   * Vive aqui (e não só no state local do MapView) para o heartbeat de
+   * presença (ChatView) poder reenviá-la sem pedir localização de novo — a
+   * seleção de candidatos de um SOS depende dela (lib/sosCandidates.ts).
+   */
+  lastKnownPosition: { lat: number; lng: number } | null;
+  setLastKnownPosition: (pos: { lat: number; lng: number } | null) => void;
 }
 
 export interface SosResponderData {
@@ -209,6 +218,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [lastKnownPosition, setLastKnownPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   // Chat Notifications & Unread Counters
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -695,6 +705,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         refreshWindData,
         isRefreshing,
         isHydrated,
+        lastKnownPosition,
+        setLastKnownPosition,
       }}
     >
       {children}

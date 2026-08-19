@@ -32,7 +32,16 @@ export function deveEscalar(args: {
   escaladoEm: Date | null;
   agora: Date;
   temResponsavel: boolean;
+  /**
+   * Status atual do alerta. Um SOS que já virou 'em_atendimento' não deve
+   * voltar a escalar mesmo que o responsável que assumiu depois marque
+   * 'nao_posso' e temResponsavel volte a false — ampliar o raio depois de já
+   * ter havido resgate assumido só gera pânico e notificações desnecessárias.
+   * Opcional e default 'ativo' para não quebrar quem já chama sem esse campo.
+   */
+  statusAtual?: 'ativo' | 'em_atendimento' | 'resolvido' | 'cancelado' | 'falso_alarme';
 }): boolean {
+  if (args.statusAtual && args.statusAtual !== 'ativo') return false;
   if (args.temResponsavel) return false;
 
   const estagio = ESTAGIOS_RAIO.find(e => e.raioKm === args.raioKm);

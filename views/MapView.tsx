@@ -29,7 +29,7 @@ interface MapViewProps {
 }
 
 export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
-  const { spots, convertWind, beachMode, allActiveSosList } = useKiteData();
+  const { spots, convertWind, beachMode, allActiveSosList, setLastKnownPosition } = useKiteData();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
   const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
   const [locateStatus, setLocateStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
@@ -99,6 +99,12 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       // Guardar a posição real do usuário para desenhar no mapa
       setUserPosition({ lat: latitude, lng: longitude, accuracy });
 
+      // Também guarda no contexto compartilhado: é essa posição que o
+      // heartbeat de presença (ChatView) reenvia, sem precisar de um novo
+      // watchPosition nem de pedir permissão de GPS de novo — a seleção de
+      // candidatos de um SOS depende de alguma posição estar aqui.
+      setLastKnownPosition({ lat: latitude, lng: longitude });
+
       // Calcular o spot mais próximo
       const result = nearestSpot(latitude, longitude, spots);
       if (result) {
@@ -132,7 +138,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       onError,
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
     );
-  }, [spots]);
+  }, [spots, setLastKnownPosition]);
 
   /**
    * Para o rastreamento quando o usuário sai da tela de mapa.

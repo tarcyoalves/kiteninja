@@ -84,7 +84,7 @@ function formatDayDivider(isoDate: string): string {
 }
 
 export const ChatView: React.FC = () => {
-  const { spots, beachMode, setActiveTab } = useKiteData();
+  const { spots, beachMode, setActiveTab, lastKnownPosition } = useKiteData();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>('conversa');
@@ -251,14 +251,29 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
+  // Ref em vez de dependência direta: sendHeartbeat entra no array de deps do
+  // efeito de polling (abaixo) e trocar sua identidade a cada tique de GPS
+  // reiniciaria o interval sem necessidade. O ref sempre lê a posição mais
+  // recente sem isso.
+  const lastKnownPositionRef = useRef(lastKnownPosition);
+  useEffect(() => {
+    lastKnownPositionRef.current = lastKnownPosition;
+  }, [lastKnownPosition]);
+
   const sendHeartbeat = useCallback(async () => {
     try {
+      const pos = lastKnownPositionRef.current;
       await fetch('/api/chat/presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           room: roomRef.current,
           atSpotId: atSpotRef.current || null,
+          // Reaproveita a posição que o MapView já capturou via GPS — sem
+          // isso, a seleção de candidatos de um SOS (lib/sosCandidates.ts)
+          // não teria como saber onde este velejador está.
+          lat: pos?.lat ?? null,
+          lng: pos?.lng ?? null,
         }),
       });
     } catch {
