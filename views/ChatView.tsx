@@ -35,6 +35,7 @@ import {
   spotRoomName,
 } from '../lib/chat';
 import { ChatMessage, OnlineRider } from '../types';
+import { alturaDoTeclado, medirViewport, REMEDIR_APOS_MS } from '../lib/keyboardInset';
 
 /** Busca mensagens a cada 4s para conversa fluida */
 const POLL_MS = 4_000;
@@ -141,23 +142,38 @@ export const ChatView: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const vv = window.visualViewport;
+    let reconferir: number | undefined;
 
-    const updateHeight = () => {
-      const kh = window.innerHeight - vv.height;
-      const open = kh > 130;
-      setKeyboardHeight(open ? Math.round(kh) : 0);
-      if (open) {
+    const medir = () => {
+      const medida = medirViewport();
+      if (!medida) return;
+      const kh = alturaDoTeclado(medida);
+      const aberto = kh > 0;
+      setKeyboardHeight(kh);
+      if (aberto) {
         requestAnimationFrame(() => scrollToEnd('auto'));
         setTimeout(() => scrollToEnd('smooth'), 120);
         setTimeout(() => scrollToEnd('smooth'), 280);
       }
     };
 
-    vv.addEventListener('resize', updateHeight);
-    vv.addEventListener('scroll', updateHeight);
+    // O teclado do iOS desliza para fora em vez de desaparecer, e os eventos de
+    // viewport chegam durante a animação. Se o último deles for lido no meio do
+    // caminho, a folga congela num valor alto e sobra um vão embaixo do chat.
+    // Medir de novo depois que tudo assentou resolve sem depender de o iOS
+    // emitir um evento final — que ele nem sempre emite.
+    const aoMudar = () => {
+      medir();
+      window.clearTimeout(reconferir);
+      reconferir = window.setTimeout(medir, REMEDIR_APOS_MS);
+    };
+
+    vv.addEventListener('resize', aoMudar);
+    vv.addEventListener('scroll', aoMudar);
     return () => {
-      vv.removeEventListener('resize', updateHeight);
-      vv.removeEventListener('scroll', updateHeight);
+      window.clearTimeout(reconferir);
+      vv.removeEventListener('resize', aoMudar);
+      vv.removeEventListener('scroll', aoMudar);
     };
   }, [scrollToEnd]);
 
@@ -764,6 +780,11 @@ export const ChatView: React.FC = () => {
                     setTimeout(() => scrollToEnd('smooth'), 120);
                     setTimeout(() => scrollToEnd('smooth'), 280);
                   }}
+                  // Perder o foco é o sinal mais confiável de que o teclado
+                  // fechou: é o que acontece ao tocar em "OK"/"certo" no iOS,
+                  // onde os eventos de viewport podem parar no meio da animação
+                  // e deixar a folga presa, abrindo um vão embaixo do chat.
+                  onBlur={() => setKeyboardHeight(0)}
                   onChange={(e) => {
                     setDraft(e.target.value);
                     if (sendError) setSendError(null);
