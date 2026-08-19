@@ -3,79 +3,86 @@
 import { useEffect } from 'react';
 
 /**
- * Amarra a altura do app-shell à área REALMENTE visível da tela.
+ * Amarra a altura do app-shell à área visível SÓ enquanto o teclado está aberto.
  *
  * Por que não basta CSS: o shell é `position: fixed; height: 100dvh`. No iOS
  * Safari o `dvh` NÃO encolhe quando o teclado virtual abre, e
- * `interactive-widget=resizes-content` é ignorado. Resultado: o shell mantém a
- * altura cheia atrás do teclado, o iOS rola a viewport de layout para revelar o
- * campo focado e a tela inteira se desloca — o campo de texto sobe pro topo e
- * sobra um vão embaixo. Nenhum ajuste de padding conserta isso, porque a origem
- * é o shell não saber que a área visível encolheu.
+ * `interactive-widget=resizes-content` é ignorado. O shell mantém a altura
+ * cheia atrás do teclado, o iOS rola a viewport de layout para revelar o campo
+ * focado e a tela inteira se desloca — o campo sobe pro topo e sobra um vão.
  *
- * A VisualViewport API sabe: `height` é a área visível (já sem o teclado) e
- * `offsetTop` é o quanto o layout rolou. Publicamos os dois em variáveis CSS e
- * o shell passa a ocupar exatamente a janela visível, colada nela. O flexbox
- * então posiciona header/lista/composer sem hack algum.
+ * A correção é encolher o shell para a área visível (VisualViewport API) — mas
+ * SÓ com um campo de texto focado. A lição da tentativa anterior: fixar a
+ * altura o tempo todo deixava uma leitura ruim do iOS "grudada", virando uma
+ * tarja no rodapé que persistia até trocando de página. Aqui o default é o
+ * shell cheio (variáveis removidas); só quando há foco de campo editável é que
+ * publicamos a altura reduzida. Perdeu o foco → limpa → volta a 100dvh. A
+ * recuperação é garantida porque o estado sem teclado não depende de nenhuma
+ * medida do iOS.
  */
+
+function ehCampoEditavel(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
+}
+
 export function useVisualViewportShell(): void {
   useEffect(() => {
     const vv = typeof window !== 'undefined' ? window.visualViewport : null;
     const root = document.documentElement;
-
-    if (!vv) {
-      // Sem VisualViewport (navegadores muito antigos): mantém o fallback dvh
-      // definido no CSS. Nada a fazer.
-      return;
-    }
+    if (!vv) return; // sem VisualViewport: fica o fallback dvh do CSS
 
     let raf = 0;
-    const escalonados: number[] = [];
 
-    const medir = () => {
+    const limpar = () => {
+      root.style.removeProperty('--app-height');
+      root.style.removeProperty('--app-offset-top');
+    };
+
+    const atualizar = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
+        // Só encolhe o shell se um campo de texto está focado (teclado aberto).
+        // Sem foco, remove as variáveis e o shell volta a 100dvh cheio — assim
+        // nunca sobra tarja quando o teclado fecha.
+        if (!ehCampoEditavel(document.activeElement)) {
+          limpar();
+          return;
+        }
         root.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
-        // offsetTop > 0 quando o iOS rola o layout para cima ao focar o input.
-        // Reposicionar o shell por ele cancela o deslocamento da página.
         root.style.setProperty('--app-offset-top', `${Math.round(vv.offsetTop)}px`);
       });
     };
 
-    // Ao FECHAR o teclado, o iOS anima o deslize e às vezes para de emitir
-    // eventos de viewport no meio do caminho: --app-height congela num valor
-    // menor que a tela e sobra um vão embaixo. Remedir em rajada, depois que a
-    // animação assenta, corrige sem depender de um evento final (que o iOS nem
-    // sempre manda). Barato: só relê vv.height e escreve a variável.
-    const aplicar = () => {
-      medir();
+    // Ao perder o foco o teclado fecha: limpa imediatamente e reconfere depois
+    // que a animação do iOS assenta (ele às vezes para de emitir eventos no
+    // meio, mas como o default é "cheio", basta garantir que ficou limpo).
+    const escalonados: number[] = [];
+    const onFocusOut = () => {
+      limpar();
       escalonados.forEach(clearTimeout);
       escalonados.length = 0;
-      for (const ms of [60, 160, 320, 520]) {
-        escalonados.push(window.setTimeout(medir, ms));
+      for (const ms of [120, 320, 520]) {
+        escalonados.push(window.setTimeout(atualizar, ms));
       }
     };
 
-    // Perder o foco de um campo editável é o gatilho mais confiável de "teclado
-    // fechando" no iOS — dispara a rajada de remedição mesmo que o viewport
-    // ainda não tenha mexido.
-    const onFocusOut = () => aplicar();
-
-    aplicar();
-    vv.addEventListener('resize', aplicar);
-    vv.addEventListener('scroll', aplicar);
-    window.addEventListener('orientationchange', aplicar);
+    vv.addEventListener('resize', atualizar);
+    vv.addEventListener('scroll', atualizar);
+    window.addEventListener('orientationchange', atualizar);
+    document.addEventListener('focusin', atualizar);
     document.addEventListener('focusout', onFocusOut);
 
     return () => {
       cancelAnimationFrame(raf);
       escalonados.forEach(clearTimeout);
-      vv.removeEventListener('resize', aplicar);
-      vv.removeEventListener('scroll', aplicar);
-      window.removeEventListener('orientationchange', aplicar);
+      vv.removeEventListener('resize', atualizar);
+      vv.removeEventListener('scroll', atualizar);
+      window.removeEventListener('orientationchange', atualizar);
+      document.removeEventListener('focusin', atualizar);
       document.removeEventListener('focusout', onFocusOut);
-      root.style.removeProperty('--app-height');
-      root.style.removeProperty('--app-offset-top');
+      limpar();
     };
   }, []);
 }
