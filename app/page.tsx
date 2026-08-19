@@ -169,7 +169,11 @@ const MainContent: React.FC = () => {
  */
 const Gate: React.FC = () => {
   const { isAuthenticated, isLoading, mustChangePassword } = useAuth();
-  const [introDone, setIntroDone] = React.useState(false);
+  // Lazy init: o link para /admin é navegação de página inteira (não rota
+  // client-side), então toda volta remonta o Gate do zero. Sem checar
+  // introJaVista() aqui, o vídeo tocava de novo a cada ida e volta ao admin
+  // dentro da MESMA sessão, mesmo a intro já tendo sido vista.
+  const [introDone, setIntroDone] = React.useState(introJaVista);
 
   // Enquanto verifica o cookie inicial da sessão, mantém fundo escuro sólido
   if (isLoading) {
