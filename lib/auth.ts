@@ -150,11 +150,33 @@ export async function destroySession(): Promise<void> {
   jar.delete(SESSION_COOKIE);
 }
 
-/** Invalida todas as sessões de um usuário (usado na troca de senha e recuperação). */
+/**
+ * Invalida todas as sessões de um usuário (usado na recuperação de senha e
+ * pelo admin ao suspender/rebaixar um velejador).
+ *
+ * O cookie desta requisição só é apagado quando ele pertence à própria conta
+ * invalidada. Antes ele era apagado sempre — então um admin suspendendo OUTRO
+ * velejador perdia a própria sessão no meio da ação: a chamada seguinte
+ * (recarregar a lista) caía em 401, o que aparecia como "Falha ao carregar
+ * lista de velejadores" logo depois de um "suspender" bem-sucedido.
+ */
 export async function invalidateAllUserSessions(userId: string): Promise<void> {
-  await sql`DELETE FROM auth_sessions WHERE user_id = ${userId}`;
   const jar = await cookies();
-  jar.delete(SESSION_COOKIE);
+  const currentToken = jar.get(SESSION_COOKIE)?.value;
+
+  let isMinhaSessao = false;
+  if (currentToken) {
+    const minha = await sql`
+      SELECT 1 FROM auth_sessions WHERE token_hash = ${hashToken(currentToken)} AND user_id = ${userId} LIMIT 1
+    `;
+    isMinhaSessao = minha.length > 0;
+  }
+
+  await sql`DELETE FROM auth_sessions WHERE user_id = ${userId}`;
+
+  if (isMinhaSessao) {
+    jar.delete(SESSION_COOKIE);
+  }
 }
 
 /** Lista sessões ativas do usuário com indicação da sessão atual. */
