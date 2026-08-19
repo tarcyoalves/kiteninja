@@ -35,7 +35,7 @@ import {
   spotRoomName,
 } from '../lib/chat';
 import { ChatMessage, OnlineRider } from '../types';
-import { alturaDoTeclado, medirViewport, REMEDIR_APOS_MS } from '../lib/keyboardInset';
+import { REMEDIR_APOS_MS } from '../lib/keyboardInset';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
 /** Busca mensagens a cada 4s para conversa fluida */
@@ -102,11 +102,8 @@ export const ChatView: React.FC = () => {
   const [atSpotId, setAtSpotId] = useState<string>('');
   const [unread, setUnread] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  // `keyboardHeight` só é usado no fallback (navegadores sem
-  // interactive-widget=resizes-content, onde o teclado SOBREPÕE o conteúdo).
-  // Quando resizes-content está ativo, a viewport encolhe e este valor fica 0 —
-  // por isso a classe do composer também olha `keyboardVisivel`.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  // Teclado visível controla só a folga inferior do composer: com o teclado
+  // aberto o menu some, então não precisa reservar espaço para ele.
   const keyboardVisivel = useKeyboardVisible();
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -144,34 +141,22 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
-  // Adapta o chat dinamicamente ao teclado virtual no iOS/Android
+  // A altura do shell já acompanha a área visível (useVisualViewportShell),
+  // então o composer fica naturalmente acima do teclado — sem hack de padding.
+  // Aqui só reagimos à mudança da viewport para manter a conversa rolada até o
+  // fim enquanto o teclado abre/fecha (senão a última mensagem some atrás dele).
   useEffect(() => {
     if (typeof window === 'undefined' || !window.visualViewport) return;
     const vv = window.visualViewport;
     let reconferir: number | undefined;
 
-    const medir = () => {
-      const medida = medirViewport();
-      if (!medida) return;
-      const kh = alturaDoTeclado(medida);
-      const aberto = kh > 0;
-      setKeyboardHeight(kh);
-      if (aberto) {
-        requestAnimationFrame(() => scrollToEnd('auto'));
-        setTimeout(() => scrollToEnd('smooth'), 120);
-        setTimeout(() => scrollToEnd('smooth'), 280);
-      }
-    };
-
-    // O teclado do iOS desliza para fora em vez de desaparecer, e os eventos de
-    // viewport chegam durante a animação. Se o último deles for lido no meio do
-    // caminho, a folga congela num valor alto e sobra um vão embaixo do chat.
-    // Medir de novo depois que tudo assentou resolve sem depender de o iOS
-    // emitir um evento final — que ele nem sempre emite.
     const aoMudar = () => {
-      medir();
+      requestAnimationFrame(() => scrollToEnd('auto'));
+      setTimeout(() => scrollToEnd('smooth'), 120);
       window.clearTimeout(reconferir);
-      reconferir = window.setTimeout(medir, REMEDIR_APOS_MS);
+      // O iOS às vezes para de emitir eventos no meio da animação do teclado;
+      // uma remedição depois que tudo assentou garante o scroll final.
+      reconferir = window.setTimeout(() => scrollToEnd('smooth'), REMEDIR_APOS_MS);
     };
 
     vv.addEventListener('resize', aoMudar);
@@ -750,13 +735,13 @@ export const ChatView: React.FC = () => {
             ))}
           </div>
 
-          {/* 4. Campo de Digitação Fixo e Estável com Elevação Dinâmica do Teclado */}
+          {/* 4. Campo de Digitação Fixo. O shell já encolhe com o teclado
+              (useVisualViewportShell), então o composer só precisa alternar a
+              folga de baixo: colado quando o teclado está aberto (menu some),
+              acima do menu quando fechado. */}
           <div
-            style={{
-              paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 6}px` : undefined,
-            }}
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
-              keyboardHeight > 0 || keyboardVisivel ? 'pb-2' : 'pb-above-nav'
+              keyboardVisivel ? 'pb-2' : 'pb-above-nav'
             }`}
           >
             {sendError && (
@@ -786,11 +771,6 @@ export const ChatView: React.FC = () => {
                     setTimeout(() => scrollToEnd('smooth'), 120);
                     setTimeout(() => scrollToEnd('smooth'), 280);
                   }}
-                  // Perder o foco é o sinal mais confiável de que o teclado
-                  // fechou: é o que acontece ao tocar em "OK"/"certo" no iOS,
-                  // onde os eventos de viewport podem parar no meio da animação
-                  // e deixar a folga presa, abrindo um vão embaixo do chat.
-                  onBlur={() => setKeyboardHeight(0)}
                   onChange={(e) => {
                     setDraft(e.target.value);
                     if (sendError) setSendError(null);

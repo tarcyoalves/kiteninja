@@ -29,6 +29,7 @@ import {
   introJaVista,
   marcarIntroVista,
 } from "../components/SplashIntro";
+import { useVisualViewportShell } from "../lib/useVisualViewportShell";
 
 const MainContent: React.FC = () => {
   const {
@@ -46,6 +47,11 @@ const MainContent: React.FC = () => {
 
   const { user } = useAuth();
   const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
+
+  // Amarra a altura do shell à área visível real — corrige o deslocamento do
+  // layout do chat quando o teclado abre no iOS (onde dvh e resizes-content
+  // não encolhem a viewport).
+  useVisualViewportShell();
 
   // Reabre o painel se um novo SOS do usuário for detectado
   React.useEffect(() => {
