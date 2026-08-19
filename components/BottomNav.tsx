@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Compass,
   Flame,
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
 export const BottomNav: React.FC = () => {
   const {
@@ -25,21 +26,10 @@ export const BottomNav: React.FC = () => {
   } = useKiteData();
   const { user } = useAuth();
   const navRef = useRef<HTMLElement | null>(null);
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
-
-  // Detecta se o teclado virtual está aberto no mobile (iOS / Android)
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
-    const vv = window.visualViewport;
-
-    const onResize = () => {
-      const diff = window.innerHeight - vv.height;
-      setIsKeyboardOpen(diff > 140);
-    };
-
-    vv.addEventListener('resize', onResize);
-    return () => vv.removeEventListener('resize', onResize);
-  }, []);
+  // Com interactive-widget=resizes-content o teclado encolhe a viewport em vez
+  // de sobrepô-la, então a diferença de altura fica ~0 e não serve de sinal.
+  // O hook combina foco em campo editável (toque) + diferença de viewport.
+  const isKeyboardOpen = useKeyboardVisible();
 
   /* Publica a altura da barra flutuante em --nav-h */
   useEffect(() => {

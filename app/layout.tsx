@@ -16,6 +16,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
+  // Faz a viewport (e o 100dvh do app-shell) ENCOLHER quando o teclado virtual
+  // abre, em vez de o teclado cobrir o conteúdo. Assim o flexbox do chat
+  // reposiciona o campo de digitação logo acima do teclado nativamente, sem
+  // hack de padding — que era o que criava o vão embaixo da tela.
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#0F172A" },
     { media: "(prefers-color-scheme: dark)", color: "#0F172A" },

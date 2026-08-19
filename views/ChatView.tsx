@@ -36,6 +36,7 @@ import {
 } from '../lib/chat';
 import { ChatMessage, OnlineRider } from '../types';
 import { alturaDoTeclado, medirViewport, REMEDIR_APOS_MS } from '../lib/keyboardInset';
+import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
 /** Busca mensagens a cada 4s para conversa fluida */
 const POLL_MS = 4_000;
@@ -101,7 +102,12 @@ export const ChatView: React.FC = () => {
   const [atSpotId, setAtSpotId] = useState<string>('');
   const [unread, setUnread] = useState(0);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  // `keyboardHeight` só é usado no fallback (navegadores sem
+  // interactive-widget=resizes-content, onde o teclado SOBREPÕE o conteúdo).
+  // Quando resizes-content está ativo, a viewport encolhe e este valor fica 0 —
+  // por isso a classe do composer também olha `keyboardVisivel`.
   const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const keyboardVisivel = useKeyboardVisible();
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -750,7 +756,7 @@ export const ChatView: React.FC = () => {
               paddingBottom: keyboardHeight > 0 ? `${keyboardHeight + 6}px` : undefined,
             }}
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
-              keyboardHeight > 0 ? 'pb-2' : 'pb-above-nav'
+              keyboardHeight > 0 || keyboardVisivel ? 'pb-2' : 'pb-above-nav'
             }`}
           >
             {sendError && (
