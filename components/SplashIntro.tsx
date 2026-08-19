@@ -454,6 +454,7 @@ const SplashVideo: React.FC<{
         bottom: 0,
         width: '100%',
         height: '100%',
+        minHeight: '100vh',
         zIndex: 99999,
         backgroundColor: '#000000',
         overflow: 'hidden',
