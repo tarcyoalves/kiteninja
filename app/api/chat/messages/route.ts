@@ -110,7 +110,16 @@ export async function GET(request: Request) {
     // Um GET já prova que a pessoa está com o app aberto nesta sala, então
     // renovamos a presença aqui: o heartbeat dedicado passa a ser só a garantia
     // de quem está lendo sem novidade chegando.
-    await touchPresenceKeepingSpot(user.id, room);
+    //
+    // Presença é acessório; mensagem é o serviço. Sem este try/catch, uma falha
+    // ao gravar presença derruba a leitura do chat inteiro — foi exatamente o
+    // que aconteceu quando o schema ganhou colunas novas em user_presence e o
+    // banco de produção ainda não tinha rodado a migração.
+    try {
+      await touchPresenceKeepingSpot(user.id, room);
+    } catch (err) {
+      console.error('[chat] presença não gravada no GET', err);
+    }
 
     const messages = rows.map(toMessage);
 
@@ -163,8 +172,14 @@ export async function POST(request: Request) {
     `;
 
     // Enviar também é sinal de presença — evita o velejador que só escreve
-    // aparecer como offline entre dois heartbeats.
-    await touchPresenceKeepingSpot(user.id, room);
+    // aparecer como offline entre dois heartbeats. Em try/catch pelo mesmo
+    // motivo do GET: a mensagem já está gravada, e perder a presença não pode
+    // fazer o envio parecer que falhou.
+    try {
+      await touchPresenceKeepingSpot(user.id, room);
+    } catch (err) {
+      console.error('[chat] presença não gravada no POST', err);
+    }
 
     // Devolvemos só o que o cliente NÃO tinha (id e created_at do banco). Nome,
     // avatar e riderId do próprio autor já estão na sessão do cliente, e buscá-

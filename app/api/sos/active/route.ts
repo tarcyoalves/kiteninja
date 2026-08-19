@@ -11,8 +11,14 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   return handle(async () => {
     const user = await requireUser();
-    // Consulta ao SOS provê presença e mantém spot atual
-    await touchPresenceKeepingSpot(user.id);
+    // Consulta ao SOS prova presença e mantém spot atual. Em try/catch porque
+    // um SOS ativo NUNCA pode sumir da tela por causa de uma falha ao gravar
+    // presença — é o pedido de socorro que importa aqui.
+    try {
+      await touchPresenceKeepingSpot(user.id);
+    } catch (err) {
+      console.error('[sos] presença não gravada ao listar ativos', err);
+    }
 
     const alertRows = await sql`
       SELECT DISTINCT sa.id, sa.user_id, sa.lat, sa.lng, sa.spot_id, sa.status, 
