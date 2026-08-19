@@ -29,6 +29,7 @@ import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
+import { DiagTela } from './DiagTela';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -679,6 +680,9 @@ export const SidebarDrawer: React.FC = () => {
               <span>Painel do Admin</span>
             </a>
           )}
+          {/* Números reais da tela do aparelho, para caçar a tarja do rodapé
+              sem chutar unidade de altura. Some quando o bug morrer. */}
+          {isAdmin && <DiagTela />}
 
           {user && (
             <button

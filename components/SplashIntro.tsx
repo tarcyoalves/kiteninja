@@ -446,19 +446,9 @@ const SplashVideo: React.FC<{
       className={`fixed inset-0 z-splash bg-black overflow-hidden select-none transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-        minHeight: '100vh',
-        zIndex: 99999,
-        backgroundColor: '#000000',
-        overflow: 'hidden',
-      }}
+      /* Sem style de altura: `fixed inset-0` (classe) já cobre a tela inteira.
+         O height/minHeight que havia aqui discordava do inset e deixava a faixa
+         escura do fundo aparecendo embaixo do vídeo no iPhone instalado. */
       role="status"
       aria-label="Abertura do KiteNinja"
     >

@@ -1,9 +1,12 @@
 @import "tailwindcss";
 
 @layer base {
+  /* `-webkit-fill-available` saiu daqui e do `.app-shell`: no iOS instalado ele
+     resolve para uma altura MENOR que a tela (exclui a faixa do indicador de
+     home) e era essa conta que deixava a tarja escura no rodape. O shell é
+     `fixed` com top/bottom 0 — não precisa de altura nenhuma declarada. */
   html {
     height: 100%;
-    height: -webkit-fill-available;
   }
 
   body {
@@ -12,8 +15,6 @@
     width: 100%;
     height: 100%;
     min-height: 100%;
-    min-height: 100vh;
-    min-height: -webkit-fill-available;
     font-family: var(--font-plus-jakarta), system-ui, -apple-system, BlinkMacSystemFont,
       "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
@@ -143,20 +144,17 @@ select {
    "não totalmente compatível" como web app: sobrava faixa morta embaixo ou o
    conteúdo passava da tela.
 
-   A correção é não fazer conta. O shell tem a altura exata da viewport (dvh,
-   que acompanha a barra) e header/conteúdo/menu se distribuem por flex; só o
-   miolo rola. vh fica como fallback para navegador sem dvh (a ordem importa:
-   quem entende dvh sobrescreve). */
+   A correção é não fazer conta de altura nenhuma: `fixed` com top e bottom em 0
+   já dá ao shell exatamente a área visível, seja na aba do Safari ou instalado
+   na tela de início. Toda tentativa de declarar `height` aqui (100vh, 100dvh,
+   -webkit-fill-available) discordava do top/bottom e sobrava faixa morta no
+   rodapé do iPhone. Header/conteúdo/menu se distribuem por flex; só o miolo rola. */
 .app-shell {
   position: fixed;
   top: 0;
   bottom: 0;
   left: 0;
   right: 0;
-  width: 100%;
-  height: 100%;
-  height: 100vh;
-  height: -webkit-fill-available;
   background-color: #0B1220;
   overflow: hidden;
   overscroll-behavior: none;
