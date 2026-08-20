@@ -100,11 +100,22 @@ export const DiagTela: React.FC = () => {
     // `navigator.standalone` é iOS-only e não existe na tipagem padrão.
     const iosStandalone = (navigator as Navigator & { standalone?: boolean }).standalone;
 
-    // A folga entre o fim do shell e a base da tela: se for > 0, existe área
-    // que o shell NÃO cobre, e é exatamente aí que uma faixa apareceria.
+    // A folga entre o fim do shell e a base da JANELA: se for > 0, existe área
+    // da janela que o shell não cobre. Cuidado: isso é diferente de sobrar
+    // TELA, medido logo abaixo — o shell pode preencher a janela inteira e
+    // ainda assim sobrar tela, se a janela for menor que o aparelho.
     const folgaAbaixoDoShell = shellRect
       ? Math.round(window.innerHeight - shellRect.bottom)
       : null;
+
+    // `screenY` é a coordenada do topo da janela na tela física. Com ela dá
+    // para saber se a área que o iOS não entregou ao app ficou em cima ou
+    // embaixo — e é embaixo que o dono relata a tarja.
+    const topoNaTela =
+      typeof window.screenY === 'number' ? window.screenY : window.screenTop;
+    const sobraAbaixo = Math.round(
+      screen.height - ((topoNaTela ?? 0) + window.innerHeight)
+    );
 
     setLinhas([
       `— MODO DE EXIBIÇÃO —`,
@@ -138,6 +149,17 @@ export const DiagTela: React.FC = () => {
         folgaAbaixoDoShell === null ? 'n/d' : folgaAbaixoDoShell + 'px' + (folgaAbaixoDoShell > 0 ? ' ⚠️' : '')
       }`,
       `dpr: ${window.devicePixelRatio}`,
+      ``,
+      `— POSIÇÃO DA JANELA NA TELA —`,
+      // ESTA é a medida decisiva. `screen.height` é a tela física; `innerHeight`
+      // é a janela que o iOS deu ao app. Quando as duas divergem, existe faixa
+      // de tela que o app NÃO recebeu — e nenhum CSS alcança essa área, porque
+      // ela está fora da página. `screenY` diz ONDE essa janela foi colocada:
+      // se for 0, a janela começa colada no topo e a sobra fica toda EMBAIXO.
+      `screenY (topo da janela): ${topoNaTela}`,
+      `screen.availHeight: ${screen.availHeight}`,
+      `tela - janela: ${screen.height - window.innerHeight}px`,
+      `SOBRA DESCOBERTA EMBAIXO: ${sobraAbaixo}px${sobraAbaixo > 0 ? ' ⚠️ <- A TARJA' : ''}`,
       ``,
       `— CORES —`,
       `--app-bg: ${raiz.getPropertyValue('--app-bg').trim() || '(vazio)'}`,
