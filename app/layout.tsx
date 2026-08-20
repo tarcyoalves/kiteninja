@@ -78,7 +78,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR" className={`${plusJakarta.variable} h-full antialiased`}>
-      <body className="min-h-full flex flex-col bg-[#0B1220] text-slate-100">
+      {/*
+        Sem `bg-*` aqui. A cor vem de `--app-bg` (globals.css), a mesma do
+        `.app-shell`. Este `bg-[#0B1220]` foi a razão de a correção de cor do
+        commit e53cada não surtir efeito nenhum: utility do Tailwind não está em
+        `@layer base`, então vencia o `background-color: var(--app-bg)` do CSS e
+        o body continuava num tom diferente do shell — que é exatamente a tarja.
+      */}
+      <body className="min-h-full flex flex-col text-slate-100">
         {children}
       </body>
     </html>

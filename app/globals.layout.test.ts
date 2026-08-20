@@ -200,6 +200,28 @@ describe('globals.css — cor de fundo em fonte única', () => {
     ).not.toMatch(/\bbg-\[/);
   });
 
+  /*
+   * Este caso existe porque a versão anterior desta suíte PASSOU com o bug
+   * presente: ela checava só o shell em page.tsx e ignorava o <body> do
+   * layout.tsx, que tinha `bg-[#0B1220]` fixo. A utility do Tailwind vencia o
+   * `background-color: var(--app-bg)` do CSS, então o token era inócuo no body e
+   * a tarja continuou depois de um commit que dizia tê-la corrigido.
+   *
+   * Cobrir os DOIS elementos raiz é o ponto: basta um deles fixar cor para as
+   * duas camadas divergirem de novo.
+   */
+  it('o <html> e o <body> não fixam cor de fundo no JSX', () => {
+    const jsx = layoutTsx.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    for (const tag of ['html', 'body']) {
+      const el = jsx.match(new RegExp(`<${tag}\\s[^>]*>`));
+      expect(el, `<${tag}> não encontrado em layout.tsx; revise este teste`).not.toBeNull();
+      expect(
+        el![0],
+        `<${tag}> fixa bg-* e sobrepõe --app-bg: body e shell voltam a divergir`,
+      ).not.toMatch(/\bbg-(\[|slate|gray|zinc|neutral|stone|black|white)/);
+    }
+  });
+
   it('o theme-color do iOS acompanha --app-bg', () => {
     // Instalado na tela de início, o iOS pinta chrome com esta cor. Se ela
     // discordar do fundo real, a divergência reaparece como faixa.
