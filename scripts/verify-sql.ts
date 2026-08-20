@@ -92,6 +92,10 @@ async function main() {
     'sos_alerts',
     'sos_responders',
     'push_subscriptions',
+    'downwinds',
+    'downwind_participantes',
+    'downwind_posicoes',
+    'downwind_convites',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -731,6 +735,206 @@ async function main() {
     'confirma o bug: a query antiga (só status = ativo) escondia o SOS em_atendimento',
     !oldListing.rows.some((r) => String((r as Record<string, unknown>).id) === sosId)
   );
+
+  console.log('\nDownwind:');
+
+  const dw = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (nome, spot_saida, spot_chegada, criado_por, previsto_para)
+     VALUES ('Ponta do Mel -> Barra', 'ponta-do-mel', 'ponta-do-mel', $1, NOW() + INTERVAL '1 day')
+     RETURNING id`,
+    [adminId]
+  );
+  const dwId = dw.rows[0].id;
+  check('criação de downwind', Boolean(dwId));
+
+  await expectFail(
+    db,
+    'downwind status fora do CHECK é rejeitado',
+    `INSERT INTO downwinds (nome, status) VALUES ('X', 'pendente')`
+  );
+
+  await expectOk(
+    db,
+    'downwind_participantes: organizador que também veleja entra como velejador + eh_organizador (papel e eh_organizador são dimensões separadas — ver comentário no schema)',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
+     VALUES ($1, $2, 'velejador', TRUE)`,
+    [dwId, adminId]
+  );
+  await expectOk(
+    db,
+    'downwind_participantes: velejador comum entra (eh_organizador default FALSE)',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel)
+     VALUES ($1, $2, 'velejador')`,
+    [dwId, riderA]
+  );
+  await expectOk(
+    db,
+    'downwind_participantes: organizador que fica em terra entra como apoio_terra + eh_organizador (organizador pode estar em qualquer um dos dois lugares)',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
+     VALUES ($1, $2, 'apoio_terra', TRUE)`,
+    [dwId, riderB]
+  );
+
+  await expectFail(
+    db,
+    'downwind_participantes: papel fora do CHECK é rejeitado',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel)
+     VALUES ($1, $2, 'piloto')`,
+    [dwId, riderPos]
+  );
+  await expectFail(
+    db,
+    "downwind_participantes: 'organizador' não é mais um papel válido — virou a coluna eh_organizador",
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel)
+     VALUES ($1, $2, 'organizador')`,
+    [dwId, riderSpot]
+  );
+  await expectFail(
+    db,
+    'downwind_participantes: estado fora do CHECK é rejeitado',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel, estado)
+     VALUES ($1, $2, 'velejador', 'voando')`,
+    [dwId, riderSpot]
+  );
+  await expectFail(
+    db,
+    'downwind_participantes: PK composta rejeita duplicata (mesmo downwind + usuário)',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'velejador')`,
+    [dwId, riderA]
+  );
+
+  await db.query(
+    `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
+     VALUES ($1, $2, -4.9572, -36.8833, 8.0, NOW() - INTERVAL '2 minutes')`,
+    [dwId, riderA]
+  );
+  await db.query(
+    `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
+     VALUES ($1, $2, -4.9600, -36.8900, 6.0, NOW())`,
+    [dwId, riderA]
+  );
+  await db.query(
+    `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
+     VALUES ($1, $2, -4.9550, -36.8800, 10.0, NOW())`,
+    [dwId, riderB]
+  );
+
+  const ultimasPos = await expectOk(
+    db,
+    'query da UI: última posição de cada participante do downwind',
+    `SELECT DISTINCT ON (user_id) user_id, lat, lng, registrado_em
+     FROM downwind_posicoes
+     WHERE downwind_id = $1
+     ORDER BY user_id, registrado_em DESC`,
+    [dwId]
+  );
+  check('última posição traz 1 linha por participante com posição', ultimasPos.length === 2);
+  const ultimaDeA = ultimasPos.find((r) => String(r.user_id) === riderA);
+  check(
+    'última posição de A é a mais recente (não a primeira gravada)',
+    Number(ultimaDeA?.lng) === -36.89
+  );
+
+  const trilhaDeA = await expectOk(
+    db,
+    'query da UI: trilha de um participante em ordem cronológica',
+    `SELECT lat, lng, registrado_em FROM downwind_posicoes
+     WHERE downwind_id = $1 AND user_id = $2
+     ORDER BY registrado_em ASC`,
+    [dwId, riderA]
+  );
+  check('trilha de A tem as 2 posições gravadas, em ordem', trilhaDeA.length === 2);
+
+  const meusDownwindsAtivos = await expectOk(
+    db,
+    'query da tela inicial: downwinds ativos de um usuário (usa idx_downwind_participantes_user)',
+    `SELECT d.id, d.nome, d.status, dp.papel
+     FROM downwind_participantes dp
+     JOIN downwinds d ON d.id = dp.downwind_id
+     WHERE dp.user_id = $1 AND d.status IN ('aberto', 'em_andamento')`,
+    [riderA]
+  );
+  check(
+    'downwinds ativos de A inclui o downwind recém-criado',
+    meusDownwindsAtivos.some((r) => String(r.id) === dwId)
+  );
+  const meusDownwindsB = await db.query(
+    `SELECT d.id FROM downwind_participantes dp
+     JOIN downwinds d ON d.id = dp.downwind_id
+     WHERE dp.user_id = $1 AND d.status IN ('aberto', 'em_andamento')`,
+    [riderB]
+  );
+  check(
+    'downwinds ativos de B também aparece (apoio_terra conta na busca por pessoa)',
+    meusDownwindsB.rows.some((r) => String((r as Record<string, unknown>).id) === dwId)
+  );
+
+  const convite = await expectOk(
+    db,
+    'downwind_convites: criação do link de convite',
+    `INSERT INTO downwind_convites (downwind_id, token_hash, criado_por, papel_destino, expira_em)
+     VALUES ($1, 'dw-convite-hash', $2, 'velejador', NOW() + INTERVAL '7 days')
+     RETURNING id`,
+    [dwId, adminId]
+  );
+  check('convite de downwind criado', convite.length === 1);
+
+  await expectOk(
+    db,
+    'downwind_convites: reutilizável, mais de um usuário entra com o mesmo token',
+    `SELECT id, papel_destino FROM downwind_convites
+     WHERE token_hash = $1 AND revogado_em IS NULL AND expira_em > NOW()
+       AND (max_usos IS NULL OR usos < max_usos)`,
+    ['dw-convite-hash']
+  );
+
+  await expectFail(
+    db,
+    'downwind_convites: papel_destino fora do CHECK é rejeitado',
+    `INSERT INTO downwind_convites (downwind_id, token_hash, criado_por, papel_destino, expira_em)
+     VALUES ($1, 'dw-convite-hash-invalido', $2, 'organizador', NOW() + INTERVAL '7 days')`,
+    [dwId, adminId]
+  );
+
+  console.log('\nDownwind — cascata ao apagar o downwind:');
+  const dw2 = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (nome, criado_por) VALUES ('Descartável', $1) RETURNING id`,
+    [adminId]
+  );
+  const dw2Id = dw2.rows[0].id;
+  await db.query(
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'velejador')`,
+    [dw2Id, riderA]
+  );
+  await db.query(
+    `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng) VALUES ($1, $2, -4.95, -36.88)`,
+    [dw2Id, riderA]
+  );
+  await db.query(
+    `INSERT INTO downwind_convites (downwind_id, token_hash, criado_por, papel_destino, expira_em)
+     VALUES ($1, 'dw-descartavel-hash', $2, 'velejador', NOW() + INTERVAL '7 days')`,
+    [dw2Id, adminId]
+  );
+
+  await db.query(`DELETE FROM downwinds WHERE id = $1`, [dw2Id]);
+
+  const orphanParticipantes = await db.query(
+    `SELECT downwind_id FROM downwind_participantes WHERE downwind_id = $1`,
+    [dw2Id]
+  );
+  check('participantes morrem com o downwind', orphanParticipantes.rows.length === 0);
+
+  const orphanPosicoes = await db.query(
+    `SELECT id FROM downwind_posicoes WHERE downwind_id = $1`,
+    [dw2Id]
+  );
+  check('posições morrem com o downwind', orphanPosicoes.rows.length === 0);
+
+  const orphanConvites = await db.query(
+    `SELECT id FROM downwind_convites WHERE downwind_id = $1`,
+    [dw2Id]
+  );
+  check('convites morrem com o downwind', orphanConvites.rows.length === 0);
 
   console.log('\nCascata:');
   await db.query(`INSERT INTO post_comments (post_id, user_id, text) VALUES ($1, $2, 'oi')`, [

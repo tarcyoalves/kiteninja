@@ -495,3 +495,160 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
 
+-- ----------------------------------------------------------------- downwind
+-- Downwind: navegação em grupo de um ponto A a um ponto B ao longo da costa,
+-- com apoio em terra acompanhando pelo carro. É atividade de risco: a razão
+-- de ser da feature é ninguém ficar para trás sem que alguém saiba.
+
+-- admin/moderator/instructor já podem organizar por causa do role. Um
+-- 'rider' comum só organiza se ganhar essa liberação explícita do admin —
+-- por PESSOA, uma vez, sem aprovação por evento. Por isso o downwind não tem
+-- status "pendente" nem colunas de aprovação: quem tem a flag (ou o role já
+-- privilegiado) organiza direto, sem passar por revisão a cada evento.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pode_organizar_downwind BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- spot_saida/spot_chegada usam ON DELETE SET NULL: um spot removido do
+-- catálogo não pode apagar o histórico do downwind, só perder a referência
+-- (mesmo raciocínio de sessions_log.spot_id e sos_alerts.spot_id). criado_por
+-- também é SET NULL, não CASCADE: apagar a conta de quem organizou não pode
+-- arrastar junto a trilha e a lista de participantes de um evento que já
+-- aconteceu — isso é histórico de segurança do grupo, não pertence só ao
+-- organizador.
+CREATE TABLE IF NOT EXISTS downwinds (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  nome          TEXT NOT NULL,
+  spot_saida    TEXT REFERENCES spots(id) ON DELETE SET NULL,
+  spot_chegada  TEXT REFERENCES spots(id) ON DELETE SET NULL,
+  criado_por    UUID REFERENCES users(id) ON DELETE SET NULL,
+  status        TEXT NOT NULL DEFAULT 'aberto'
+                  CHECK (status IN ('aberto', 'em_andamento', 'encerrado', 'cancelado')),
+  previsto_para TIMESTAMPTZ,
+  iniciado_em   TIMESTAMPTZ,
+  encerrado_em  TIMESTAMPTZ,
+  criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Painel do organizador lista "os que estão abertos/em andamento" — parcial,
+-- no espírito de idx_sos_active: sem WHERE, o índice carregaria também todo
+-- downwind já encerrado ou cancelado desde o início dos tempos.
+CREATE INDEX IF NOT EXISTS idx_downwinds_ativos
+  ON downwinds (previsto_para)
+  WHERE status IN ('aberto', 'em_andamento');
+
+-- Cogitei um CHECK de coerência temporal aqui (encerrado_em só com status
+-- 'encerrado'/'cancelado'; iniciado_em obrigatório a partir de
+-- 'em_andamento'), mas decidi NÃO adicionar. Um UPDATE que só troca `status`
+-- (ex.: `UPDATE downwinds SET status = 'em_andamento' WHERE id = $1`, sem
+-- tocar `iniciado_em` na mesma instrução) é um padrão comum e legítimo de se
+-- escrever, e um CHECK cross-column reprovaria esse UPDATE isoladamente — a
+-- constraint é avaliada por statement, não "no fim da transação". Isso
+-- obrigaria toda rota que muda status a lembrar de sempre setar o timestamp
+-- junto, na mesma query, ou o schema vira uma armadilha para quem só quer
+-- corrigir um status manualmente (ex.: um admin resolvendo um downwind
+-- travado). Prefiro manter os timestamps como o que são — registro histórico
+-- de quando cada evento aconteceu — e deixar a rota (lib/downwind.ts) decidir
+-- ATOMICAMENTE, no mesmo UPDATE, setar iniciado_em/encerrado_em junto com o
+-- status quando a transição exigir (ex.: `SET status = 'em_andamento',
+-- iniciado_em = COALESCE(iniciado_em, NOW())`). Coerência de máquina de
+-- estados pertence à camada que conhece as transições válidas, não a um
+-- CHECK que só vê a linha final.
+
+-- PK composta sem coluna id — mesmo padrão de favorites/post_likes/
+-- sos_responders: a existência da linha já É o estado da participação.
+-- CASCADE nos dois lados: sem o downwind ou sem o usuário, a linha de
+-- participação não tem mais sentido nenhum (mesmo raciocínio de
+-- sos_responders, que também é vínculo evento+pessoa).
+--
+-- `papel` (onde a pessoa está: água ou terra) e `eh_organizador` (se ela
+-- administra o evento) são dimensões DELIBERADAMENTE separadas, em colunas
+-- diferentes — não junte isso de volta numa coluna só achando que simplifica.
+-- A versão anterior tinha 'organizador' como um terceiro valor de `papel`, e
+-- isso era um furo de segurança: o organizador é justamente quem tem mais
+-- chance de estar velejando, mas como o quórum de encerramento só olha
+-- `papel = 'velejador'`, um organizador com papel='organizador' não bloqueava
+-- o encerramento — o grupo conseguia fechar o downwind com o próprio
+-- organizador ainda na água, sem ninguém saber. Com as dimensões separadas,
+-- o organizador que veleja é (papel='velejador', eh_organizador=true) e entra
+-- no quórum como qualquer outro velejador, que é o comportamento seguro.
+CREATE TABLE IF NOT EXISTS downwind_participantes (
+  downwind_id    UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  papel          TEXT NOT NULL CHECK (papel IN ('velejador', 'apoio_terra')),
+  eh_organizador BOOLEAN NOT NULL DEFAULT FALSE,
+  -- Só `papel = 'velejador'` entra no quórum de encerramento (todos em
+  -- 'encerrado' ou 'desistiu' fecha o downwind), independente de
+  -- eh_organizador; apoio em terra não navega, então nunca precisa "chegar"
+  -- para o grupo poder encerrar.
+  estado         TEXT NOT NULL DEFAULT 'confirmado'
+                   CHECK (estado IN ('confirmado', 'navegando', 'encerrado', 'desistiu')),
+  entrou_em      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  encerrou_em    TIMESTAMPTZ,
+  PRIMARY KEY (downwind_id, user_id)
+);
+
+-- A PK (downwind_id, user_id) cobre o sentido downwind→pessoas ("quem está
+-- neste downwind"), mas não ajuda a busca inversa. A tela inicial faz
+-- exatamente o inverso a cada abertura de app, para todo usuário: "em quais
+-- downwinds ATIVOS eu estou?" — WHERE user_id = $1. Sem índice com user_id
+-- na ponta esquerda, essa busca cai em seq scan na tabela inteira. Este
+-- índice cobre o sentido pessoa→downwinds.
+CREATE INDEX IF NOT EXISTS idx_downwind_participantes_user
+  ON downwind_participantes (user_id);
+
+-- Trilha de posições: muitas linhas por participante (reporte a cada 30-60s,
+-- navegação de até 3h+). PK é BIGINT IDENTITY, não UUID como o resto do
+-- schema — de propósito: é tabela de série temporal, append-only, e nada
+-- referencia uma linha dela por FK, então não precisa de PK globalmente
+-- imprevisível. Um UUID v4 aqui custaria o dobro do espaço (16 vs 8 bytes)
+-- por linha e fragmentaria o índice da PK com inserções em ordem aleatória —
+-- exatamente a tabela onde isso mais pesa, porque é a que mais cresce do
+-- sistema (20 participantes × 3h × 1 ponto/40s já passa de 5000 linhas por
+-- evento).
+CREATE TABLE IF NOT EXISTS downwind_posicoes (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  downwind_id   UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  lat           NUMERIC(9,6) NOT NULL,
+  lng           NUMERIC(9,6) NOT NULL,
+  accuracy_m    NUMERIC(7,2),
+  registrado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Um índice só serve às duas consultas da UI: "última posição de cada
+-- participante" é DISTINCT ON (user_id) ... WHERE downwind_id = $1 ORDER BY
+-- user_id, registrado_em DESC — casa exatamente com esta ordem de colunas; e
+-- "trilha de um participante em ordem cronológica" é WHERE downwind_id = $1
+-- AND user_id = $2 ORDER BY registrado_em — o mesmo índice, percorrido pelo
+-- outro lado. Não precisa de um segundo índice para isso.
+CREATE INDEX IF NOT EXISTS idx_downwind_posicoes_user_tempo
+  ON downwind_posicoes (downwind_id, user_id, registrado_em DESC);
+
+-- Convite por link, reutilizável (vários participantes entram com o mesmo
+-- token), para usuário JÁ autenticado — não cria conta, por isso é tabela
+-- separada de `invites`, que é para isso. Mesmo padrão de token: token_hash
+-- guarda SHA-256, o token em claro nunca é gravado. criado_por é CASCADE,
+-- igual a invites.created_by: se quem gerou o link perde a conta, os
+-- convites em aberto dele saem de circulação junto — mesmo comportamento do
+-- convite de conta, por consistência.
+CREATE TABLE IF NOT EXISTS downwind_convites (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  downwind_id   UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  token_hash    TEXT NOT NULL UNIQUE,
+  criado_por    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  papel_destino TEXT NOT NULL CHECK (papel_destino IN ('velejador', 'apoio_terra')),
+  expira_em     TIMESTAMPTZ NOT NULL,
+  revogado_em   TIMESTAMPTZ,
+  -- NULL = sem limite de usos (só expira ou é revogado).
+  max_usos      INT,
+  usos          INT NOT NULL DEFAULT 0,
+  criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Parcial para "convites em aberto deste downwind", no espírito de
+-- idx_invites_open. UNIQUE em token_hash já cria índice próprio para a busca
+-- exata por token — um segundo índice igual seria redundante, então este
+-- cobre só o caso de listagem (convites ainda válidos de um downwind).
+CREATE INDEX IF NOT EXISTS idx_downwind_convites_open
+  ON downwind_convites (downwind_id, expira_em)
+  WHERE revogado_em IS NULL;
+

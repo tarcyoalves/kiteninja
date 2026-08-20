@@ -12,6 +12,15 @@ export type Role = 'admin' | 'moderator' | 'instructor' | 'rider';
 export interface UserAuthContext {
   id: string;
   role: Role;
+  /**
+   * Liberação pontual para organizar downwind, independente do papel.
+   * Existe porque organizar um downwind é uma responsabilidade operacional
+   * (montar rota, saber quem está na água) que pode ser concedida a um
+   * rider de confiança sem promovê-lo a instrutor/moderador/admin — os quais
+   * já têm outros poderes que nada tem a ver com downwind. Opcional para não
+   * quebrar quem já monta `UserAuthContext` sem esse campo.
+   */
+  pode_organizar_downwind?: boolean;
 }
 
 /** Verifica se o usuário tem privilégio de moderação global (admin ou moderador). */
@@ -57,4 +66,17 @@ export function canManageListing(user: UserAuthContext, listingAuthorId: string)
 export function canResolveSos(user: UserAuthContext, sosAuthorId: string): boolean {
   if (user.id === sosAuthorId) return true;
   return canModerate(user.role);
+}
+
+/**
+ * Verifica se o usuário pode organizar um downwind: papéis que já carregam
+ * autoridade de operação na comunidade (admin, moderador, instrutor), OU
+ * liberação pontual via `pode_organizar_downwind` — para um rider de
+ * confiança sem precisar promovê-lo a um papel com outros poderes.
+ */
+export function canOrganizeDownwind(user: UserAuthContext): boolean {
+  if (user.role === 'admin' || user.role === 'moderator' || user.role === 'instructor') {
+    return true;
+  }
+  return user.pode_organizar_downwind === true;
 }
