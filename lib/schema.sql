@@ -537,6 +537,19 @@ CREATE INDEX IF NOT EXISTS idx_downwinds_ativos
   ON downwinds (previsto_para)
   WHERE status IN ('aberto', 'em_andamento');
 
+-- Vínculo com o evento que originou o downwind: o organizador cria um evento
+-- normal (tabela `events`, tipo 'Downwind') e a rota, na mesma requisição,
+-- cria a linha em `downwinds` apontando de volta pra ele — permite achar "o
+-- downwind deste evento" e mostrar o downwind na lista de Eventos, que é onde
+-- o velejador já espera encontrá-lo. SET NULL, não CASCADE, pelo mesmo motivo
+-- de `criado_por` acima: apagar o evento (ex.: post administrativo removido)
+-- não pode arrastar a trilha de segurança do downwind, que é histórico
+-- próprio. Sem índice: a tabela é pequena e a única consulta prevista por
+-- `event_id` é "este evento específico tem downwind?", um lookup avulso, não
+-- um filtro recorrente que justifique manter um índice a mais.
+ALTER TABLE downwinds ADD COLUMN IF NOT EXISTS event_id UUID
+  REFERENCES events(id) ON DELETE SET NULL;
+
 -- Cogitei um CHECK de coerência temporal aqui (encerrado_em só com status
 -- 'encerrado'/'cancelado'; iniciado_em obrigatório a partir de
 -- 'em_andamento'), mas decidi NÃO adicionar. Um UPDATE que só troca `status`

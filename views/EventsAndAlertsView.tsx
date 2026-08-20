@@ -15,14 +15,29 @@ import {
   Sparkles,
   Info,
   ChevronRight,
+  Route,
+  X,
+  Loader2,
 } from 'lucide-react';
 
 export const EventsAndAlertsView: React.FC = () => {
-  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, spots, beachMode } = useKiteData();
-  const { user, openAuthModal } = useAuth();
+  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, spots, beachMode, createDownwind } =
+    useKiteData();
+  const { user, openAuthModal, canOrganizeDownwind } = useAuth();
 
   const [activeSubTab, setActiveSubTab] = useState<'alertas' | 'eventos'>('alertas');
   const [isReportingAlert, setIsReportingAlert] = useState(false);
+
+  // New downwind form state
+  const [isCreatingDownwind, setIsCreatingDownwind] = useState(false);
+  const [dwTitle, setDwTitle] = useState('');
+  const [dwSpotSaidaId, setDwSpotSaidaId] = useState('');
+  const [dwSpotChegadaId, setDwSpotChegadaId] = useState('');
+  const [dwDataHora, setDwDataHora] = useState('');
+  const [dwLocation, setDwLocation] = useState('');
+  const [dwDescription, setDwDescription] = useState('');
+  const [dwSaving, setDwSaving] = useState(false);
+  const [dwError, setDwError] = useState<string | null>(null);
 
   // New alert form state
   const [alertTitle, setAlertTitle] = useState('');
@@ -49,6 +64,53 @@ export const EventsAndAlertsView: React.FC = () => {
     setAlertTitle('');
     setAlertDesc('');
     alert('Ocorrência de segurança enviada para a comunidade de velejadores!');
+  };
+
+  const handleCreateDownwind = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+    if (!dwSpotSaidaId) {
+      setDwError('Escolha o spot de saída.');
+      return;
+    }
+    if (!dwDataHora) {
+      setDwError('Escolha a data e hora do downwind.');
+      return;
+    }
+    const previstoPara = new Date(dwDataHora);
+    if (Number.isNaN(previstoPara.getTime())) {
+      setDwError('Data e hora inválidas.');
+      return;
+    }
+
+    setDwError(null);
+    setDwSaving(true);
+    const res = await createDownwind({
+      title: dwTitle,
+      location: dwLocation,
+      description: dwDescription,
+      spotSaidaId: dwSpotSaidaId,
+      spotChegadaId: dwSpotChegadaId || undefined,
+      previstoPara: previstoPara.toISOString(),
+    });
+    setDwSaving(false);
+
+    if (!res.ok) {
+      setDwError(res.error ?? 'Não foi possível criar o downwind.');
+      return;
+    }
+
+    setIsCreatingDownwind(false);
+    setDwTitle('');
+    setDwSpotSaidaId('');
+    setDwSpotChegadaId('');
+    setDwDataHora('');
+    setDwLocation('');
+    setDwDescription('');
+    setActiveSubTab('eventos');
   };
 
   return (
@@ -249,6 +311,132 @@ export const EventsAndAlertsView: React.FC = () => {
       {/* SUB-TAB 2: EVENTOS E DOWNWINDS */}
       {activeSubTab === 'eventos' && (
         <div className="space-y-4">
+          {isCreatingDownwind && (
+            <div className="p-4 rounded-2xl bg-[#0F172A] text-white border border-cyan-500/50 shadow-2xl space-y-3 animate-in fade-in">
+              <div className="flex items-center justify-between">
+                <h4 className="font-black text-sm text-cyan-400 flex items-center gap-1.5">
+                  <Route size={16} />
+                  <span>Novo Downwind</span>
+                </h4>
+                <button
+                  type="button"
+                  onClick={() => setIsCreatingDownwind(false)}
+                  className="text-slate-400 hover:text-white"
+                  aria-label="Fechar"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {dwError && (
+                <div className="flex items-center gap-2 p-2.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs font-medium">
+                  <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                  <span>{dwError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleCreateDownwind} className="space-y-2.5 text-xs">
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Nome do Downwind</label>
+                  <input
+                    type="text"
+                    value={dwTitle}
+                    onChange={e => setDwTitle(e.target.value)}
+                    placeholder="Ex: Downwind Touros -> Ponta do Mel"
+                    className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-semibold focus:outline-hidden focus:border-cyan-400"
+                    maxLength={200}
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Spot de Saída</label>
+                    <select
+                      value={dwSpotSaidaId}
+                      onChange={e => setDwSpotSaidaId(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-semibold"
+                      required
+                    >
+                      <option value="">Selecione...</option>
+                      {spots.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-slate-300 font-bold mb-1">Spot de Chegada</label>
+                    <select
+                      value={dwSpotChegadaId}
+                      onChange={e => setDwSpotChegadaId(e.target.value)}
+                      className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-semibold"
+                    >
+                      <option value="">Ainda não sei</option>
+                      {spots.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Data e Hora</label>
+                  <input
+                    type="datetime-local"
+                    value={dwDataHora}
+                    onChange={e => setDwDataHora(e.target.value)}
+                    className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-semibold focus:outline-hidden focus:border-cyan-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Região / Localização</label>
+                  <input
+                    type="text"
+                    value={dwLocation}
+                    onChange={e => setDwLocation(e.target.value)}
+                    placeholder="Ex: Litoral Norte / RN"
+                    className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-semibold focus:outline-hidden focus:border-cyan-400"
+                    maxLength={200}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1">Descrição</label>
+                  <textarea
+                    value={dwDescription}
+                    onChange={e => setDwDescription(e.target.value)}
+                    placeholder="Percurso, ponto de encontro, apoio em terra..."
+                    className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white h-20 resize-none focus:outline-hidden focus:border-cyan-400"
+                    maxLength={5000}
+                    required
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingDownwind(false)}
+                    className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={dwSaving}
+                    className="flex-1 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-500/20 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                  >
+                    {dwSaving && <Loader2 size={14} className="animate-spin" />}
+                    <span>{dwSaving ? 'Criando...' : 'Criar Downwind'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
           {events.length === 0 && (
             <div className="p-6 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
               <p className="font-black text-slate-100">Nenhum evento marcado</p>
@@ -331,6 +519,22 @@ export const EventsAndAlertsView: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* FAB "Criar Downwind" — mesmo padrão de posicionamento do botão
+          Publicar em FeedView (publish-fab-bottom, globals.css), só visível
+          na subaba Eventos e para quem tem canOrganizeDownwind (admin/
+          moderator/instructor pelo role, ou rider com a liberação pontual). */}
+      {activeSubTab === 'eventos' && canOrganizeDownwind && !isCreatingDownwind && (
+        <div className="fixed publish-fab-bottom left-0 right-0 z-20 flex justify-center pointer-events-none">
+          <button
+            onClick={() => setIsCreatingDownwind(true)}
+            className="pointer-events-auto flex items-center gap-2 px-6 py-3 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-sm tracking-wide shadow-2xl shadow-cyan-500/30 active:scale-95 transition-all border border-cyan-300/40"
+          >
+            <Route size={18} className="stroke-[3]" />
+            <span>Criar Downwind</span>
+          </button>
         </div>
       )}
     </div>

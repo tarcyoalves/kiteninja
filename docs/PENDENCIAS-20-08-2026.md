@@ -13,12 +13,12 @@ não repetir investigação.
    antes de contar não-lidas/notificar.
 4. **Mapa e Radares iguais** → **corrigido**, commit `fe81857`. Os dois botões
    do menu chamavam `navigateTo('mapa')`. Removido "Radares" (decisão do dono).
-5. **Downwind devia nascer em Eventos** → **NÃO FEITO. Próximo passo.** Ver
-   seção dedicada abaixo — já tem toda a especificação, só falta executar.
+5. **Downwind devia nascer em Eventos** → **corrigido**. Ver seção abaixo.
 6. **Só radar GFS** → **corrigido**, commit `3dfeccc`. `lib/multiModel.ts`
    deletado (só existia pro blend), `lib/weather.ts` busca só `gfs_seamless`,
    card de comparação de 3 modelos removido de `SpotDetailModal.tsx`.
-7. **Criar DW no menu flutuante** → depende do item 5, não feito.
+7. **Criar DW no menu flutuante** → **corrigido**, junto com o item 5 (mesmo
+   trabalho, ver seção abaixo).
 8. **Editar perfil (peso/altura/kite)** → **corrigido**, commit `f2be153`.
    Já existia `app/api/profile/route.ts` self-serve (o agente corrigiu minha
    premissa errada de que precisava criar rota nova) — estendido com
@@ -35,45 +35,76 @@ não repetir investigação.
    bloqueava a resposta do GET/POST de mensagens. Trocado por `after()` do
    Next. Índice e paginação já estavam corretos, não era isso.
 
-## PRÓXIMO PASSO — item 5+7, Downwind vinculado a Evento
+## Item 5+7 — Downwind vinculado a Evento (feito)
 
-Decisão já tomada com o dono: **`downwinds` continua tabela própria (já em
-produção desde `5e224fe`), ganha uma FK pra `events`.** Não virar um "tipo de
-evento" dentro da tabela `events` — são tabelas separadas, vinculadas.
+**Premissa da sessão anterior estava errada, igual ao caso do perfil (item
+8):** não existia UI de criação de evento nenhuma, em lugar nenhum — nem em
+`EventsAndAlertsView.tsx` (os `Plus` de lá são "Reportar" ocorrência e "Quero
+Participar", não criação de evento), nem no admin (`app/admin/` não tem tela
+de eventos). O único jeito de criar um evento era `POST /api/events` direto,
+`requireAdmin()`, sem front-end nenhum. `lib/authz.ts` já tinha
+`canCreateOfficialEvent` e `canOrganizeDownwind` escritas e comentadas desde a
+fundação (`5e224fe`), mas nenhuma rota as usava — código morto até agora.
 
-Fluxo: organizador cria um evento normal (já existe UI de criação em
-`views/EventsAndAlertsView.tsx`, procure pelos `Plus` nas linhas ~108 e ~325).
-Dentro do evento, ativa "modo downwind", que cria a linha em `downwinds` com
-`event_id` apontando pro evento.
+### O que foi construído (tudo na mesma sessão, sem tocar em nada do plano
+maior de mapa ao vivo em `docs/PLANO-DOWNWIND-MAPA.md`, que continua "plano,
+nada implementado" — é a fase seguinte, não esta):
 
-### Schema
-```sql
-ALTER TABLE downwinds ADD COLUMN IF NOT EXISTS event_id UUID
-  REFERENCES events(id) ON DELETE SET NULL;
-```
-`SET NULL`, não `CASCADE`: apagar o evento não pode arrastar a trilha de
-segurança do downwind (mesmo raciocínio já usado em `criado_por`, ver
-`docs/PLANO-DOWNWIND-MAPA.md`). Adicionar check em `scripts/verify-sql.ts`.
+- **Schema:** `downwinds.event_id UUID REFERENCES events(id) ON DELETE SET
+  NULL` (sem índice — única consulta prevista por `event_id` é um lookup
+  avulso, não filtro recorrente). 4 checks novos em `scripts/verify-sql.ts`
+  (criação vinculada, join, e o `SET NULL` ao apagar o evento). **127 checks
+  SQL** (era 119 na sessão anterior, 123 depois do item 8).
+- **`lib/auth.ts`:** `requireDownwindOrganizer()` — busca
+  `pode_organizar_downwind` do banco e decide via `canOrganizeDownwind`
+  (lib/authz.ts). Essa função e `canCreateOfficialEvent` agora estão testadas
+  em `lib/authz.test.ts` (2 casos novos).
+- **`POST /api/events` reescrita:** não é mais `requireAdmin()` fixo pra
+  qualquer tipo. `type === 'Downwind'` exige `requireDownwindOrganizer()`
+  (admin/moderator/instructor pelo role, ou rider com a liberação pontual) e,
+  na mesma requisição, cria a linha em `events` **e** em `downwinds`
+  (`event_id` apontando de volta, `criado_por` = quem criou, participante
+  organizador inserido como `velejador` + `eh_organizador`). Os outros 3 tipos
+  de evento continuam exigindo `canCreateOfficialEvent(role)` (admin/mod/
+  instructor — antes só admin conseguia criar QUALQUER evento; agora
+  moderador e instrutor também podem, que é o que `canCreateOfficialEvent` já
+  dizia desde sempre sem ninguém checar).
+- **`GET /api/auth/me` + `AuthContext`:** novo campo `canOrganizeDownwind`,
+  computado no servidor com a mesma função de authz, exposto no client
+  seguindo exatamente o padrão já existente de `isAdmin` (role sai do
+  `profile`, vira booleano solto no contexto).
+- **`KiteDataContext.createDownwind()`:** POST pro endpoint acima, padrão
+  `{ok, error?}` igual `updateProfile` (não o fire-and-forget do
+  `addSafetyAlert` — aqui o erro de validação precisa chegar na tela).
+- **`views/EventsAndAlertsView.tsx`:** FAB "Criar Downwind" (mesma classe
+  `publish-fab-bottom` do botão Publicar de `FeedView.tsx`), visível só na
+  subaba Eventos e só para quem tem `canOrganizeDownwind`. Abre formulário
+  com spot de saída (obrigatório, select de `spots`), spot de chegada
+  (opcional), data/hora real (`datetime-local`), região, descrição. `nome`
+  do downwind = título do evento.
 
-### Ponto de entrada no menu flutuante
-O dono pediu "colocar a criação de DW no menu flutuante também" — o padrão de
-FAB já existe em `views/FeedView.tsx` (botão Publicar) e foi replicado em
-`views/MapView.tsx` (botão do Modo Navegação, ver commit `7c8802a` pra copiar
-o padrão exato de posicionamento sem cobrir o menu inferior). Local mais
-natural: dentro de `views/EventsAndAlertsView.tsx`, perto da criação de evento
-já existente — ativar "modo downwind" no momento de criar o evento, ou logo
-depois, num evento já criado.
+### Decisão de design que ficou implícita e vale registrar
+`events.event_date` é `TEXT` livre (nunca reparseado em lugar nenhum do app),
+mas `downwinds.previsto_para` é `TIMESTAMPTZ` de verdade — não dá pra derivar
+um do outro sem perder informação. A rota resolve isso pedindo uma data/hora
+real (`previstoPara`, ISO) só no fluxo de Downwind, e formata o `event_date`
+por extenso a partir dela (`toLocaleDateString('pt-BR', ...)`) só pra manter a
+listagem genérica de eventos funcionando sem mudar `KiteEvent`/`event_date`.
+Eventos não-Downwind continuam com `eventDate` texto livre, como sempre foram
+— essa mudança não afeta esse caminho.
 
-**ATENÇÃO — CONFLITO DE ARQUIVO:** `lib/schema.sql` e `scripts/verify-sql.ts`
-só devem ser tocados por UM agente/sessão por vez. Se o item 8 (perfil) ainda
-não tiver terminado/commitado quando você for mexer nisso, espere ou confira
-`git diff` desses dois arquivos antes de editar — dois agentes escrevendo ao
-mesmo tempo no mesmo arquivo corrompe o trabalho um do outro.
+### O que NÃO foi feito (fica pra próxima, é a fase de
+`docs/PLANO-DOWNWIND-MAPA.md`, não deste item)
+Mapa ao vivo, posições em tempo real, carro de apoio nomeado, convites,
+encerramento do downwind — nada disso tem UI ainda, só o schema e as funções
+puras de `lib/downwind.ts` (já existiam antes desta sessão). O que esta
+sessão fez foi só o nascimento do downwind a partir de um evento. Não achar
+que "criar downwind" = "downwind funcional de ponta a ponta".
 
 ### Verificação obrigatória de qualquer mudança de schema deste projeto
 ```bash
-node node_modules/tsx/dist/cli.mjs scripts/verify-sql.ts   # deve subir de 119
-node node_modules/vitest/vitest.mjs run                     # 450+ verdes
+node node_modules/tsx/dist/cli.mjs scripts/verify-sql.ts   # 127 verdes
+node node_modules/vitest/vitest.mjs run                     # 458 verdes
 node node_modules/typescript/bin/tsc --noEmit                # limpo
 node node_modules/next/dist/bin/next build                   # verde
 ```

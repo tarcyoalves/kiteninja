@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
+import { canOrganizeDownwind } from '@/lib/authz';
 
 export async function GET() {
   return handle(async () => {
@@ -11,7 +12,7 @@ export async function GET() {
       SELECT id, email, name, role, must_change_password, avatar_url, rider_id,
              nationality, country_flag, weight_kg, height_cm, rider_level, home_spot,
              disciplines, quiver_kites, quiver_boards, preferred_wind_unit,
-             highest_jump_m, bio,
+             highest_jump_m, bio, pode_organizar_downwind,
              emergency_contact_name, emergency_contact_phone
       FROM users WHERE id = ${session.id} LIMIT 1
     `;
@@ -36,6 +37,11 @@ export async function GET() {
         name: String(row.name),
         role: row.role,
         mustChangePassword: Boolean(row.must_change_password),
+        canOrganizeDownwind: canOrganizeDownwind({
+          id: String(row.id),
+          role: row.role as 'admin' | 'moderator' | 'instructor' | 'rider',
+          pode_organizar_downwind: Boolean(row.pode_organizar_downwind),
+        }),
         avatarUrl: row.avatar_url ?? undefined,
         riderId: String(row.rider_id),
         nationality: String(row.nationality),

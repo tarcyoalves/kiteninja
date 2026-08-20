@@ -7,6 +7,8 @@ interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** admin/moderator/instructor pelo role, ou rider com a liberação pontual. */
+  canOrganizeDownwind: boolean;
   /** null enquanto a sessão está sendo verificada no primeiro carregamento. */
   isLoading: boolean;
   mustChangePassword: boolean;
@@ -35,6 +37,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canOrganizeDownwind, setCanOrganizeDownwind] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
@@ -45,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!res.ok) {
         setUser(null);
         setIsAdmin(false);
+        setCanOrganizeDownwind(false);
         return;
       }
 
@@ -52,13 +56,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!data.user) {
         setUser(null);
         setIsAdmin(false);
+        setCanOrganizeDownwind(false);
         setMustChangePassword(false);
         return;
       }
 
-      const { role, mustChangePassword: mustChange, ...profile } = data.user;
+      const { role, mustChangePassword: mustChange, canOrganizeDownwind: canOrganize, ...profile } = data.user;
       setUser(profile as UserProfile);
       setIsAdmin(role === 'admin');
+      setCanOrganizeDownwind(Boolean(canOrganize));
       setMustChangePassword(Boolean(mustChange));
     } catch {
       // Offline: mantemos o estado anterior em vez de deslogar o velejador que
@@ -163,6 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         isAuthenticated: Boolean(user),
         isAdmin,
+        canOrganizeDownwind,
         isLoading,
         mustChangePassword,
         login,

@@ -782,6 +782,39 @@ async function main() {
     `INSERT INTO downwinds (nome, status) VALUES ('X', 'pendente')`
   );
 
+  const evParaDw = await db.query<{ id: string }>(
+    `INSERT INTO events (title, event_date, location, type, description, organizer)
+     VALUES ('Downwind Touros -> Ponta do Mel', '28/08', 'RN', 'Downwind', 'D', 'Org') RETURNING id`
+  );
+  const evParaDwId = evParaDw.rows[0].id;
+  const dwComEvento = await expectOk(
+    db,
+    'downwind nasce vinculado ao evento que o originou (event_id)',
+    `INSERT INTO downwinds (nome, event_id, criado_por) VALUES ('Vinculado', $1, $2) RETURNING id, event_id`,
+    [evParaDwId, adminId]
+  );
+  check(
+    'downwind carrega o event_id do evento que o criou',
+    String(dwComEvento[0].event_id) === evParaDwId
+  );
+
+  await expectOk(
+    db,
+    'query "este evento tem downwind?" via event_id',
+    `SELECT id FROM downwinds WHERE event_id = $1`,
+    [evParaDwId]
+  );
+
+  await db.query(`DELETE FROM events WHERE id = $1`, [evParaDwId]);
+  const dwOrfaoDeEvento = await db.query<{ event_id: string | null }>(
+    `SELECT event_id FROM downwinds WHERE id = $1`,
+    [String(dwComEvento[0].id)]
+  );
+  check(
+    'apagar o evento não apaga o downwind, só zera event_id (SET NULL, não CASCADE)',
+    dwOrfaoDeEvento.rows.length === 1 && dwOrfaoDeEvento.rows[0].event_id === null
+  );
+
   await expectOk(
     db,
     'downwind_participantes: organizador que também veleja entra como velejador + eh_organizador (papel e eh_organizador são dimensões separadas — ver comentário no schema)',
