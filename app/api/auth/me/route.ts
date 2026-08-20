@@ -9,8 +9,9 @@ export async function GET() {
 
     const rows = await sql`
       SELECT id, email, name, role, must_change_password, avatar_url, rider_id,
-             nationality, country_flag, weight_kg, rider_level, home_spot,
-             disciplines, highest_jump_m, bio,
+             nationality, country_flag, weight_kg, height_cm, rider_level, home_spot,
+             disciplines, quiver_kites, quiver_boards, preferred_wind_unit,
+             highest_jump_m, bio,
              emergency_contact_name, emergency_contact_phone
       FROM users WHERE id = ${session.id} LIMIT 1
     `;
@@ -40,9 +41,13 @@ export async function GET() {
         nationality: String(row.nationality),
         countryFlag: String(row.country_flag),
         weightKg: Number(row.weight_kg),
+        heightCm: row.height_cm ? Number(row.height_cm) : undefined,
         riderLevel: row.rider_level,
         homeSpot: row.home_spot ?? '',
         disciplines: row.disciplines ?? [],
+        quiverKites: (row.quiver_kites as number[] | null)?.map(Number) ?? [],
+        quiverBoards: (row.quiver_boards as string[] | null) ?? [],
+        preferredWindUnit: row.preferred_wind_unit ? String(row.preferred_wind_unit) : 'knots',
         highestJumpM: row.highest_jump_m ? Number(row.highest_jump_m) : undefined,
         bio: row.bio ?? undefined,
         emergencyContactName: row.emergency_contact_name ? String(row.emergency_contact_name) : undefined,

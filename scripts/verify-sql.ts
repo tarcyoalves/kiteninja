@@ -575,6 +575,35 @@ async function main() {
     [riderA]
   );
 
+  // Réplica do PATCH auto-atendido em app/api/profile/route.ts: o próprio
+  // velejador edita peso e altura, com COALESCE preservando o que não foi enviado.
+  const perfilAtualizado = await expectOk(
+    db,
+    'atualização de altura e peso no perfil (auto-atendida)',
+    `UPDATE users SET
+       height_cm = COALESCE($2, height_cm),
+       weight_kg = COALESCE($3, weight_kg)
+     WHERE id = $1 RETURNING height_cm, weight_kg`,
+    [riderA, 178.5, 82]
+  );
+  check(
+    'height_cm gravado corretamente',
+    Number(perfilAtualizado[0]?.height_cm) === 178.5
+  );
+  const perfilPreservaAltura = await expectOk(
+    db,
+    'PATCH de perfil sem altura preserva o valor anterior (COALESCE)',
+    `UPDATE users SET
+       height_cm = COALESCE($2, height_cm),
+       weight_kg = COALESCE($3, weight_kg)
+     WHERE id = $1 RETURNING height_cm, weight_kg`,
+    [riderA, null, 85]
+  );
+  check(
+    'height_cm não enviado permanece intacto',
+    Number(perfilPreservaAltura[0]?.height_cm) === 178.5
+  );
+
   console.log('\nSeleção de candidatos do SOS (bug real: query antiga estourava, lat/lng não existiam):');
 
   const riderPos = (

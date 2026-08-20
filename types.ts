@@ -122,9 +122,13 @@ export interface UserProfile {
   nationality: string;
   countryFlag: string;
   weightKg: number;
+  heightCm?: number;
   riderLevel: RiderLevel;
   homeSpot: string;
   disciplines: Discipline[];
+  quiverKites?: number[];
+  quiverBoards?: string[];
+  preferredWindUnit?: string;
   totalSessions: number;
   totalHours: number;
   totalKm: number;

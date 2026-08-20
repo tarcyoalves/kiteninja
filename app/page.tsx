@@ -18,6 +18,7 @@ import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
 import { SessionsView } from "../views/SessionsView";
+import { PerfilView } from "../views/PerfilView";
 import { EventsAndAlertsView } from "../views/EventsAndAlertsView";
 import { MarketplaceView } from "../views/MarketplaceView";
 import { ChatView } from "../views/ChatView";
@@ -97,6 +98,7 @@ const MainContent: React.FC = () => {
         )}
         {activeTab === "destaques" && <FeedView />}
         {activeTab === "sessoes" && <SessionsView />}
+        {activeTab === "perfil" && <PerfilView />}
         {activeTab === "chat" && <ChatView />}
         {activeTab === "anuncios" && <MarketplaceView />}
         {(activeTab === "alertas" || activeTab === "mais") && (

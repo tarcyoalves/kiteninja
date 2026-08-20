@@ -1,68 +1,74 @@
-import { describe, expect, it } from 'vitest';
-import bcrypt from 'bcryptjs';
-
 /**
- * lib/validation.ts importa HttpError de lib/auth.ts, que por sua vez importa
- * lib/db.ts — e lib/db.ts lança se DATABASE_URL não estiver definida. Testar
- * o módulo direto quebraria em qualquer ambiente sem banco configurado
- * (inclusive CI sem segredo), então replicamos aqui a mesma regra usada por
- * lib/validation.ts:password(), no mesmo padrão que lib/auth.test.ts usa
- * para as primitivas de lib/auth.ts.
+ * Testes das funções puras de lib/validation.ts usadas pelo perfil
+ * auto-atendido (app/api/profile/route.ts): clampQuiverKites e
+ * clampQuiverBoards descartam itens fora da faixa em vez de rejeitar a
+ * requisição inteira — o mesmo comportamento tolerante que os demais campos
+ * de array do perfil (ex: disciplines) já tinham antes.
  */
-const MIN_LEN = 10;
-const MAX_LEN = 200;
+import { describe, expect, it } from 'vitest';
+import { clampQuiverBoards, clampQuiverKites } from './validation';
 
-function password(raw: unknown): string {
-  if (typeof raw !== 'string' || raw.length < MIN_LEN) {
-    throw new Error('A senha precisa ter no mínimo 10 caracteres.');
-  }
-  if (raw.length > MAX_LEN) throw new Error('Senha muito longa.');
-  return raw;
-}
-
-describe('validação de senha nova (lib/validation.ts:password)', () => {
-  it('rejeita senha menor que o mínimo', () => {
-    expect(() => password('curta123')).toThrow(/mínimo/);
+describe('clampQuiverKites', () => {
+  it('mantém tamanhos dentro da faixa real de kites (3 a 21 m²)', () => {
+    expect(clampQuiverKites([9, 12, 7])).toEqual([9, 12, 7]);
   });
 
-  it('aceita senha exatamente no limite mínimo', () => {
-    const nove = 'a'.repeat(MIN_LEN - 1);
-    const dez = 'a'.repeat(MIN_LEN);
-    expect(() => password(nove)).toThrow();
-    expect(password(dez)).toHaveLength(MIN_LEN);
+  it('descarta itens fora da faixa em vez de rejeitar a lista inteira', () => {
+    expect(clampQuiverKites([2, 9, 25, 12])).toEqual([9, 12]);
   });
 
-  it('rejeita senha acima do máximo permitido', () => {
-    expect(() => password('a'.repeat(MAX_LEN + 1))).toThrow(/longa/);
+  it('aceita os limites inclusivos', () => {
+    expect(clampQuiverKites([3, 21])).toEqual([3, 21]);
   });
 
-  it('rejeita valor que não é string', () => {
-    expect(() => password(12345678901)).toThrow();
-    expect(() => password(undefined)).toThrow();
-    expect(() => password(null)).toThrow();
+  it('descarta valores não numéricos e strings vazias', () => {
+    expect(clampQuiverKites([9, 'foo', null, undefined, 'NaN'])).toEqual([9]);
   });
 
-  // A regra de 10+ caracteres cobre com folga o mínimo de 8 pedido para a
-  // troca obrigatória de senha: exigir mais nunca viola exigir "pelo menos 8".
-  it('o mínimo do projeto (10) satisfaz a exigência de 8+ caracteres', () => {
-    expect(MIN_LEN).toBeGreaterThanOrEqual(8);
+  it('limita a 10 itens por padrão (ninguém tem 50 pipas)', () => {
+    const muitas = Array.from({ length: 15 }, (_, i) => 5 + (i % 10));
+    expect(clampQuiverKites(muitas)).toHaveLength(10);
+  });
+
+  it('não é uma lista: devolve array vazio em vez de lançar', () => {
+    expect(clampQuiverKites('9')).toEqual([]);
+    expect(clampQuiverKites(null)).toEqual([]);
+    expect(clampQuiverKites(undefined)).toEqual([]);
+  });
+
+  it('respeita faixa e limite customizados', () => {
+    expect(clampQuiverKites([1, 2, 3, 4], { min: 2, max: 3, maxItems: 1 })).toEqual([2]);
   });
 });
 
-/**
- * app/api/auth/change-password/route.ts exige que a nova senha seja
- * diferente da atual comparando com bcrypt.compare contra o hash salvo — não
- * por igualdade de texto puro, já que o servidor nunca guarda a senha atual
- * em claro. Testamos a mesma primitiva usada lá, no padrão de lib/auth.test.ts.
- */
-describe('regra "nova senha precisa ser diferente da atual"', () => {
-  it('bcrypt reconhece a senha repetida (troca deve ser barrada)', async () => {
-    const hash = await bcrypt.hash('senha-temporaria-1234', 12);
-    await expect(bcrypt.compare('senha-temporaria-1234', hash)).resolves.toBe(true);
-  }, 15000);
+describe('clampQuiverBoards', () => {
+  it('mantém strings não vazias, aparadas', () => {
+    expect(clampQuiverBoards(['  North Whip 135cm  ', 'Duotone Team'])).toEqual([
+      'North Whip 135cm',
+      'Duotone Team',
+    ]);
+  });
 
-  it('bcrypt libera quando a nova senha é de fato diferente', async () => {
-    const hash = await bcrypt.hash('senha-temporaria-1234', 12);
-    await expect(bcrypt.compare('outra-senha-bem-diferente', hash)).resolves.toBe(false);
-  }, 15000);
+  it('descarta itens vazios ou só espaço', () => {
+    expect(clampQuiverBoards(['Prancha A', '', '   '])).toEqual(['Prancha A']);
+  });
+
+  it('corta itens além do tamanho máximo de caracteres', () => {
+    const longo = 'X'.repeat(100);
+    expect(clampQuiverBoards([longo])[0]).toHaveLength(60);
+  });
+
+  it('limita a 10 itens por padrão', () => {
+    const muitas = Array.from({ length: 15 }, (_, i) => `Prancha ${i}`);
+    expect(clampQuiverBoards(muitas)).toHaveLength(10);
+  });
+
+  it('não é uma lista: devolve array vazio em vez de lançar', () => {
+    expect(clampQuiverBoards('Prancha A')).toEqual([]);
+    expect(clampQuiverBoards(null)).toEqual([]);
+  });
+
+  it('converte itens não-string para texto antes de validar', () => {
+    expect(clampQuiverBoards([135, true])).toEqual(['135', 'true']);
+  });
 });

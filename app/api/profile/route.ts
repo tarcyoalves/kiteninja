@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
-import { num, oneOf, str } from '@/lib/validation';
+import { clampQuiverBoards, clampQuiverKites, num, oneOf, str } from '@/lib/validation';
 import type { Discipline, RiderLevel } from '@/types';
 
 const LEVELS = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'] as const;
@@ -12,6 +12,9 @@ const DISCIPLINES = [
   'Wingfoil',
   'Big Air',
 ] as const;
+// Precisa bater com o CHECK de preferred_wind_unit em lib/schema.sql — um
+// valor fora dessa lista quebraria o UPDATE com erro 500 em vez de 400.
+const WIND_UNITS = ['knots', 'kmh', 'mph', 'ms'] as const;
 
 /** Atualiza o próprio perfil. Não permite trocar email, role nem senha. */
 export async function PATCH(request: Request) {
@@ -21,6 +24,7 @@ export async function PATCH(request: Request) {
 
     const name = str(body, 'name', { min: 2, max: 120, optional: true });
     const weightKg = num(body, 'weightKg', { min: 30, max: 200, optional: true });
+    const heightCm = num(body, 'heightCm', { min: 100, max: 230, optional: true });
     const homeSpot = str(body, 'homeSpot', { optional: true, max: 120 });
     const bio = str(body, 'bio', { optional: true, max: 500 });
     const highestJumpM = num(body, 'highestJumpM', { min: 0, max: 40, optional: true });
@@ -51,22 +55,23 @@ export async function PATCH(request: Request) {
         ) as Discipline[])
       : null;
 
-    const preferredWindUnit = str(body, 'preferredWindUnit', { optional: true, max: 10 });
-    const rawQuiverKites = (body as Record<string, unknown>)?.quiverKites;
-    const quiverKites = Array.isArray(rawQuiverKites)
-      ? rawQuiverKites.map((k) => Number(k)).filter((k) => !isNaN(k) && k > 0 && k < 30)
+    const hasWindUnit = (body as Record<string, unknown>)?.preferredWindUnit !== undefined;
+    const preferredWindUnit = hasWindUnit
+      ? oneOf(body, 'preferredWindUnit', WIND_UNITS)
       : null;
 
+    const rawQuiverKites = (body as Record<string, unknown>)?.quiverKites;
+    const quiverKites = Array.isArray(rawQuiverKites) ? clampQuiverKites(rawQuiverKites) : null;
+
     const rawQuiverBoards = (body as Record<string, unknown>)?.quiverBoards;
-    const quiverBoards = Array.isArray(rawQuiverBoards)
-      ? rawQuiverBoards.map((b) => String(b).trim()).filter((b) => b.length > 0)
-      : null;
+    const quiverBoards = Array.isArray(rawQuiverBoards) ? clampQuiverBoards(rawQuiverBoards) : null;
 
     // COALESCE mantém o valor atual quando o campo não foi enviado.
     await sql`
       UPDATE users SET
         name                = COALESCE(${name || null}, name),
         weight_kg           = COALESCE(${weightKg}, weight_kg),
+        height_cm           = COALESCE(${heightCm}, height_cm),
         home_spot           = COALESCE(${homeSpot || null}, home_spot),
         bio                 = COALESCE(${bio || null}, bio),
         highest_jump_m      = COALESCE(${highestJumpM}, highest_jump_m),

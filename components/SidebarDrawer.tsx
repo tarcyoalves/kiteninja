@@ -23,6 +23,7 @@ import {
   Loader2,
   Phone,
   Siren,
+  UserCog,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -329,6 +330,16 @@ export const SidebarDrawer: React.FC = () => {
                   <span className="font-black text-xs text-amber-400 font-sans">{user.weightKg}kg</span>
                 </div>
               </div>
+
+              {/* Editar Perfil: leva à aba 'perfil', onde o velejador ajusta
+                  peso, altura, nível, quiver e demais dados usados pelo app. */}
+              <button
+                onClick={() => navigateTo('perfil')}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#0F172A] hover:bg-slate-900 border border-slate-700 text-xs font-bold text-cyan-300 transition-colors"
+              >
+                <UserCog size={13} />
+                <span>Editar Perfil</span>
+              </button>
             </div>
           ) : (
             <div className="py-2 text-center">

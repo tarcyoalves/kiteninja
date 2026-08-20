@@ -41,6 +41,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS login_count INT NOT NULL DEFAULT 0;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_user_agent TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_ip TEXT;
+-- Altura do velejador, ao lado de weight_kg no perfil auto-atendido.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS height_cm NUMERIC(5,1);
 
 CREATE INDEX IF NOT EXISTS idx_users_email ON users (LOWER(email));
 CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);

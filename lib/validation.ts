@@ -1,4 +1,7 @@
-import { HttpError } from './auth';
+// Direto de './errors' (não './auth'): './auth' importa './db', que exige
+// DATABASE_URL no carregamento do módulo — isso quebrava qualquer teste
+// unitário das funções puras deste arquivo mesmo sem tocar o banco.
+import { HttpError } from './errors';
 
 /** Extrai um campo string obrigatório, com limite de tamanho. */
 export function str(
@@ -81,4 +84,37 @@ export function password(body: unknown, field = 'password'): string {
   }
   if (raw.length > 200) throw new HttpError(400, 'Senha muito longa.');
   return raw;
+}
+
+/**
+ * Filtra o array bruto de tamanhos de pipa (m²) do quiver do perfil: só
+ * números dentro da faixa real de kites sobrevivem, e o array é limitado para
+ * não crescer sem fim (ninguém tem 50 pipas). Itens inválidos são descartados
+ * silenciosamente em vez de rejeitar a requisição inteira — o mesmo
+ * comportamento tolerante que os demais campos de array do perfil (ex:
+ * disciplines) já usam em app/api/profile/route.ts.
+ */
+export function clampQuiverKites(
+  raw: unknown,
+  opts: { min?: number; max?: number; maxItems?: number } = {}
+): number[] {
+  const { min = 3, max = 21, maxItems = 10 } = opts;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((k) => Number(k))
+    .filter((k) => Number.isFinite(k) && k >= min && k <= max)
+    .slice(0, maxItems);
+}
+
+/** Mesma lógica de clampQuiverKites, para o quiver de pranchas (texto livre). */
+export function clampQuiverBoards(
+  raw: unknown,
+  opts: { maxLen?: number; maxItems?: number } = {}
+): string[] {
+  const { maxLen = 60, maxItems = 10 } = opts;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((b) => String(b).trim().slice(0, maxLen))
+    .filter((b) => b.length > 0)
+    .slice(0, maxItems);
 }
