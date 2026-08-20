@@ -29,6 +29,37 @@
    exatamente esta folga, e um número solto em cada um deles já divergiu antes. */
 :root {
   --bottom-nav-height: 64px;
+
+  /*
+   * Distância real do fundo da tela até o TOPO da pílula: --bottom-nav-height
+   * (6px do `bottom-1.5` do wrapper + 58px da pílula) mais a safe-area que o
+   * wrapper aplica como `padding-bottom` via `.safe-area-pb`.
+   *
+   * ISTO ERA CALCULADO EM JAVASCRIPT (components/BottomNav.tsx), medindo
+   * `window.innerHeight - wrapper.getBoundingClientRect().top` a cada
+   * ResizeObserver/resize/orientationchange/scroll da visualViewport, e
+   * publicando em `--nav-h` via `style.setProperty`. Isso causou a "tarja
+   * escura no rodapé" repetidas vezes: bastava UM evento de mudança de
+   * viewport não coberto (a barra do Safari escondendo, um overlay de tela
+   * cheia entrando e saindo, o próprio BottomNav desmontando quando o teclado
+   * abre e o ResizeObserver junto com ele) para o valor publicado ficar
+   * desatualizado, e a folga reservada em `.app-scroll`/`.bottom-nav-gap`
+   * sobrar como faixa vazia.
+   *
+   * A pílula tem altura FIXA (`h-[58px]`) e a posição do wrapper também
+   * (`bottom-1.5`) — nada aqui depende de conteúdo, de fonte do usuário nem de
+   * nada que só se descobre medindo o DOM. `env(safe-area-inset-bottom)` é
+   * recalculado pelo próprio navegador a cada repaint, inclusive em rotação —
+   * de graça, sem listener nenhum. Por isso a fórmula é 100% CSS, resolvida
+   * pelo motor de layout a cada frame: não existe "evento que faltou ouvir"
+   * porque não existe JS no caminho para ficar desatualizado.
+   *
+   * NÃO reintroduza uma versão em JavaScript disto. Se a pílula um dia mudar
+   * de altura por algum motivo dinâmico de verdade, resolva com uma segunda
+   * variável CSS calculada a partir de tokens de design (como
+   * --bottom-nav-height já é), nunca voltando a medir o DOM em runtime.
+   */
+  --nav-h: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0.5rem));
 }
 
 .safe-area-pb {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React from 'react';
 import {
   Compass,
   Flame,
@@ -25,83 +25,20 @@ export const BottomNav: React.FC = () => {
     setIsCalculatorOpen,
   } = useKiteData();
   const { user } = useAuth();
-  // No wrapper (não no <nav>): o wrapper já inclui o padding da safe-area
-  // (safe-area-pb) por baixo da pílula, então medir dele dá a distância real
-  // até o topo da pílula em qualquer iPhone, com ou sem notch.
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
   // Com interactive-widget=resizes-content o teclado encolhe a viewport em vez
   // de sobrepô-la, então a diferença de altura fica ~0 e não serve de sinal.
   // O hook combina foco em campo editável (toque) + diferença de viewport.
   const isKeyboardOpen = useKeyboardVisible();
 
-  /*
-   * Publica em --nav-h a distância real do fundo da tela até o topo da
-   * pílula — não a altura da pílula em si mais um número solto.
-   *
-   * Era `nav.height + 20`, que ignorava a safe-area (o "queixo" do iPhone) e o
-   * `bottom-1.5` do wrapper. Num iPhone com notch (safe-area ~34px) isso
-   * subestimava a distância real em ~20px: o SpotDetailModal (que usa
-   * `.bottom-nav-gap { bottom: var(--nav-h) }` para parar bem acima do menu)
-   * na verdade parava 20px ABAIXO do topo da pílula — cobrindo o terço
-   * superior dela. Resultado: a borda reta do modal cortava o menu
-   * flutuante ao meio, como uma linha por cima dos ícones.
-   */
-  useEffect(() => {
-    const el = wrapperRef.current;
-    if (!el) return;
-
-    const publicar = () => {
-      const distanciaAoTopo = window.innerHeight - el.getBoundingClientRect().top;
-      document.documentElement.style.setProperty('--nav-h', `${Math.round(distanciaAoTopo)}px`);
-    };
-
-    publicar();
-
-    /*
-     * ORIGEM DA "TARJA ESCURA NO RODAPÉ", que já voltou várias vezes: o valor
-     * acima depende de `window.innerHeight`, mas o ResizeObserver só dispara
-     * quando o TAMANHO do wrapper muda. Quando é a VIEWPORT que muda e o
-     * wrapper continua idêntico, nada recalcula, e --nav-h congela com um
-     * valor de uma tela que não existe mais. Como `.app-scroll` reserva
-     * `padding-bottom: calc(var(--nav-h) + ...)`, a folga passa a ser maior
-     * que o menu real e sobra a faixa vazia embaixo.
-     *
-     * Isso acontece toda vez que a altura útil muda sem mexer no menu: a barra
-     * do Safari aparecendo/sumindo ao rolar, rotação de tela, e um overlay de
-     * tela cheia (`fixed inset-0`, como o Modo Navegação) entrando e saindo.
-     *
-     * `visualViewport` é ouvido junto porque no iOS é ele — e não `window` —
-     * quem reflete a área realmente visível quando a barra do navegador ou o
-     * teclado entram em cena.
-     */
-    // `publicar` lê `getBoundingClientRect`, que força reflow, e o `scroll` da
-    // visualViewport dispara em rajada no iOS. Coalescemos num frame para não
-    // martelar o layout durante a rolagem.
-    let frame = 0;
-    const publicarNoProximoFrame = () => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        publicar();
-      });
-    };
-
-    const observer = new ResizeObserver(publicarNoProximoFrame);
-    observer.observe(el);
-    window.addEventListener('resize', publicarNoProximoFrame);
-    window.addEventListener('orientationchange', publicarNoProximoFrame);
-    window.visualViewport?.addEventListener('resize', publicarNoProximoFrame);
-    window.visualViewport?.addEventListener('scroll', publicarNoProximoFrame);
-
-    return () => {
-      if (frame) cancelAnimationFrame(frame);
-      observer.disconnect();
-      window.removeEventListener('resize', publicarNoProximoFrame);
-      window.removeEventListener('orientationchange', publicarNoProximoFrame);
-      window.visualViewport?.removeEventListener('resize', publicarNoProximoFrame);
-      window.visualViewport?.removeEventListener('scroll', publicarNoProximoFrame);
-    };
-  }, []);
+  // `--nav-h` (a distância do fundo da tela até o topo desta pílula) é uma
+  // constante CSS pura em app/globals.css — não é medida em runtime aqui. Uma
+  // versão anterior media o DOM em JS a cada resize/orientationchange/scroll
+  // da visualViewport e publicava via `style.setProperty`, e isso foi a causa
+  // raiz da "tarja escura no rodapé" reaparecer repetidas vezes: bastava um
+  // evento de mudança de viewport não coberto (inclusive este componente
+  // desmontando quando o teclado abre, o que derrubava o listener) para o
+  // valor ficar desatualizado. Ver o comentário em app/globals.css junto de
+  // `--nav-h` antes de tentar reintroduzir qualquer medição em JS.
 
   const handleTabClick = (tab: ActiveTab) => {
     if (selectedSpot) {
@@ -120,7 +57,7 @@ export const BottomNav: React.FC = () => {
 
   return (
     /* Barra Flutuante estilo Instagram rebaixada e elegante */
-    <div ref={wrapperRef} className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
+    <div className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
       <nav
         className={`pointer-events-auto w-full max-w-[390px] h-[58px] px-2 rounded-full flex items-center justify-between transition-all duration-300 shadow-2xl shadow-black/70 border backdrop-blur-2xl ${
           beachMode
