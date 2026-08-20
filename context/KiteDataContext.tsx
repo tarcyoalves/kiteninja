@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
+import { usePositionBeacon } from '../lib/usePositionBeacon';
 
 /**
  * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
@@ -636,6 +637,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const interval = setInterval(fetchActiveSos, 12000);
     return () => clearInterval(interval);
   }, [isAuthenticated, fetchActiveSos]);
+
+  // Reporta a posição em qualquer tela, não só no Mapa: é o que permite um SOS
+  // de outro velejador encontrar quem está por perto para socorrer.
+  usePositionBeacon(isAuthenticated);
 
   const refreshWindData = () => {
     setIsRefreshing(true);
