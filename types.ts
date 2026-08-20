@@ -4,19 +4,6 @@ export type WindSafety = 'Side-Onshore' | 'Side-Shore' | 'Onshore' | 'Side-Offsh
 export type RiderLevel = 'Iniciante' | 'Intermediário' | 'Avançado' | 'Profissional';
 export type Discipline = 'Kitesurf Twintip' | 'Kitesurf Strapless Wave' | 'Hydrofoil' | 'Wingfoil' | 'Big Air';
 
-export interface MultiModelForecast {
-  consensusKnots: number;
-  spreadKnots: number;
-  confidencePercent: number; // 0 a 100%
-  confidenceLevel: 'Alta' | 'Média' | 'Baixa';
-  confidenceText: string;
-  models: {
-    gfsKnots: number;
-    ecmwfKnots: number;
-    iconKnots: number;
-  };
-}
-
 export interface SailingScore {
   totalScore: number; // 0 a 100
   classification: 'Épico' | 'Muito Bom' | 'Bom' | 'Regular' | 'Ruim';
@@ -112,8 +99,6 @@ export interface Spot {
   windWaveHeightM?: number | null;
   windWavePeriodS?: number | null;
   windWaveDirDeg?: number | null;
-  /** Comparativo multimodelo em tempo real */
-  multiModel?: MultiModelForecast;
   /** Pontuação e diagnóstico náutico da sessão */
   sailingScore?: SailingScore;
   waterCondition: 'Flat / Lagoa' | 'Chop Médio' | 'Ondas / Swell' | 'Água Rasa';

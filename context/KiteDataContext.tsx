@@ -366,7 +366,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 wavePeriodS: old.wavePeriodS,
                 swellHeightM: old.swellHeightM,
                 windWaveHeightM: old.windWaveHeightM,
-                multiModel: old.multiModel,
                 sailingScore: old.sailingScore,
                 daysForecast: old.daysForecast,
                 isLiveObservation: old.isLiveObservation,

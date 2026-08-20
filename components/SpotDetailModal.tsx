@@ -566,9 +566,8 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
             </div>
           </div>
 
-          {/* NOVO: Bloco de Inteligência Náutica (Kite Score 0-100 & Consenso Multimodelo) */}
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {/* Card 1: Kite Score (0 a 100) */}
+          {/* Bloco de Inteligência Náutica: Kite Score (0-100) */}
+          <div className="mt-3">
             {spot.sailingScore && (
               <div className="p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80 space-y-2">
                 <div className="flex items-center justify-between">
@@ -624,60 +623,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
                   <div className="bg-slate-900/60 p-1 rounded-lg">
                     <span className="text-slate-400 block text-[9px]">Maré/Mar</span>
                     <span className="font-bold text-white">{spot.sailingScore.breakdown.tideWaterScore}/20</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Card 2: Consenso Multimodelo (ECMWF + GFS + ICON) */}
-            {spot.multiModel && (
-              <div className="p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-black text-white">Previsão Multimodelo</span>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                        spot.multiModel.confidenceLevel === 'Alta'
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                          : spot.multiModel.confidenceLevel === 'Média'
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                          : 'bg-red-500/20 text-red-300 border border-red-500/30'
-                      }`}
-                    >
-                      {spot.multiModel.confidenceLevel} ({spot.multiModel.confidencePercent}%)
-                    </span>
-                  </div>
-                  <span className="text-xs font-mono font-bold text-cyan-300">
-                    Consenso {spot.multiModel.consensusKnots} kts
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-slate-300 leading-snug">
-                  {spot.multiModel.confidenceText}
-                </p>
-
-                {/* Colunas dos 3 Modelos */}
-                <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-800/80 text-center">
-                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-cyan-500/20">
-                    <span className="text-[10px] font-black text-cyan-300 block">ECMWF</span>
-                    <span className="text-xs font-extrabold text-white">
-                      {spot.multiModel.models.ecmwfKnots} kts
-                    </span>
-                    <span className="text-[9px] text-slate-400 block">Europeu</span>
-                  </div>
-                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-blue-500/20">
-                    <span className="text-[10px] font-black text-blue-300 block">GFS</span>
-                    <span className="text-xs font-extrabold text-white">
-                      {spot.multiModel.models.gfsKnots} kts
-                    </span>
-                    <span className="text-[9px] text-slate-400 block">NOAA / EUA</span>
-                  </div>
-                  <div className="p-1.5 rounded-xl bg-slate-900/90 border border-amber-500/20">
-                    <span className="text-[10px] font-black text-amber-300 block">ICON</span>
-                    <span className="text-xs font-extrabold text-white">
-                      {spot.multiModel.models.iconKnots} kts
-                    </span>
-                    <span className="text-[9px] text-slate-400 block">Alemão DWD</span>
                   </div>
                 </div>
               </div>

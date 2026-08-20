@@ -14,18 +14,18 @@ import type {
   DayForecast,
   TideStatus,
   WindForecastHour,
-  MultiModelForecast,
   SailingScore,
   WindSafety,
 } from '@/types';
-import { calcularConsensoMultimodelo } from './multiModel';
 import { calcularSailingScore } from './sailingScore';
 import { calibrarNivelMareHarmonica, encontrarEstacaoMaregraficaMaisProxima } from './tideHarmonics';
 
 /**
- * Modelos meteorológicos consultados em paralelo para consenso de alta resolução.
+ * Radar de vento único: GFS (NOAA Seamless - Estados Unidos). Excelente
+ * detecção de gradientes térmicos e vento sinótico, e o mais rápido/estável
+ * dos modelos globais gratuitos da Open-Meteo — por isso é a única fonte.
  */
-const FORECAST_MODELS = 'gfs_seamless,ecmwf_ifs025,icon_seamless';
+const FORECAST_MODELS = 'gfs_seamless';
 
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const MARINE_URL = 'https://marine-api.open-meteo.com/v1/marine';
@@ -47,25 +47,15 @@ interface HourlyBlock {
   wind_speed_10m?: number[];
   wind_direction_10m?: number[];
   wind_gusts_10m?: number[];
-  // Campos retornados na consulta multimodelo com sufixo
+  // Campos retornados com sufixo quando `models=gfs_seamless` é passado explicitamente
   temperature_2m_gfs_seamless?: number[];
-  temperature_2m_ecmwf_ifs025?: number[];
   surface_pressure_gfs_seamless?: number[];
-  surface_pressure_ecmwf_ifs025?: number[];
   pressure_msl_gfs_seamless?: number[];
-  pressure_msl_ecmwf_ifs025?: number[];
-  pressure_msl_icon_seamless?: number[];
   weather_code_gfs_seamless?: number[];
-  weather_code_ecmwf_ifs025?: number[];
   is_day_gfs_seamless?: number[];
-  is_day_ecmwf_ifs025?: number[];
   wind_speed_10m_gfs_seamless?: number[];
-  wind_speed_10m_ecmwf_ifs025?: number[];
-  wind_speed_10m_icon_seamless?: number[];
   wind_direction_10m_gfs_seamless?: number[];
-  wind_direction_10m_ecmwf_ifs025?: number[];
   wind_gusts_10m_gfs_seamless?: number[];
-  wind_gusts_10m_ecmwf_ifs025?: number[];
   [key: string]: unknown;
 }
 
@@ -110,7 +100,6 @@ export interface SpotWeather {
   windWaveHeightM?: number | null;
   windWavePeriodS?: number | null;
   windWaveDirDeg?: number | null;
-  multiModel?: MultiModelForecast;
   sailingScore?: SailingScore;
   lastUpdated: string;
   lastUpdatedFull: string;
@@ -447,28 +436,12 @@ export async function getSpotWeather(
   });
 
   // Em paralelo: a marinha é opcional e não deve somar latência.
-  const [fcInitial, mar] = await Promise.all([
+  const [fc, mar] = await Promise.all([
     getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${forecastQs}`),
     getJson<{ hourly: MarineBlock }>(`${MARINE_URL}?${marineQs}`),
   ]);
 
-  let fc = fcInitial;
-  // Fallback 1: se multimodelo falhar ou der timeout, tenta endpoint padrão rápido
-  if (!fc?.hourly?.time?.length) {
-    const fallbackQs = new URLSearchParams({
-      latitude: String(lat),
-      longitude: String(lng),
-      hourly:
-        'temperature_2m,pressure_msl,surface_pressure,weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m',
-      wind_speed_unit: 'kn',
-      timezone: TZ,
-      forecast_days: String(days),
-      models: 'gfs_seamless',
-    });
-    fc = await getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${fallbackQs}`);
-  }
-
-  // Fallback 2: se rede falhar completamente, aproveita cache anterior (stale-while-revalidate)
+  // Fallback: se rede falhar completamente, aproveita cache anterior (stale-while-revalidate)
   if (!fc?.hourly?.time?.length) {
     if (hit?.data) return hit.data;
     return null;
@@ -487,21 +460,13 @@ export async function getSpotWeather(
   const marineTimes = m?.time ?? [];
 
   // Arrays com fallback para suportar respostas com sufixo (_gfs_seamless) ou sem sufixo
-  const temps = h.temperature_2m_gfs_seamless ?? h.temperature_2m ?? h.temperature_2m_ecmwf_ifs025 ?? [];
-  const pressures =
-    h.pressure_msl_gfs_seamless ??
-    h.pressure_msl ??
-    h.pressure_msl_ecmwf_ifs025 ??
-    h.surface_pressure_gfs_seamless ??
-    h.surface_pressure ??
-    [];
-  const codes = h.weather_code_gfs_seamless ?? h.weather_code ?? h.weather_code_ecmwf_ifs025 ?? [];
-  const isDays = h.is_day_gfs_seamless ?? h.is_day ?? h.is_day_ecmwf_ifs025 ?? [];
+  const temps = h.temperature_2m_gfs_seamless ?? h.temperature_2m ?? [];
+  const pressures = h.pressure_msl_gfs_seamless ?? h.pressure_msl ?? h.surface_pressure_gfs_seamless ?? h.surface_pressure ?? [];
+  const codes = h.weather_code_gfs_seamless ?? h.weather_code ?? [];
+  const isDays = h.is_day_gfs_seamless ?? h.is_day ?? [];
   const gfsWinds = h.wind_speed_10m_gfs_seamless ?? h.wind_speed_10m ?? [];
-  const ecmwfWinds = h.wind_speed_10m_ecmwf_ifs025 ?? gfsWinds;
-  const iconWinds = h.wind_speed_10m_icon_seamless ?? gfsWinds;
-  const dirs = h.wind_direction_10m_gfs_seamless ?? h.wind_direction_10m ?? h.wind_direction_10m_ecmwf_ifs025 ?? [];
-  const gusts = h.wind_gusts_10m_gfs_seamless ?? h.wind_gusts_10m ?? h.wind_gusts_10m_ecmwf_ifs025 ?? [];
+  const dirs = h.wind_direction_10m_gfs_seamless ?? h.wind_direction_10m ?? [];
+  const gusts = h.wind_gusts_10m_gfs_seamless ?? h.wind_gusts_10m ?? [];
 
   const byDay = new Map<string, WindForecastHour[]>();
 
@@ -510,11 +475,7 @@ export async function getSpotWeather(
     const mi = marineIdx.get(iso);
     const trend = mi === undefined ? null : tideTrendAt(marineLevels, mi);
 
-    // Multimodelo por hora calibrado para a costa
     const gfsKts = num(gfsWinds[i]);
-    const ecmwfKts = num(ecmwfWinds[i] ?? gfsKts);
-    const iconKts = num(iconWinds[i] ?? gfsKts);
-    const mm = calcularConsensoMultimodelo(gfsKts, ecmwfKts, iconKts);
 
     const dirDeg = Math.round(num(dirs[i]));
     let safety: WindSafety = 'Side-Onshore';
@@ -524,7 +485,7 @@ export async function getSpotWeather(
     else if (dirDeg > 230 && dirDeg <= 310) safety = 'Offshore';
     else safety = 'Onshore';
 
-    const knotsHour = mm.consensusKnots || Math.round(gfsKts);
+    const knotsHour = Math.round(gfsKts);
     const gustHour = Math.round(num(gusts[i]));
 
     // Para onda na praia, a vaga costeira (wind_wave_height) reflete com precisão as condições locais
@@ -594,11 +555,7 @@ export async function getSpotWeather(
   const minuteFraction = nowDt.getMinutes() / 60;
 
   const nowGfs = num(gfsWinds[now]) * (1 - minuteFraction) + num(gfsWinds[nowNext]) * minuteFraction;
-  const nowEcmwf = (num(ecmwfWinds[now]) || nowGfs) * (1 - minuteFraction) + (num(ecmwfWinds[nowNext]) || nowGfs) * minuteFraction;
-  const nowIcon = (num(iconWinds[now]) || nowGfs) * (1 - minuteFraction) + (num(iconWinds[nowNext]) || nowGfs) * minuteFraction;
-
-  const multiModelNow = calcularConsensoMultimodelo(nowGfs, nowEcmwf, nowIcon);
-  const currentKnots = multiModelNow.consensusKnots || Math.round(nowGfs);
+  const currentKnots = Math.round(nowGfs);
   const nowGust = Math.round(num(gusts[now]) * (1 - minuteFraction) + num(gusts[nowNext]) * minuteFraction);
   const gustKnots = Math.max(nowGust, currentKnots);
   const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
@@ -655,7 +612,6 @@ export async function getSpotWeather(
     windWaveHeightM: opt(m?.wind_wave_height?.[marineNow ?? -1], 1),
     windWavePeriodS: opt(m?.wind_wave_period?.[marineNow ?? -1], 1),
     windWaveDirDeg: opt(m?.wind_wave_direction?.[marineNow ?? -1], 0),
-    multiModel: multiModelNow,
     sailingScore: currentSailingScore,
     lastUpdated: timeFormatted,
     lastUpdatedFull,

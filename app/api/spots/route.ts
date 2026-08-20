@@ -156,7 +156,6 @@ export async function GET(request: Request) {
         windWaveHeightM: w?.windWaveHeightM ?? null,
         windWavePeriodS: w?.windWavePeriodS ?? null,
         windWaveDirDeg: w?.windWaveDirDeg ?? null,
-        multiModel: w?.multiModel,
         sailingScore: w?.sailingScore,
         daysForecast: w?.daysForecast ?? [],
       };

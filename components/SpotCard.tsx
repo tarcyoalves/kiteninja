@@ -174,11 +174,6 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
                 <span>{smartBadge.label}</span>
               </span>
             )}
-            {spot.multiModel && spot.multiModel.confidenceLevel === 'Alta' && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
-                ECMWF+GFS
-              </span>
-            )}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span
