@@ -51,9 +51,39 @@ export const metadata: Metadata = {
   appleWebApp: {
     capable: true,
     title: "KiteNinja",
-    // O header do app já é escuro; translucent deixa a barra de status somar
-    // com ele em vez de criar uma faixa preta separada.
-    statusBarStyle: "black-translucent",
+    /*
+     * NÃO volte para "black-translucent". Ele foi a causa REAL da "tarja
+     * escura no rodapé" que sobreviveu a sete tentativas de correção
+     * (ver docs/DEBUG-TARJA-RODAPE.md).
+     *
+     * O que ele deveria fazer: deixar a barra de status transparente e dar ao
+     * app a tela inteira, com o conteúdo passando por baixo dela.
+     *
+     * O que o iOS faz de verdade: dimensiona a janela como *tela menos a
+     * altura da barra de status*, mas posiciona essa janela em y=0 — então a
+     * diferença sobra como uma faixa no RODAPÉ, fora da página. Medido no
+     * aparelho do dono (iPhone 16 Pro Max) com o diagnóstico de
+     * components/DiagTela.tsx:
+     *
+     *   screen.height ............ 956px
+     *   window.innerHeight ....... 894px
+     *   window.screenY ........... 0     (janela colada no topo)
+     *   safe-area-inset-top ...... 62px
+     *   sobra descoberta embaixo . 62px  <- exatamente a tarja
+     *
+     * A sobra bate AO PIXEL com o inset superior — é a assinatura do bug. E
+     * como esses 62px estão fora da viewport, nenhuma regra de CSS, cor de
+     * fundo ou padding pode alcançá-los: era por isso que as correções
+     * anteriores (todas dentro da página) não mudavam nada.
+     *
+     * Com "black" o iOS dimensiona E posiciona a janela corretamente: ela
+     * passa a começar abaixo da barra de status e a terminar na base da tela.
+     * Não se perde área útil — a janela já era 894px de qualquer forma —, só
+     * deixa de sobrar tela descoberta. A barra de status fica opaca; contra o
+     * --app-bg (#0F172A, azul-marinho quase preto) a diferença é imperceptível,
+     * e o `themeColor` acima já declara essa mesma cor.
+     */
+    statusBarStyle: "black",
   },
   /*
    * `appleWebApp.capable: true` acima só gera `mobile-web-app-capable`
