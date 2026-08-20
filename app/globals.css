@@ -24,46 +24,81 @@
   }
 }
 
-/* Altura real ocupada pelo menu inferior flutuante: `bottom-1.5` (6px) mais a
-   pílula de 58px. Fica como variável porque três lugares precisam reservar
-   exatamente esta folga, e um número solto em cada um deles já divergiu antes. */
+/* ===========================================================================
+   RODAPÉ — FONTE ÚNICA DA VERDADE.  Leia isto antes de mexer em qualquer
+   `bottom` ou `padding-bottom` deste arquivo.
+
+   A "tarja escura no rodapé" voltou várias vezes, e a causa raiz nunca foi o
+   valor de uma regra: era existirem VÁRIAS fórmulas independentes para a mesma
+   medida. Antes desta refatoração conviviam cinco:
+
+     .app-scroll          calc(5.5rem + env(safe-area-inset-bottom))  -> 122px
+     .map-card-bottom     calc(5rem   + env(safe-area-inset-bottom))  -> 114px
+     .pb-above-nav        calc(64px   + env(...) + 0.5rem)            -> 106px
+     .publish-fab-bottom  calc(var(--nav-h) + env(...) + 0.5rem)      -> 140px
+     .feed-pad-bottom     calc(var(--nav-h) + env(...) + 4rem)        -> 196px
+
+   (valores num iPhone com inset de 34px). Duas delas somavam
+   `env(safe-area-inset-bottom)` DEPOIS de `var(--nav-h)`, que já continha o
+   inset — contavam a safe-area duas vezes, 34px de faixa vazia de graça. E as
+   duas primeiras traziam números soltos (5.5rem, 5rem) que ninguém atualizava
+   quando a pílula mudava. Corrigir uma dessas regras deixava as outras quatro
+   divergindo, e a tarja "voltava" na edição seguinte.
+
+   Agora existe UMA cadeia. Tudo abaixo deriva de --nav-h, e --nav-h é a única
+   coisa no arquivo autorizada a mencionar env(safe-area-inset-bottom) para o
+   rodapé.
+
+   REGRA, verificada automaticamente por app/globals.layout.test.ts:
+     - quem precisar de folga no rodapé escreve `calc(var(--nav-h) + <folga>)`;
+     - NUNCA some env(safe-area-inset-bottom) junto de var(--nav-h);
+     - NUNCA escreva a folga do rodapé como número solto.
+   O teste falha o build se alguma dessas três for violada, então a regressão
+   não chega mais em produção.
+   =========================================================================== */
 :root {
-  --bottom-nav-height: 64px;
+  /* Tokens geométricos da pílula do menu (components/BottomNav.tsx).
+     Se o JSX mudar, mude AQUI e nada mais precisa ser tocado. */
+  --nav-pill-h: 58px;  /* `h-[58px]` da <nav> */
+  --nav-pill-gap: 6px; /* `bottom-1.5` do wrapper */
 
   /*
-   * Distância real do fundo da tela até o TOPO da pílula: --bottom-nav-height
-   * (6px do `bottom-1.5` do wrapper + 58px da pílula) mais a safe-area que o
-   * wrapper aplica como `padding-bottom` via `.safe-area-pb`.
-   *
-   * ISTO ERA CALCULADO EM JAVASCRIPT (components/BottomNav.tsx), medindo
-   * `window.innerHeight - wrapper.getBoundingClientRect().top` a cada
-   * ResizeObserver/resize/orientationchange/scroll da visualViewport, e
-   * publicando em `--nav-h` via `style.setProperty`. Isso causou a "tarja
-   * escura no rodapé" repetidas vezes: bastava UM evento de mudança de
-   * viewport não coberto (a barra do Safari escondendo, um overlay de tela
-   * cheia entrando e saindo, o próprio BottomNav desmontando quando o teclado
-   * abre e o ResizeObserver junto com ele) para o valor publicado ficar
-   * desatualizado, e a folga reservada em `.app-scroll`/`.bottom-nav-gap`
-   * sobrar como faixa vazia.
-   *
-   * A pílula tem altura FIXA (`h-[58px]`) e a posição do wrapper também
-   * (`bottom-1.5`) — nada aqui depende de conteúdo, de fonte do usuário nem de
-   * nada que só se descobre medindo o DOM. `env(safe-area-inset-bottom)` é
-   * recalculado pelo próprio navegador a cada repaint, inclusive em rotação —
-   * de graça, sem listener nenhum. Por isso a fórmula é 100% CSS, resolvida
-   * pelo motor de layout a cada frame: não existe "evento que faltou ouvir"
-   * porque não existe JS no caminho para ficar desatualizado.
-   *
-   * NÃO reintroduza uma versão em JavaScript disto. Se a pílula um dia mudar
-   * de altura por algum motivo dinâmico de verdade, resolva com uma segunda
-   * variável CSS calculada a partir de tokens de design (como
-   * --bottom-nav-height já é), nunca voltando a medir o DOM em runtime.
+   * Safe-area inferior do aparelho, com uma folga mínima para telas sem notch
+   * (onde env() resolve 0 e o conteúdo ficaria colado na borda).
+   * Definida uma vez para que o valor seja IDÊNTICO em todos os consumidores:
+   * antes uns usavam fallback 0.5rem e outros 0px, e os dois números
+   * discordavam justamente no desktop, onde ninguém testava.
    */
-  --nav-h: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0.5rem));
+  --safe-b: max(env(safe-area-inset-bottom, 0px), 6px);
+
+  /* Retrocompatibilidade: nome antigo da altura da pílula + folga, ainda citado
+     em comentários e commits. Derivado, nunca escrito à mão. */
+  --bottom-nav-height: calc(var(--nav-pill-gap) + var(--nav-pill-h));
+
+  /*
+   * Distância do fundo da tela até o TOPO da pílula, safe-area INCLUÍDA (uma
+   * única vez). É a medida que todo conteúdo precisa reservar para não ficar
+   * atrás do menu.
+   *
+   * ISTO JÁ FOI CALCULADO EM JAVASCRIPT (components/BottomNav.tsx), medindo
+   * `window.innerHeight - wrapper.getBoundingClientRect().top` a cada
+   * ResizeObserver/resize/orientationchange/scroll da visualViewport e
+   * publicando via `style.setProperty`. Bastava UM evento não coberto (a barra
+   * do Safari recolhendo, um overlay de tela cheia entrando e saindo, o próprio
+   * BottomNav desmontando quando o teclado abre e levando o ResizeObserver
+   * junto) para o valor ficar velho e a folga reservada sobrar como faixa
+   * vazia. A pílula tem altura fixa e o wrapper posição fixa — nada aqui
+   * depende de conteúdo ou de fonte do usuário, então não há o que medir.
+   * env() é reavaliado pelo próprio motor de layout a cada repaint, inclusive
+   * em rotação, sem listener nenhum.
+   *
+   * NÃO reintroduza uma versão em JavaScript disto.
+   */
+  --nav-h: calc(var(--nav-pill-gap) + var(--nav-pill-h) + var(--safe-b));
 }
 
 .safe-area-pb {
-  padding-bottom: env(safe-area-inset-bottom, 0.5rem);
+  padding-bottom: var(--safe-b);
 }
 
 .safe-area-pt {
@@ -71,12 +106,11 @@
 }
 
 /* Folga para conteúdo que termina logo acima do menu inferior.
-   Precisa ser UMA declaração somando as duas medidas: escrever
-   `pb-[76px] safe-area-pb` juntos não funciona — as duas regras disputam a
-   mesma propriedade e a última a vencer na cascata apaga a outra, deixando só
-   o inset (~34px no iPhone) e o menu por cima do campo de mensagem. */
+   Precisa ser UMA declaração: escrever `pb-[76px] safe-area-pb` juntos não
+   funciona — as duas regras disputam a mesma propriedade e a última a vencer na
+   cascata apaga a outra, deixando só o inset e o menu por cima do conteúdo. */
 .pb-above-nav {
-  padding-bottom: calc(var(--bottom-nav-height) + env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
+  padding-bottom: calc(var(--nav-h) + 0.5rem);
 }
 
 /* Topo de overlay em tela cheia (modal, drawer, lightbox).
@@ -87,9 +121,11 @@
   padding-top: max(env(safe-area-inset-top, 0px), 0.75rem);
 }
 
-/* Rodapé de overlay: mesma ideia, mas também livra a barra de gestos. */
+/* Rodapé de overlay: mesma ideia, mas também livra a barra de gestos.
+   Deriva de --safe-b (única leitura de env() no rodapé) e só eleva o mínimo,
+   porque overlay colado na borda fica pior que conteúdo comum. */
 .overlay-safe-bottom {
-  padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
+  padding-bottom: max(var(--safe-b), 0.75rem);
 }
 
 /* Custom sleek scrollbar for horizontal & vertical scrollable areas */
@@ -198,14 +234,18 @@ select {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  padding-bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+  /* Derivado de --nav-h (que já inclui a safe-area). Antes era
+     `calc(5.5rem + env(...))`: 5.5rem é um número solto que não acompanhava a
+     pílula, e o env() extra contava o inset uma segunda vez. */
+  padding-bottom: calc(var(--nav-h) + 0.5rem);
 }
 
 /* Com o teclado aberto o menu inferior é desmontado (BottomNav retorna null),
    então a folga reservada para ele vira uma faixa vazia no rodapé. O shell
    marca este estado e a folga cai para o mínimo. */
 .app-shell[data-teclado='aberto'] .app-scroll {
-  padding-bottom: 0.5rem;
+  /* Sem o menu, sobra só a safe-area do aparelho (0 em telas sem notch). */
+  padding-bottom: calc(var(--safe-b) + 0.5rem);
 }
 
 /* Telas que ocupam a área central sem rolagem própria (o mapa). */
@@ -216,25 +256,25 @@ select {
 
 /* Folga para o card de spot no mapa ficar acima da barra flutuante. */
 .map-card-bottom {
-  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--nav-h) + 0.25rem);
 }
 
 /* Modais em tela cheia param no topo da barra flutuante. */
 .bottom-nav-gap {
-  bottom: var(--nav-h, 4.75rem);
+  bottom: var(--nav-h);
 }
 
-/* Botão flutuante "Publicar Relato" (feed): fica acima da barra de navegação.
-   Usa --nav-h (publicado pelo BottomNav, já com folga) + a safe area do iPhone,
-   porque um `bottom` fixo ignorava o inset e o menu cobria o botão. */
+/* Botão flutuante "Publicar Relato" (feed): fica logo acima do menu.
+   Sem env() aqui — var(--nav-h) já traz a safe-area. Somar as duas era o que
+   empurrava o botão 34px acima do lugar no iPhone. */
 .publish-fab-bottom {
-  bottom: calc(var(--nav-h, 4.75rem) + env(safe-area-inset-bottom, 0px) + 0.5rem);
+  bottom: calc(var(--nav-h) + 0.5rem);
 }
 
 /* Folga no fim do feed para o último relato não ficar atrás do FAB "Publicar"
    nem da barra de navegação (o FAB fica logo acima do nav). */
 .feed-pad-bottom {
-  padding-bottom: calc(var(--nav-h, 4.75rem) + env(safe-area-inset-bottom, 0px) + 4rem);
+  padding-bottom: calc(var(--nav-h) + 4rem);
 }
 
 /* O Leaflet injeta o container de atribuição no DOM mesmo com attribution="",
