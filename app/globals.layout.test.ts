@@ -234,6 +234,49 @@ describe('globals.css — cor de fundo em fonte única', () => {
     }
   });
 
+  /*
+   * Telas que ocupam a tela inteira (placeholder de carregamento, LoginGate,
+   * SplashIntro) pintavam #0B1220 fixo — o tom ANTIGO. São justamente os
+   * primeiros pixels do app instalado, então apareciam como faixa/piscada de
+   * cor errada mesmo com o shell já correto. Devem herdar --app-bg.
+   *
+   * `min-h-screen` também é proibido aqui: é 100vh, a mesma conta que a seção
+   * "ALTURA DO APP" do globals.css rejeita por sobrar faixa morta no iOS
+   * instalado. O body já é flex-col de altura cheia; use flex-1 / min-h-full.
+   */
+  it('telas de altura cheia herdam --app-bg e não usam 100vh', () => {
+    const arquivos = [
+      ['app/page.tsx', pageTsx],
+      ['components/LoginGate.tsx', ''],
+      ['components/SplashIntro.tsx', ''],
+    ] as const;
+
+    for (const [caminho, jaLido] of arquivos) {
+      const fonte =
+        jaLido || readFileSync(join(import.meta.dirname, '..', caminho), 'utf8');
+      const codigo = fonte.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+      expect(
+        codigo,
+        `${caminho} usa min-h-screen (100vh): sobra faixa morta no iOS instalado`,
+      ).not.toMatch(/\bmin-h-screen\b/);
+
+      /*
+       * Só os TONS DE FUNDO DO APP são proibidos — não qualquer hex. Cards e
+       * botões usam #1E293B e afins legitimamente, e uma primeira versão desta
+       * asserção reprovava esses casos. O que não pode é uma tela pintar o
+       * fundo do app à mão: quando o token muda (modo praia, ajuste de tema),
+       * essa tela fica no tom antigo e a divergência volta.
+       */
+      const tonsDeFundo = /\bbg-\[#(0B1220|0F172A|020617|0A0F1D|0B132B)\]/gi;
+      const fundosLiterais = [...codigo.matchAll(tonsDeFundo)].map((m) => m[0]);
+      expect(
+        fundosLiterais,
+        `${caminho} pinta o fundo do app com hex literal em vez de bg-[var(--app-bg)]`,
+      ).toEqual([]);
+    }
+  });
+
   it('o modo praia troca o token no <html>, não só no shell', () => {
     expect(
       semComentarios(css),

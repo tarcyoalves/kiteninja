@@ -37,7 +37,7 @@ export const LoginGate: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#0B1220] text-slate-100 flex flex-col items-center justify-center px-5 py-10">
+    <div className="min-h-full flex-1 bg-[var(--app-bg)] text-slate-100 flex flex-col items-center justify-center px-5 py-10">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center text-center mb-8">
           {/* A arte da logo é preta e vive sobre fundo claro; aqui o fundo é

@@ -180,9 +180,13 @@ const Gate: React.FC = () => {
   // dentro da MESMA sessão, mesmo a intro já tendo sido vista.
   const [introDone, setIntroDone] = React.useState(introJaVista);
 
-  // Enquanto verifica o cookie inicial da sessão, mantém fundo escuro sólido
+  // Enquanto verifica o cookie inicial da sessão, mantém fundo escuro sólido.
+  // Sem cor própria (herda --app-bg do body) e sem min-h-screen: este div é o
+  // primeiro pixel que o app instalado mostra, e tinha as duas coisas erradas —
+  // #0B1220 (tom antigo, divergente do shell) e 100vh, a conta que sobra faixa
+  // no iOS. `flex-1` preenche o body, que já é flex-col de altura cheia.
   if (isLoading) {
-    return <div className="min-h-screen bg-[#0B1220]" />;
+    return <div className="flex-1" />;
   }
 
   return (

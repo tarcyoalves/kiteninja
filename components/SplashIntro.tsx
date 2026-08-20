@@ -65,7 +65,7 @@ export const SplashAnimado: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
   return (
     <div
-      className={`fixed inset-0 z-splash flex flex-col items-center justify-center bg-[#0B1220] transition-opacity duration-400 ${
+      className={`fixed inset-0 z-splash flex flex-col items-center justify-center bg-[var(--app-bg)] transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
       role="status"
@@ -320,7 +320,7 @@ export const SplashIntro: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   }, []);
 
   if (decisao === 'carregando') {
-    return <div className="fixed inset-0 z-splash bg-[#0B1220]" aria-hidden="true" />;
+    return <div className="fixed inset-0 z-splash bg-[var(--app-bg)]" aria-hidden="true" />;
   }
 
   if (decisao === 'video' && video) {
