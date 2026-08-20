@@ -48,6 +48,14 @@ interface KiteDataContextType {
   addSafetyAlert: (alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => void;
   events: KiteEvent[];
   toggleEventRegistration: (eventId: string) => void;
+  createDownwind: (data: {
+    title: string;
+    location: string;
+    description: string;
+    spotSaidaId: string;
+    spotChegadaId?: string;
+    previstoPara: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
 
   // UI States
   windUnit: WindUnit;
@@ -590,6 +598,26 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .catch(() => loadFeedAndEvents());
   };
 
+  const createDownwind = async (data: {
+    title: string;
+    location: string;
+    description: string;
+    spotSaidaId: string;
+    spotChegadaId?: string;
+    previstoPara: string;
+  }): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await api<{ id: string; downwindId: string }>('/api/events', {
+        method: 'POST',
+        body: JSON.stringify({ type: 'Downwind', ...data }),
+      });
+      await loadFeedAndEvents();
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Não foi possível criar o downwind.' };
+    }
+  };
+
   // --- Funções do Sistema SOS ---
   const fetchActiveSos = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -696,6 +724,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addSafetyAlert,
         events,
         toggleEventRegistration,
+        createDownwind,
         windUnit,
         setWindUnit,
         convertWind,

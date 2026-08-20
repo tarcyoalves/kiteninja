@@ -1,9 +1,11 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser, requireAdmin } from '@/lib/auth';
-import { HttpError } from '@/lib/auth';
+import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
+import { canCreateOfficialEvent } from '@/lib/authz';
 import { str } from '@/lib/validation';
 import type { KiteEvent } from '@/types';
+
+const EVENT_TYPES = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'] as const;
 
 export async function GET() {
   return handle(async () => {
@@ -52,37 +54,122 @@ export async function GET() {
   });
 }
 
+/**
+ * Downwind é criado a partir daqui (não por uma rota própria): o dono pediu
+ * que o downwind "nasça em Eventos", então a mesma rota que cria o evento
+ * também cria, na mesma requisição, a linha em `downwinds` já vinculada via
+ * `event_id` — ver lib/schema.sql e docs/PENDENCIAS-20-08-2026.md. Sem
+ * transação (o driver HTTP do Neon não expõe uma aqui, e o resto do projeto
+ * já aceita esse risco em fluxos parecidos — ver app/api/sos/[id]/respond):
+ * se o segundo INSERT falhar, o evento fica órfão de downwind, mas nunca o
+ * contrário (o evento sempre existe antes do downwind ser tentado).
+ */
+async function createDownwindEvent(body: unknown) {
+  const user = await requireDownwindOrganizer();
+
+  const title = str(body, 'title', { max: 200 });
+  const location = str(body, 'location', { max: 200 });
+  const description = str(body, 'description', { max: 5000 });
+  const imageUrl = str(body, 'imageUrl', { optional: true, max: 500 });
+  const spotSaidaId = str(body, 'spotSaidaId', { max: 100 });
+  const spotChegadaId = str(body, 'spotChegadaId', { optional: true, max: 100 });
+  const previstoParaRaw = str(body, 'previstoPara', { max: 40 });
+
+  const previstoPara = new Date(previstoParaRaw);
+  if (Number.isNaN(previstoPara.getTime())) {
+    throw new HttpError(400, 'Data/hora do downwind inválida.');
+  }
+
+  const spotSaidaRows = await sql`SELECT name FROM spots WHERE id = ${spotSaidaId} LIMIT 1`;
+  if (spotSaidaRows.length === 0) throw new HttpError(400, 'Spot de saída inválido.');
+  const spotSaidaName = String((spotSaidaRows[0] as Record<string, unknown>).name);
+
+  if (spotChegadaId) {
+    const spotChegadaRows = await sql`SELECT id FROM spots WHERE id = ${spotChegadaId} LIMIT 1`;
+    if (spotChegadaRows.length === 0) throw new HttpError(400, 'Spot de chegada inválido.');
+  }
+
+  // event_date é TEXT livre (o resto do app só exibe, nunca reparsa) — aqui
+  // vem de uma data real digitada no formulário, então formatamos por
+  // extenso em vez de pedir pro organizador escrever a data duas vezes.
+  const eventDate = previstoPara.toLocaleDateString('pt-BR', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+
+  const insertedEvent = await sql`
+    INSERT INTO events (
+      title, event_date, location, spot_name, type, description, organizer, image_url
+    )
+    VALUES (
+      ${title}, ${eventDate}, ${location}, ${spotSaidaName}, 'Downwind',
+      ${description}, ${user.name}, ${imageUrl || null}
+    )
+    RETURNING id
+  `;
+  const eventId = String((insertedEvent[0] as Record<string, unknown>).id);
+
+  const insertedDownwind = await sql`
+    INSERT INTO downwinds (nome, spot_saida, spot_chegada, criado_por, previsto_para, event_id)
+    VALUES (
+      ${title}, ${spotSaidaId}, ${spotChegadaId || null}, ${user.id},
+      ${previstoPara.toISOString()}, ${eventId}
+    )
+    RETURNING id
+  `;
+  const downwindId = String((insertedDownwind[0] as Record<string, unknown>).id);
+
+  // O organizador entra como participante velejador — ele é quem mais
+  // provavelmente vai estar na água puxando o grupo (ver comentário sobre
+  // eh_organizador em lib/downwind.ts). Sem isso ele nem entraria no quórum
+  // de encerramento do próprio downwind que criou.
+  await sql`
+    INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
+    VALUES (${downwindId}, ${user.id}, 'velejador', TRUE)
+  `;
+
+  return { id: eventId, downwindId };
+}
+
+async function createOfficialEvent(body: unknown) {
+  const user = await requireUser();
+  if (!canCreateOfficialEvent(user.role)) {
+    throw new HttpError(403, 'Sem permissão para cadastrar eventos oficiais.');
+  }
+
+  const title = str(body, 'title', { max: 200 });
+  const eventDate = str(body, 'eventDate', { max: 20 });
+  const location = str(body, 'location', { max: 200 });
+  const spotName = str(body, 'spotName', { optional: true, max: 200 });
+  const type = str(body, 'type', { max: 50 });
+  const description = str(body, 'description', { max: 5000 });
+  const organizer = str(body, 'organizer', { max: 200 });
+  const imageUrl = str(body, 'imageUrl', { optional: true, max: 500 });
+
+  const inserted = await sql`
+    INSERT INTO events (
+      title, event_date, location, spot_name, type, description, organizer, image_url
+    )
+    VALUES (
+      ${title}, ${eventDate}, ${location}, ${spotName || null}, ${type},
+      ${description}, ${organizer}, ${imageUrl || null}
+    )
+    RETURNING id
+  `;
+
+  return { id: String((inserted[0] as Record<string, unknown>).id) };
+}
+
 export async function POST(request: Request) {
   return handle(async () => {
-    const user = await requireAdmin();
     const body = await readJson(request);
-
-    const title = str(body, 'title', { max: 200 });
-    const eventDate = str(body, 'eventDate', { max: 20 });
-    const location = str(body, 'location', { max: 200 });
-    const spotName = str(body, 'spotName', { optional: true, max: 200 });
     const type = str(body, 'type', { max: 50 });
-    const description = str(body, 'description', { max: 5000 });
-    const organizer = str(body, 'organizer', { max: 200 });
-    const imageUrl = str(body, 'imageUrl', { optional: true, max: 500 });
-
-    // Validate type
-    const validTypes = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'];
-    if (!validTypes.includes(type)) {
-      throw new HttpError(400, `Type inválido. Valores aceitos: ${validTypes.join(', ')}.`);
+    if (!EVENT_TYPES.includes(type as (typeof EVENT_TYPES)[number])) {
+      throw new HttpError(400, `Type inválido. Valores aceitos: ${EVENT_TYPES.join(', ')}.`);
     }
 
-    const inserted = await sql`
-      INSERT INTO events (
-        title, event_date, location, spot_name, type, description, organizer, image_url
-      )
-      VALUES (
-        ${title}, ${eventDate}, ${location}, ${spotName || null}, ${type},
-        ${description}, ${organizer}, ${imageUrl || null}
-      )
-      RETURNING id
-    `;
-
-    return { id: String((inserted[0] as Record<string, unknown>).id) };
+    if (type === 'Downwind') return createDownwindEvent(body);
+    return createOfficialEvent(body);
   });
 }

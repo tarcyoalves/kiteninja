@@ -5,6 +5,7 @@ import { cookies } from 'next/headers';
 import bcrypt from 'bcryptjs';
 import { sql } from './db';
 import { HttpError } from './errors';
+import { canOrganizeDownwind } from './authz';
 
 
 export const SESSION_COOKIE = 'kiteninja_session';
@@ -138,6 +139,29 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireAdmin(): Promise<SessionUser> {
   const user = await requireUser();
   if (user.role !== 'admin') throw new HttpError(403, 'Acesso restrito ao administrador.');
+  return user;
+}
+
+/**
+ * Exige login e a permissão de organizar downwind (lib/authz.ts,
+ * `canOrganizeDownwind`): admin/moderator/instructor por causa do role, ou
+ * um rider com a liberação pontual `pode_organizar_downwind`. A flag não
+ * está em `SessionUser`/na sessão (que só carrega o que toda rota precisa) —
+ * por isso a busca aqui, só quando a checagem realmente é necessária.
+ */
+export async function requireDownwindOrganizer(): Promise<SessionUser> {
+  const user = await requireUser();
+
+  const rows = await sql`
+    SELECT pode_organizar_downwind FROM users WHERE id = ${user.id} LIMIT 1
+  `;
+  const podeOrganizar = Boolean(
+    (rows[0] as Record<string, unknown> | undefined)?.pode_organizar_downwind
+  );
+
+  if (!canOrganizeDownwind({ id: user.id, role: user.role, pode_organizar_downwind: podeOrganizar })) {
+    throw new HttpError(403, 'Sem permissão para organizar downwind.');
+  }
   return user;
 }
 

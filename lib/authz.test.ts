@@ -208,6 +208,7 @@ import {
   canManageListing,
   canManageUsers,
   canModerate,
+  canOrganizeDownwind,
   canResolveAlert,
   canResolveSos,
 } from './authz';
@@ -238,6 +239,18 @@ describe('matriz RBAC (lib/authz.ts)', () => {
     expect(canCreateOfficialEvent('moderator')).toBe(true);
     expect(canCreateOfficialEvent('instructor')).toBe(true);
     expect(canCreateOfficialEvent('rider')).toBe(false);
+  });
+
+  it('canOrganizeDownwind autoriza admin, moderator e instructor pelo role, independente da flag', () => {
+    expect(canOrganizeDownwind({ id: 'x', role: 'admin', pode_organizar_downwind: false })).toBe(true);
+    expect(canOrganizeDownwind({ id: 'x', role: 'moderator', pode_organizar_downwind: false })).toBe(true);
+    expect(canOrganizeDownwind({ id: 'x', role: 'instructor', pode_organizar_downwind: false })).toBe(true);
+  });
+
+  it('canOrganizeDownwind: rider comum só com a liberação pontual pode_organizar_downwind', () => {
+    expect(canOrganizeDownwind({ id: 'x', role: 'rider', pode_organizar_downwind: true })).toBe(true);
+    expect(canOrganizeDownwind({ id: 'x', role: 'rider', pode_organizar_downwind: false })).toBe(false);
+    expect(canOrganizeDownwind({ id: 'x', role: 'rider' })).toBe(false);
   });
 
   it('canDeletePost autoriza o autor do post e moderadores/admins, mas não terceiros', () => {
