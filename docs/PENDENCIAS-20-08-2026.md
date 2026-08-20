@@ -19,13 +19,16 @@ não repetir investigação.
    deletado (só existia pro blend), `lib/weather.ts` busca só `gfs_seamless`,
    card de comparação de 3 modelos removido de `SpotDetailModal.tsx`.
 7. **Criar DW no menu flutuante** → depende do item 5, não feito.
-8. **Editar perfil (peso/altura/kite)** → **EM ANDAMENTO**, agente em
-   background construindo agora (schema `height_cm`, rota
-   `app/api/users/me`, `views/PerfilView.tsx`, entrada no `SidebarDrawer.tsx`
-   — já visível no drawer: import `UserCog` adicionado). **Se a sessão
-   cortar aqui: rode `git status` e `git diff` para ver o que o agente já
-   escreveu, rode as 4 verificações (`tsc`, `vitest`, `verify-sql.ts`,
-   `next build`), revise e commite se estiver verde.**
+8. **Editar perfil (peso/altura/kite)** → **corrigido**, commit `f2be153`.
+   Já existia `app/api/profile/route.ts` self-serve (o agente corrigiu minha
+   premissa errada de que precisava criar rota nova) — estendido com
+   `height_cm` (novo em `users`), clamp de `quiverKites`/`quiverBoards`,
+   `preferredWindUnit` virou `oneOf(...)` em vez de string livre.
+   `views/PerfilView.tsx` novo, aba `'perfil'` deixou de ser morta, botão
+   "Editar Perfil" no `SidebarDrawer.tsx`. 123 checks SQL, 456 testes.
+   **Pendência pequena documentada, não regressão:** não dá pra zerar um
+   array via PATCH (`[]` é tratado como "não enviado" pelo COALESCE) — já
+   era assim antes para `disciplines`, agora vale pra `quiverKites`/`quiverBoards`.
 9. **Chat lento pra abrir** → **corrigido**, commit `fe81857`(chat perf, ver
    git log — foi commit separado antes do Radares, buscar
    `perf(chat): presenca nao bloqueia`). Causa real: `touchPresenceKeepingSpot`
