@@ -56,9 +56,51 @@ export const BottomNav: React.FC = () => {
     };
 
     publicar();
-    const observer = new ResizeObserver(publicar);
+
+    /*
+     * ORIGEM DA "TARJA ESCURA NO RODAPÉ", que já voltou várias vezes: o valor
+     * acima depende de `window.innerHeight`, mas o ResizeObserver só dispara
+     * quando o TAMANHO do wrapper muda. Quando é a VIEWPORT que muda e o
+     * wrapper continua idêntico, nada recalcula, e --nav-h congela com um
+     * valor de uma tela que não existe mais. Como `.app-scroll` reserva
+     * `padding-bottom: calc(var(--nav-h) + ...)`, a folga passa a ser maior
+     * que o menu real e sobra a faixa vazia embaixo.
+     *
+     * Isso acontece toda vez que a altura útil muda sem mexer no menu: a barra
+     * do Safari aparecendo/sumindo ao rolar, rotação de tela, e um overlay de
+     * tela cheia (`fixed inset-0`, como o Modo Navegação) entrando e saindo.
+     *
+     * `visualViewport` é ouvido junto porque no iOS é ele — e não `window` —
+     * quem reflete a área realmente visível quando a barra do navegador ou o
+     * teclado entram em cena.
+     */
+    // `publicar` lê `getBoundingClientRect`, que força reflow, e o `scroll` da
+    // visualViewport dispara em rajada no iOS. Coalescemos num frame para não
+    // martelar o layout durante a rolagem.
+    let frame = 0;
+    const publicarNoProximoFrame = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        publicar();
+      });
+    };
+
+    const observer = new ResizeObserver(publicarNoProximoFrame);
     observer.observe(el);
-    return () => observer.disconnect();
+    window.addEventListener('resize', publicarNoProximoFrame);
+    window.addEventListener('orientationchange', publicarNoProximoFrame);
+    window.visualViewport?.addEventListener('resize', publicarNoProximoFrame);
+    window.visualViewport?.addEventListener('scroll', publicarNoProximoFrame);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener('resize', publicarNoProximoFrame);
+      window.removeEventListener('orientationchange', publicarNoProximoFrame);
+      window.visualViewport?.removeEventListener('resize', publicarNoProximoFrame);
+      window.visualViewport?.removeEventListener('scroll', publicarNoProximoFrame);
+    };
   }, []);
 
   const handleTabClick = (tab: ActiveTab) => {

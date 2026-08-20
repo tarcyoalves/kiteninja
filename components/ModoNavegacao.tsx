@@ -180,7 +180,17 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
       if (document.documentElement.scrollTop !== 0) document.documentElement.scrollTop = 0;
     };
     zerarScroll();
-    return zerarScroll;
+    return () => {
+      zerarScroll();
+      // Cobrir a tela inteira e depois sair pode mudar a altura útil (a barra
+      // do Safari reaparece, por exemplo) sem que o menu inferior mude de
+      // tamanho — e é justamente aí que --nav-h congelava num valor de uma
+      // tela que não existe mais, deixando a folga do rodapé maior que o menu
+      // real: a tarja. O BottomNav republica --nav-h em `resize`, então
+      // avisamos explicitamente ao sair, em vez de torcer para o iOS emitir o
+      // evento sozinho.
+      window.dispatchEvent(new Event('resize'));
+    };
   }, []);
   const desbloqueio = usePressAndHold(DESBLOQUEIO_HOLD_MS);
 
