@@ -5,7 +5,6 @@ import {
   X,
   Pin,
   MapPin,
-  Radar,
   Calendar,
   Megaphone,
   Star,
@@ -372,15 +371,6 @@ export const SidebarDrawer: React.FC = () => {
             <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
               Novo
             </span>
-          </button>
-
-          {/* Radares */}
-          <button
-            onClick={() => navigateTo('mapa')}
-            className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
-          >
-            <Radar size={18} className="text-cyan-400" />
-            <span className="flex-1">Radares</span>
           </button>
 
           {/* Eventos (Novo) */}
