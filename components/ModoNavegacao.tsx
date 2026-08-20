@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Lock, LogOut, LifeBuoy, Unlock } from 'lucide-react';
+import { AlertTriangle, Lock, LogOut, LifeBuoy, Phone, Siren, Unlock } from 'lucide-react';
 import { estadoSinal } from '../lib/downwind';
 import { useWakeLock } from '../lib/useWakeLock';
 import { useTrilhaSessao } from '../lib/useTrilhaSessao';
+import { useSosHold } from '../lib/useSosHold';
+import { useKiteData } from '../context/KiteDataContext';
 
 /**
  * Tela preta de navegação — mantém o app em primeiro plano com Wake Lock
@@ -24,8 +26,11 @@ import { useTrilhaSessao } from '../lib/useTrilhaSessao';
  * acidente de colete, curto o suficiente para não frustrar quem quer sair.
  *
  * DECISÃO — SOS dentro do modo bloqueado: NÃO existe. O atalho de SOS só
- * aparece depois de desbloquear a tela, e mesmo assim exige seu próprio
- * segurar (mesma mecânica, ver `usePressAndHold` abaixo). Ficou de fora do
+ * aparece depois de desbloquear a tela, usando o MESMO gesto de segurar
+ * 800ms de lib/useSosHold.ts — este componente reaproveita aquele hook
+ * inteiro (captura de geolocalização, POST /api/sos, estado de envio) em vez
+ * de reimplementar o disparo, para não criar uma segunda fonte de verdade
+ * para "o que acontece quando alguém dispara um SOS". Ficou de fora do
  * estado bloqueado porque disparo acidental de SOS é o pior desfecho
  * possível deste componente — assustar a comunidade toda por um toque de
  * colete é estritamente pior que o velejador precisar de dois gestos
@@ -44,23 +49,16 @@ import { useTrilhaSessao } from '../lib/useTrilhaSessao';
 /** Tempo de toque contínuo para desbloquear a tela. Ver decisão acima. */
 const DESBLOQUEIO_HOLD_MS = 1500;
 
-/**
- * Tempo de toque contínuo para confirmar o SOS a partir daqui. Igual ao de
- * lib/useSosHold.ts (800ms) de propósito — é o mesmo gesto de emergência em
- * outro lugar do app, mudar a duração só treinaria o usuário errado.
- */
-const SOS_HOLD_MS = 800;
-
 /** Recalcula "há quanto tempo" o sinal foi visto pela última vez. Não precisa
  * ser mais frequente que isso — é um indicador de leitura, não um alerta. */
 const RELOGIO_TICK_MS = 15_000;
 
 /**
- * Pequeno hook local de "segurar para confirmar", reaproveitado tanto para
- * desbloquear a tela quanto para confirmar o SOS. Extraído aqui (em vez de
- * duplicar o `setInterval` de progresso duas vezes) porque as duas ações
- * usam exatamente a mesma mecânica de UI, só com durações e callbacks
- * diferentes — ver lib/useSosHold.ts para a versão original desse padrão.
+ * Pequeno hook local de "segurar para confirmar", usado aqui só para o
+ * desbloqueio da tela (1500ms). O SOS NÃO usa este hook: ele usa
+ * lib/useSosHold.ts diretamente, que já embute seu próprio press-and-hold de
+ * 800ms junto com o disparo real (geolocalização + POST /api/sos) — ver
+ * decisão no topo do arquivo.
  */
 function usePressAndHold(duracaoMs: number) {
   const [progresso, setProgresso] = useState(0);
@@ -137,24 +135,30 @@ function AnelProgresso({ progresso, tamanho = 64 }: { progresso: number; tamanho
 interface ModoNavegacaoProps {
   /** Sai do modo e devolve à UI normal. Sempre disponível após desbloquear. */
   onSair: () => void;
-  /**
-   * Dispara o SOS já existente do app (lib/useSosHold.ts / SidebarDrawer).
-   * Deliberadamente injetado por prop em vez de este componente reimplementar
-   * o POST /api/sos: a lógica de disparo (geolocalização, POST, tratamento de
-   * `hasActiveSos`) já existe em outro lugar, e duplicá-la aqui criaria duas
-   * fontes de verdade para "o que acontece quando alguém dispara um SOS".
-   * Se `undefined`, o atalho de SOS simplesmente não aparece.
-   */
-  onSos?: () => void;
 }
 
-export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair, onSos }) => {
+export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
   const { ativo: wakeLockAtivo, suportado: wakeLockSuportado } = useWakeLock(true);
   const trilha = useTrilhaSessao(true);
 
+  // `myActiveSos`/`fetchActiveSos` vêm direto do contexto (mesma fonte que
+  // components/SidebarDrawer.tsx usa), em vez de MapView.tsx repassar por
+  // prop: MapView não precisa desse dado para nada além de montar este
+  // componente, então receber por prop só criaria prop drilling sem
+  // propósito. Ler do contexto aqui é o caminho mais curto e o mais
+  // consistente com o resto do app.
+  const { myActiveSos, fetchActiveSos } = useKiteData();
+  const hasActiveSos = Boolean(myActiveSos);
+
+  const sos = useSosHold({
+    hasActiveSos,
+    onSosTriggered: () => {
+      fetchActiveSos();
+    },
+  });
+
   const [desbloqueado, setDesbloqueado] = useState(false);
   const desbloqueio = usePressAndHold(DESBLOQUEIO_HOLD_MS);
-  const sos = usePressAndHold(SOS_HOLD_MS);
 
   // Relógio próprio só para recalcular "há quanto tempo" sem depender de re-render
   // externo — o modo pode ficar aberto por horas sem nenhuma outra prop mudar.
@@ -182,15 +186,6 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair, onSos }) =
       // vibração é cortesia, nunca crítica
     }
     setDesbloqueado(true);
-  };
-
-  const confirmarSos = () => {
-    try {
-      navigator.vibrate?.([200, 100, 200]);
-    } catch {
-      // vibração é cortesia, nunca crítica
-    }
-    onSos?.();
   };
 
   return (
@@ -322,42 +317,89 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair, onSos }) =
                 <span className="text-[10px] font-bold">Travar</span>
               </button>
 
-              {onSos && (
+              {!hasActiveSos && (
                 <div className="relative">
                   <button
                     type="button"
                     onPointerDown={(e) => {
                       e.stopPropagation();
-                      sos.iniciar(confirmarSos);
+                      sos.startHold();
                     }}
                     onPointerUp={(e) => {
                       e.stopPropagation();
-                      sos.cancelar();
+                      sos.cancelHold();
                     }}
                     onPointerCancel={(e) => {
                       e.stopPropagation();
-                      sos.cancelar();
+                      sos.cancelHold();
                     }}
                     onPointerLeave={(e) => {
                       e.stopPropagation();
-                      sos.cancelar();
+                      sos.cancelHold();
                     }}
-                    className="relative flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-rose-950 border border-rose-700/60 text-rose-300 active:scale-95 transition-all"
+                    disabled={sos.sending}
+                    className={`relative flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl border active:scale-95 transition-all ${
+                      sos.sending
+                        ? 'bg-rose-950 border-rose-800/60 text-rose-400 cursor-wait'
+                        : 'bg-rose-950 border-rose-700/60 text-rose-300'
+                    }`}
                     aria-label="Segurar para disparar SOS"
                   >
-                    <LifeBuoy size={16} />
-                    <span className="text-[10px] font-bold">SOS</span>
+                    <LifeBuoy size={16} className={sos.sending ? 'animate-pulse' : undefined} />
+                    <span className="text-[10px] font-bold">{sos.sending ? '...' : 'SOS'}</span>
                   </button>
-                  {sos.progresso > 0 && (
+                  {sos.holdProgress > 0 && (
                     <div className="absolute -inset-1 pointer-events-none flex items-center justify-center">
-                      <AnelProgresso progresso={sos.progresso} tamanho={72} />
+                      <AnelProgresso progresso={sos.holdProgress} tamanho={72} />
                     </div>
                   )}
                 </div>
               )}
             </div>
 
-            <span className="text-[9px] text-slate-700">segure o SOS para confirmar</span>
+            {/* Estado do SOS: já ativo, enviando, ou pronto para segurar.
+                Só tipografia + um ícone pequeno — nada de card ou bloco de
+                cor grande, para preservar o baixo consumo da tela preta. */}
+            {hasActiveSos ? (
+              <div className="flex items-center gap-1.5 text-rose-400">
+                <Siren size={13} className="animate-pulse shrink-0" />
+                <span className="text-[10px] font-bold">
+                  SOS ativo — ajuda pode estar a caminho
+                </span>
+              </div>
+            ) : sos.sending ? (
+              <span className="text-[9px] text-rose-400">enviando SOS...</span>
+            ) : (
+              <span className="text-[9px] text-slate-700">segure o SOS para confirmar</span>
+            )}
+
+            {/* Erro de rede ao disparar: números de emergência para discagem
+                direta, igual ao tratamento em components/SidebarDrawer.tsx. */}
+            {sos.error && (
+              <div className="flex flex-col items-center gap-1.5">
+                <span className="max-w-[220px] text-center text-[10px] leading-snug text-rose-300">
+                  {sos.error}
+                </span>
+                <div className="flex items-center gap-3">
+                  <a
+                    href="tel:193"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 text-[10px] font-bold text-rose-300"
+                  >
+                    <Phone size={11} />
+                    193
+                  </a>
+                  <a
+                    href="tel:185"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    className="flex items-center gap-1 text-[10px] font-bold text-amber-300"
+                  >
+                    <Phone size={11} />
+                    185
+                  </a>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
