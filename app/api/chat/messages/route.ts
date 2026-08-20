@@ -1,3 +1,4 @@
+import { after } from 'next/server';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
@@ -111,15 +112,23 @@ export async function GET(request: Request) {
     // renovamos a presença aqui: o heartbeat dedicado passa a ser só a garantia
     // de quem está lendo sem novidade chegando.
     //
-    // Presença é acessório; mensagem é o serviço. Sem este try/catch, uma falha
-    // ao gravar presença derruba a leitura do chat inteiro — foi exatamente o
-    // que aconteceu quando o schema ganhou colunas novas em user_presence e o
-    // banco de produção ainda não tinha rodado a migração.
-    try {
-      await touchPresenceKeepingSpot(user.id, room);
-    } catch (err) {
-      console.error('[chat] presença não gravada no GET', err);
-    }
+    // Presença é acessório; mensagem é o serviço. Roda em after() — depois da
+    // resposta ser enviada — em vez de aguardado: touchPresenceKeepingSpot faz
+    // um UPSERT + um UPDATE, dois round-trips a mais no Neon a cada poll de
+    // 4s, e esperar por eles antes de responder significa que quem abre o
+    // chat vê a tela em branco até essas duas escritas acessórias terminarem,
+    // em cima da própria busca de mensagens. after() (Next.js), não uma
+    // Promise solta sem await: em ambiente serverless (Vercel) o processo pode
+    // ser congelado assim que a resposta é enviada, e uma Promise sem await
+    // arriscaria nunca terminar; after() garante que a plataforma espera o
+    // callback antes de finalizar a função.
+    after(async () => {
+      try {
+        await touchPresenceKeepingSpot(user.id, room);
+      } catch (err) {
+        console.error('[chat] presença não gravada no GET', err);
+      }
+    });
 
     const messages = rows.map(toMessage);
 
@@ -172,14 +181,18 @@ export async function POST(request: Request) {
     `;
 
     // Enviar também é sinal de presença — evita o velejador que só escreve
-    // aparecer como offline entre dois heartbeats. Em try/catch pelo mesmo
-    // motivo do GET: a mensagem já está gravada, e perder a presença não pode
-    // fazer o envio parecer que falhou.
-    try {
-      await touchPresenceKeepingSpot(user.id, room);
-    } catch (err) {
-      console.error('[chat] presença não gravada no POST', err);
-    }
+    // aparecer como offline entre dois heartbeats. Mesmo motivo do GET: roda
+    // em after() em vez de aguardado, porque a mensagem já está gravada, e
+    // perder a presença não pode fazer o envio parecer mais lento (nem
+    // falhar) — e after() garante que a escrita realmente roda até o fim em
+    // serverless, o que uma Promise solta sem await não garante.
+    after(async () => {
+      try {
+        await touchPresenceKeepingSpot(user.id, room);
+      } catch (err) {
+        console.error('[chat] presença não gravada no POST', err);
+      }
+    });
 
     // Devolvemos só o que o cliente NÃO tinha (id e created_at do banco). Nome,
     // avatar e riderId do próprio autor já estão na sessão do cliente, e buscá-
