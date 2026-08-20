@@ -238,6 +238,22 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [activeTab, clearUnreadChat]);
 
+  /*
+   * Espelha o modo praia no <html> para que `--app-bg` (globals.css) valha para
+   * o `body` também, e não só para o shell. O fundo precisa estar no elemento
+   * raiz porque o canvas do body é o que o iOS exibe em qualquer sobra fora do
+   * shell `fixed` — se só o shell mudasse de cor, a diferença apareceria como
+   * uma tarja de tom diferente no rodapé.
+   */
+  useEffect(() => {
+    const raiz = document.documentElement;
+    if (beachMode) {
+      raiz.setAttribute('data-modo', 'praia');
+    } else {
+      raiz.removeAttribute('data-modo');
+    }
+  }, [beachMode]);
+
   // Background watcher para novas mensagens no chat geral
   useEffect(() => {
     if (!isAuthenticated) return;

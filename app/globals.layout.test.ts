@@ -157,3 +157,73 @@ describe('BottomNav — sem medição de DOM', () => {
     expect(tsx, 'distância do fundo mudou: atualize --nav-pill-gap').toContain('bottom-1.5');
   });
 });
+
+/*
+ * Segunda causa da tarja, independente da geometria acima: COR.
+ *
+ * O `body` é o canvas que o iOS mostra em qualquer sobra fora do shell `fixed`.
+ * Enquanto o shell pintava #0F172A (utility do Tailwind no JSX, que vence a
+ * regra do .app-shell por não estar em @layer) e o `body` pintava #0B1220, a
+ * diferença de tom aparecia como faixa — e nenhum ajuste de padding a removia,
+ * só mudava a altura dela. Agora existe um token único, --app-bg.
+ */
+describe('globals.css — cor de fundo em fonte única', () => {
+  const pageTsx = readFileSync(join(import.meta.dirname, 'page.tsx'), 'utf8');
+  const layoutTsx = readFileSync(join(import.meta.dirname, 'layout.tsx'), 'utf8');
+
+  /** Valor de --app-bg declarado no :root. */
+  function corDoToken(): string {
+    const m = semComentarios(css).match(/--app-bg:\s*(#[0-9A-Fa-f]{3,8})/);
+    if (!m) throw new Error('--app-bg não existe mais em globals.css');
+    return m[1].toUpperCase();
+  }
+
+  it('body e .app-shell usam o mesmo token, não hex solto', () => {
+    for (const seletor of ['body {', '.app-shell {']) {
+      const corpo = corpoDaRegra(seletor);
+      const bg = corpo.match(/background-color:\s*([^;]+);/);
+      expect(bg, `${seletor} perdeu o background-color`).not.toBeNull();
+      expect(
+        bg![1].trim(),
+        `${seletor} voltou a fixar a cor em hex — body e shell divergem e vira tarja`,
+      ).toBe('var(--app-bg)');
+    }
+  });
+
+  it('o shell não declara cor de fundo no JSX (utility vence o CSS)', () => {
+    const jsx = pageTsx.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const shell = jsx.match(/className=\{`app-shell[^`]*`\}/);
+    expect(shell, 'o className do app-shell mudou de forma; revise este teste').not.toBeNull();
+    expect(
+      shell![0],
+      'bg-* no shell sobrepõe --app-bg e deixa o body num tom diferente',
+    ).not.toMatch(/\bbg-\[/);
+  });
+
+  it('o theme-color do iOS acompanha --app-bg', () => {
+    // Instalado na tela de início, o iOS pinta chrome com esta cor. Se ela
+    // discordar do fundo real, a divergência reaparece como faixa.
+    const cores = [...layoutTsx.matchAll(/color:\s*"(#[0-9A-Fa-f]{3,8})"/g)].map((m) =>
+      m[1].toUpperCase(),
+    );
+    expect(cores.length, 'themeColor sumiu do layout.tsx').toBeGreaterThan(0);
+    for (const cor of cores) {
+      expect(cor, `themeColor ${cor} != --app-bg ${corDoToken()}`).toBe(corDoToken());
+    }
+  });
+
+  it('o modo praia troca o token no <html>, não só no shell', () => {
+    expect(
+      semComentarios(css),
+      'sem a regra em html[data-modo=praia] o body fica no tom claro e sobra tarja',
+    ).toMatch(/html\[data-modo=['"]praia['"]\]/);
+
+    const ctx = readFileSync(
+      join(import.meta.dirname, '..', 'context', 'KiteDataContext.tsx'),
+      'utf8',
+    );
+    expect(ctx, 'ninguém escreve data-modo no <html>: a regra do CSS nunca ativa').toContain(
+      "setAttribute('data-modo'",
+    );
+  });
+});

@@ -21,8 +21,14 @@ export function GET() {
     // standalone remove a barra de endereço: aberto pelo atalho, parece app.
     display: 'standalone',
     orientation: 'portrait',
-    background_color: '#0B1220',
-    theme_color: '#0B1220',
+    /*
+     * Precisa ser IGUAL a --app-bg do globals.css (#0F172A) — estava #0B1220.
+     * background_color é a cor da splash do PWA instalado: divergindo do fundo
+     * real, a abertura pisca de um tom para o outro. theme_color pinta chrome.
+     * app/manifest.webmanifest/route.test.ts trava isso contra o CSS.
+     */
+    background_color: '#0F172A',
+    theme_color: '#0F172A',
     categories: ['sports', 'weather', 'travel'],
     icons: [
       { src: '/brand/logo-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

@@ -18,7 +18,10 @@
     font-family: var(--font-plus-jakarta), system-ui, -apple-system, BlinkMacSystemFont,
       "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
-    background-color: #0B1220;
+    /* MESMA cor do shell, via token. Ver "COR DE FUNDO" abaixo: quando estas
+       duas divergem, a diferença aparece como uma faixa de tom diferente em
+       qualquer sobra de canvas do iOS. */
+    background-color: var(--app-bg);
     color: #f8fafc;
     overflow: hidden;
   }
@@ -56,7 +59,30 @@
    O teste falha o build se alguma dessas três for violada, então a regressão
    não chega mais em produção.
    =========================================================================== */
+/* ===========================================================================
+   COR DE FUNDO — segunda causa da "tarja no rodapé", independente da geometria.
+
+   A geometria (abaixo) explica faixas de TAMANHO errado. Esta seção explica
+   faixas de COR errada, que nenhum padding conserta.
+
+   Havia duas constantes para "o fundo do app", e elas não eram iguais:
+
+     body      background-color: #0B1220   (CSS, dentro de @layer base)
+     .app-shell background-color: #0B1220  (CSS, fora de @layer)
+     <div class="app-shell bg-[#0F172A]">  (JSX, utility do Tailwind)
+
+   A utility do Tailwind não está em @layer base, então vence as duas regras de
+   CSS: o shell pinta #0F172A e o body continua #0B1220. O body é o canvas que
+   o iOS mostra em qualquer sobra abaixo do elemento `fixed` (com
+   viewport-fit=cover e status bar translucent). Dois tons escuros porém
+   distintos = tarja. Em modo praia a distância é maior: #020617 vs #0B1220.
+
+   Agora existe UM token, e o JSX não declara mais cor de fundo do shell.
+   Trocar o tema = trocar --app-bg (o modo praia faz isso via data-attribute).
+   =========================================================================== */
 :root {
+  --app-bg: #0F172A;
+
   /* Tokens geométricos da pílula do menu (components/BottomNav.tsx).
      Se o JSX mudar, mude AQUI e nada mais precisa ser tocado. */
   --nav-pill-h: 58px;  /* `h-[58px]` da <nav> */
@@ -222,9 +248,17 @@ select {
   bottom: 0;
   left: 0;
   right: 0;
-  background-color: #0B1220;
+  /* Mesmo token do body — ver seção "COR DE FUNDO". */
+  background-color: var(--app-bg);
   overflow: hidden;
   overscroll-behavior: none;
+}
+
+/* Modo praia (alto contraste para sol forte). Troca o token no <html>, então o
+   body e o shell mudam JUNTOS — era aqui que a cor divergia antes, porque só o
+   shell recebia a classe do Tailwind e o canvas do body ficava no tom antigo. */
+html[data-modo='praia'] {
+  --app-bg: #020617;
 }
 
 /* Área central rolável, entre header e menu flutuante. */

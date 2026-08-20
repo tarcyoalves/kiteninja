@@ -13,9 +13,15 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 5,
   viewportFit: "cover",
+  /*
+   * Precisa ser IGUAL a --app-bg do globals.css (#0F172A). Estava #0B1220, um
+   * tom diferente do que o app realmente pinta: no iOS instalado o theme-color
+   * é usado nas áreas de chrome, então a divergência aparecia como faixa de
+   * outra cor. Se mudar --app-bg, mude aqui — app/globals.layout.test.ts checa.
+   */
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#0B1220" },
-    { media: "(prefers-color-scheme: dark)", color: "#0B1220" },
+    { media: "(prefers-color-scheme: light)", color: "#0F172A" },
+    { media: "(prefers-color-scheme: dark)", color: "#0F172A" },
   ],
 };
 

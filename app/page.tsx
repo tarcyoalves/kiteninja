@@ -67,10 +67,15 @@ const MainContent: React.FC = () => {
      */
     <div
       data-teclado={tecladoAberto ? "aberto" : "fechado"}
+      /*
+       * Sem `bg-*` aqui de propósito. A cor de fundo vem de `--app-bg` no
+       * globals.css, compartilhada com o `body`. Quando este JSX declarava a
+       * cor com uma utility do Tailwind, ela vencia a regra do `.app-shell` e o
+       * `body` ficava num tom diferente — e a diferença aparecia como tarja na
+       * safe-area do iPhone. O modo praia troca o token no <html>.
+       */
       className={`app-shell font-sans flex flex-col antialiased transition-colors ${
-        beachMode
-          ? "bg-[#020617] text-white"
-          : "bg-[#0F172A] text-slate-100"
+        beachMode ? "text-white" : "text-slate-100"
       }`}
     >
       {/* Header — shrink-0 no próprio componente, sempre visível */}
