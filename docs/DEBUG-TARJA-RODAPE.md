@@ -1,40 +1,90 @@
 # Postmortem — Tarja escura no rodapé (iOS, PWA instalado)
 
-Status: **resolvido em 20/08/2026, commit `212a2ea`.** Este documento existe para
-que, se o sintoma voltar, quem investigar não repita as sete tentativas
-anteriores. Leia a seção "Se isto voltar" primeiro.
+Status: **resolvido em 20/08/2026, commit `f9a94f6`.** Oito tentativas até
+achar a causa. Este documento existe para que ninguém repita as sete erradas.
+Leia a seção "Se isto voltar" primeiro.
 
 ---
 
 ## Se isto voltar: comece aqui
 
-```bash
-curl -s https://kiteninja.vercel.app/ | grep -o 'apple-mobile-web-app-capable[^/]*/'
+**Não edite CSS.** Peça ao dono (admin) o texto do diagnóstico em
+`components/DiagTela.tsx` — avatar → "Diagnóstico de tela" → botão "copiar".
+Compare estas três linhas:
+
+```
+screen: <largura> x <ALTURA>
+innerHeight: <ALTURA DA JANELA>
+SOBRA DESCOBERTA EMBAIXO: <N>px
 ```
 
-Se isso **não** retornar nada, é a causa raiz descrita abaixo, de volta —
-alguém removeu ou quebrou a tag. Corrija e pare por aqui.
-
-Se retornar normalmente, a causa é outra. **Não comece pelo CSS.** Sete
-tentativas nesta mesma investigação corrigiram bugs reais de CSS/geometria/cor
-sem eliminar o sintoma — porque a causa real nunca esteve lá. Antes de editar
-`globals.css`, `BottomNav.tsx` ou qualquer componente de tela cheia, peça ao
-usuário os números do diagnóstico em `components/DiagTela.tsx` (menu do
-avatar, só admin vê): `innerHeight`, `visualViewport`, e os quatro insets de
-safe-area. E peça uma foto da tela — a cor exata da faixa (preto puro? um tom
-de azul-marinho?) diz muito sobre qual mecanismo é.
+Se `SOBRA DESCOBERTA EMBAIXO` for maior que zero, **o app está recebendo uma
+janela menor que a tela** e a faixa está FORA da página — nenhuma regra de CSS
+pode alcançá-la. Vá direto para "A causa real" abaixo. Se for `0px`, aí sim a
+faixa está dentro da página e vale investigar cor/geometria (o histórico
+completo dessas investigações está mais abaixo).
 
 ---
 
 ## O sintoma
 
 Uma faixa escura aparecia no rodapé do app instalado na tela de início do
-iPhone (PWA), embaixo do menu flutuante. Relatado várias vezes ao longo do
-projeto, "resolvido" e reaparecendo.
+iPhone (PWA), embaixo do menu flutuante. Relatada várias vezes ao longo do
+projeto, "resolvida" e reaparecendo.
 
-## A causa real
+## A causa real: `black-translucent` encolhe a janela
 
-Faltava a meta tag `apple-mobile-web-app-capable`.
+`apple-mobile-web-app-status-bar-style: black-translucent` deveria dar ao app
+a tela inteira, com o conteúdo passando por baixo da barra de status. O que o
+iOS faz de fato é dimensionar a janela como *tela menos a altura da barra de
+status*, mas posicioná-la em `y = 0` — então a diferença sobra como uma faixa
+no rodapé, fora da viewport.
+
+Medido no aparelho do dono (iPhone 16 Pro Max) com o `DiagTela`:
+
+```
+screen.height ............ 956px
+window.innerHeight ....... 894px
+window.screenY ........... 0     (janela colada no topo)
+safe-area-inset-top ...... 62px
+sobra descoberta embaixo . 62px  <- a tarja
+```
+
+A sobra bate **ao pixel** com o `safe-area-inset-top`. Essa igualdade é a
+assinatura do bug — se você vir isso de novo, é isto.
+
+E é por isso que nada antes funcionou: aqueles 62px estão **fora da página**.
+Nenhuma cor de fundo, token, padding ou reserva de rodapé podia alcançá-los.
+Todas as sete correções anteriores agiam dentro da viewport — consertando o
+quadro quando o problema era o tamanho da moldura.
+
+### A correção
+
+`app/layout.tsx`, em `metadata.appleWebApp`:
+
+```ts
+statusBarStyle: "black",   // NÃO volte para "black-translucent"
+```
+
+Com `black`, o iOS dimensiona **e** posiciona a janela corretamente: ela começa
+abaixo da barra de status e termina na base da tela. Não se perde área útil — a
+janela já era 894px de qualquer forma —, só deixa de sobrar tela descoberta. A
+barra de status fica opaca, e contra o `--app-bg` (#0F172A, azul-marinho quase
+preto) a diferença é imperceptível; o `themeColor` declara essa mesma cor.
+
+---
+
+## Uma causa anterior, também real (commit `212a2ea`)
+
+Antes de chegar no `black-translucent`, foi corrigida a **falta da meta tag
+`apple-mobile-web-app-capable`** — um problema legítimo e independente, que
+vale manter corrigido. Verificação:
+
+```bash
+curl -s https://kiteninja.vercel.app/ | grep -o 'apple-mobile-web-app-capable[^/]*/'
+```
+
+Se não retornar nada, alguém removeu a tag e o problema abaixo volta:
 
 O Next.js 16.3.1, com `appleWebApp: { capable: true }` no `metadata` de
 `app/layout.tsx`, emite **apenas** a tag padrão `mobile-web-app-capable` —
@@ -183,15 +233,35 @@ nos ~350ms de fade de entrada/saída.
 
 ---
 
+### 8. `f9a94f6` — a causa real
+
+`black-translucent` trocado por `black`. Ver "A causa real" no topo deste
+documento.
+
+O que destravou: em vez de tentar a oitava correção às cegas, o `DiagTela`
+(`components/DiagTela.tsx`) foi instrumentado para medir o que o aparelho
+entrega de fato — `screen.height` vs `innerHeight` vs `screenY` — e o dono
+mandou o texto. O número apareceu na primeira leitura. **Sete tentativas de
+adivinhação custaram mais do que uma rodada de medição.**
+
+---
+
 ## A lição, para além dos detalhes técnicos
 
-Depois de duas ou três correções **verificadas e corretas** na mesma família
-de hipótese (aqui: CSS, cor, geometria) sem o sintoma mudar no dispositivo
-real, a causa provavelmente está **fora** dessa categoria — continuar
-refinando a mesma hipótese é o erro, não a falta de mais um ajuste.
+**1. Meça antes da terceira tentativa.** Depois de duas correções
+*verificadas e corretas* sem o sintoma mudar no dispositivo real, pare de
+editar. O custo de instrumentar (aqui: ~40 linhas no `DiagTela` e uma rodada
+de ida e volta) é muito menor que o de mais cinco correções erradas, cada uma
+publicada, testada pelo dono e desmentida.
 
-"O PWA não está abrindo em modo standalone" é candidato sério para qualquer
-bug visual em iOS que sobreviva a correções de CSS, porque por definição está
-fora do alcance delas. Vale checar isso **cedo**, não como último recurso,
-quando o sintoma for "uma faixa/barra que não vai embora" num app instalado
-via tela de início.
+**2. Quando o sintoma sobrevive a correções corretas, a causa está fora da
+categoria.** Aqui foram sete correções dentro da página (cor, geometria,
+tokens, meta tags) para um problema que estava fora dela — numa área da tela
+que o app sequer recebia. Continuar refinando a mesma hipótese é o erro, não
+a falta de mais um ajuste.
+
+**3. Em bug visual de PWA no iOS, desconfie cedo do tamanho da janela.**
+`screen.height != window.innerHeight` num app standalone significa que existe
+tela que a página não ocupa — e por definição nenhum CSS alcança essa área.
+Verificar isso é uma linha de JavaScript e deveria vir antes de qualquer
+investigação de layout, não depois de sete.
