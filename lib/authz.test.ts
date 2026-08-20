@@ -137,6 +137,10 @@ describe('autorização das rotas de API', () => {
       'socorrista a caminho: muda status de ativo para em_atendimento para cessar a escalada',
     'sos/[id]/route.ts::UPDATE sos_alerts':
       'encerramento de SOS: autorizado apenas para o próprio autor ou moderação via canResolveSos',
+    'events/route.ts::DELETE FROM downwinds':
+      'rollback manual de criação de downwind: desfaz o downwind que a própria requisição acabou de criar, pelo id retornado, se o passo seguinte (inserir o participante organizador) falhar',
+    'events/route.ts::DELETE FROM events':
+      'rollback manual de criação de downwind: desfaz o evento que a própria requisição acabou de criar, pelo id retornado, se downwinds/downwind_participantes falhar depois',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -172,13 +176,17 @@ describe('autorização das rotas de API', () => {
       /*
        * Casos que não dependem de papel, mas ainda precisam de alvo único: a
        * mutação atinge uma linha identificada por id, e esse id é a própria
-       * conta autenticada (`${user.id}` no change-password) ou a conta órfã que
-       * a própria requisição criou (`${userId}` no accept). O que importa é
-       * existir `WHERE id = ${...}` — sem isso o UPDATE varreria a tabela.
+       * conta autenticada (`${user.id}` no change-password), a conta órfã que
+       * a própria requisição criou (`${userId}` no accept), ou o evento/
+       * downwind que a própria requisição acabou de criar e está desfazendo
+       * (`${eventId}`/`${downwindId}` no rollback manual de events/route.ts).
+       * O que importa é existir `WHERE id = ${...}` — sem isso o
+       * UPDATE/DELETE varreria a tabela.
        */
       if (
         rel === 'auth/change-password/route.ts' ||
         rel === 'invites/accept/route.ts' ||
+        rel === 'events/route.ts' ||
         rel.startsWith('sos/')
       ) {
         expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);

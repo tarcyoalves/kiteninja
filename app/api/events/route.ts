@@ -110,26 +110,39 @@ async function createDownwindEvent(body: unknown) {
   `;
   const eventId = String((insertedEvent[0] as Record<string, unknown>).id);
 
-  const insertedDownwind = await sql`
-    INSERT INTO downwinds (nome, spot_saida, spot_chegada, criado_por, previsto_para, event_id)
-    VALUES (
-      ${title}, ${spotSaidaId}, ${spotChegadaId || null}, ${user.id},
-      ${previstoPara.toISOString()}, ${eventId}
-    )
-    RETURNING id
-  `;
-  const downwindId = String((insertedDownwind[0] as Record<string, unknown>).id);
+  // Sem transação real (o driver HTTP do Neon usado neste projeto não expõe
+  // uma): se qualquer passo depois daqui falhar, desfazemos manualmente em
+  // vez de deixar um evento "Downwind" órfão no ar, sem downwind nem
+  // participante por trás — já aconteceu em produção (schema.sql com
+  // downwinds.event_id não migrado ainda) e o evento fake ficou visível pra
+  // todo mundo na lista de Eventos mesmo com a criação tendo "falhado".
+  let downwindId: string | undefined;
+  try {
+    const insertedDownwind = await sql`
+      INSERT INTO downwinds (nome, spot_saida, spot_chegada, criado_por, previsto_para, event_id)
+      VALUES (
+        ${title}, ${spotSaidaId}, ${spotChegadaId || null}, ${user.id},
+        ${previstoPara.toISOString()}, ${eventId}
+      )
+      RETURNING id
+    `;
+    downwindId = String((insertedDownwind[0] as Record<string, unknown>).id);
 
-  // O organizador entra como participante velejador — ele é quem mais
-  // provavelmente vai estar na água puxando o grupo (ver comentário sobre
-  // eh_organizador em lib/downwind.ts). Sem isso ele nem entraria no quórum
-  // de encerramento do próprio downwind que criou.
-  await sql`
-    INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
-    VALUES (${downwindId}, ${user.id}, 'velejador', TRUE)
-  `;
+    // O organizador entra como participante velejador — ele é quem mais
+    // provavelmente vai estar na água puxando o grupo (ver comentário sobre
+    // eh_organizador em lib/downwind.ts). Sem isso ele nem entraria no quórum
+    // de encerramento do próprio downwind que criou.
+    await sql`
+      INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
+      VALUES (${downwindId}, ${user.id}, 'velejador', TRUE)
+    `;
 
-  return { id: eventId, downwindId };
+    return { id: eventId, downwindId };
+  } catch (err) {
+    if (downwindId) await sql`DELETE FROM downwinds WHERE id = ${downwindId}`;
+    await sql`DELETE FROM events WHERE id = ${eventId}`;
+    throw err;
+  }
 }
 
 async function createOfficialEvent(body: unknown) {
