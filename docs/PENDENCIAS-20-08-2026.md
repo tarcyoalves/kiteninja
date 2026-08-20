@@ -3,6 +3,57 @@
 Lista original do dono, 9 itens. Status real de cada um, para quem continuar
 não repetir investigação.
 
+## INCIDENTE — dono ficou trancado fora do próprio app (resolvido)
+
+Depois do deploy do item 8 (perfil, commit `f2be153`/`bb11f92`), **ninguém
+rodou a migração de schema em produção**. `lib/schema.sql` ganhou
+`ALTER TABLE users ADD COLUMN IF NOT EXISTS height_cm NUMERIC(5,1);`, mas essa
+coluna nunca foi criada no Neon de produção. O código foi ao ar assumindo que
+ela existia.
+
+Efeito em cascata, só descoberto pelos runtime logs da Vercel
+(`get_runtime_errors`), não por dedução:
+
+1. Toda checagem de sessão (`GET /api/auth/me`, que faz `SELECT ... height_cm
+   ... FROM users`) quebrava com `NeonDbError: column "height_cm" does not
+   exist` (500). É por isso que o dono foi deslogado sem motivo aparente logo
+   no início desta sessão — qualquer refresh de sessão depois daquele deploy
+   caía nesse erro.
+2. Isso também mascarou os dois problemas seguintes: o login (`POST
+   /api/auth/login`) retornava 200 normalmente (usuário/senha corretos), mas
+   o `refresh()` do `AuthContext` que vem logo depois batia nesse 500, então
+   `isAuthenticated` nunca virava `true`. Da tela do usuário: botão vira
+   "Entrando...", volta para "Entrar", **sem nenhuma mensagem de erro** — o
+   código não tem esse terceiro caminho (só sabe dizer "senha errada" ou "sem
+   conexão"). Foram investigadas DUAS hipóteses erradas antes desta (rate
+   limit de login, tela de troca de senha obrigatória) até os logs mostrarem
+   a causa real.
+3. O reset de senha em si (ver item abaixo) também não tinha como ser
+   confirmado direto do agente: o driver `@neondatabase/serverless` faz as
+   consultas via HTTPS para `api.<região>.aws.neon.tech`, host que a política
+   de rede do ambiente do agente bloqueia (403). Rodar o SQL via console do
+   Neon, pelo navegador do próprio dono, foi o único caminho que funcionou.
+
+**Correção aplicada:** o dono rodou `ALTER TABLE users ADD COLUMN IF NOT
+EXISTS height_cm NUMERIC(5,1);` direto no SQL Editor do Neon. Login voltou a
+funcionar.
+
+**Lição pra não repetir:** depois de qualquer deploy que mexe em
+`lib/schema.sql`, rodar `node node_modules/tsx/dist/cli.mjs scripts/migrate.ts`
+(ou o SQL Editor do Neon) contra o banco de **produção**, não só validar com
+`scripts/verify-sql.ts` (que roda contra PGlite em memória, nunca contra o
+banco real). Verde no `verify-sql.ts` prova que o schema é coerente
+internamente; não prova que o banco de produção foi atualizado. Considerar
+adicionar a migração ao pipeline de deploy (build step da Vercel) para este
+tipo de esquecimento parar de ser possível.
+
+**Outra lição, sobre a sessão de suporte em si:** o agente quase publicou uma
+rota temporária de reset de senha gated por segredo, direto no repositório
+— que é **público** no GitHub. O classificador de segurança do ambiente
+bloqueou a ação antes do push. Nunca commitar segredo/bypass de autenticação
+em repositório público, nem "por um instante" — o histórico do Git é
+permanente e qualquer scraper pode pegar o commit em segundos.
+
 ## Feito e publicado (main)
 
 1. **Salve indo pro chat geral** → não corrigido ainda (é o item grande, ver
