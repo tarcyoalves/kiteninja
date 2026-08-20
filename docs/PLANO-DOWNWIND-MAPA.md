@@ -205,9 +205,10 @@ Rejeite se o downwind não estiver `em_andamento` ou se o participante estiver
 `encerrado`/`desistiu` — senão a tabela cresce com dados que ninguém pode ver.
 
 **Atenção ao volume.** Esta é a tabela que mais cresce: ~20 participantes × 3h ×
-1 ponto/40s ≈ 5.400 linhas por evento. Considere e documente uma decisão sobre
-retenção (apagar trilha de downwinds encerrados há mais de N dias?). Não
-implemente sem decidir — mas não deixe a questão sem registro.
+1 ponto/40s ≈ 5.400 linhas por evento. Como tudo roda em **Neon free**, a
+retenção é obrigatória e a limpeza tem que ser preguiçosa (não há cron na Vercel
+Hobby). Ver a seção "Restrição de projeto: tudo roda em plano gratuito" antes de
+implementar esta rota.
 
 ### `PATCH /api/downwind/[id]/participantes/[userId]`
 
@@ -278,6 +279,57 @@ efeito por volta da linha 306).
 
 Para o mapa, 30-60s é a cadência combinada com o dono. Não copie os 4s do chat —
 posição custa GPS e bateria, mensagem não.
+
+---
+
+## Restrição de projeto: tudo roda em plano gratuito
+
+**Neon free, Vercel Hobby, GitHub free.** Isso não é detalhe de custo — é
+restrição de arquitetura, e esta feature é justamente a que mais pressiona os
+três limites. Decida com isso em mente desde o começo, não depois.
+
+### Storage do Neon — `downwind_posicoes` é a tabela que ameaça o limite
+
+É a única tabela do projeto com crescimento sério: ~20 participantes × 3h × 1
+ponto/40s ≈ **5.400 linhas por downwind**. A ~100 bytes por linha com overhead,
+são ~540 KB por evento. Poucos downwinds por semana e a trilha passa a dominar o
+banco inteiro — todas as outras tabelas juntas são pequenas perto disso.
+
+Por isso a **retenção é obrigatória, não opcional** (o texto acima dizia
+"considere"; com plano free, decida e implemente):
+
+- Apagar trilha de downwinds `encerrado`/`cancelado` depois de N dias. Sugestão:
+  7 dias, tempo de sobra para revisar a travessia e gerar um resumo.
+- Se quiser preservar o histórico da travessia, guarde um **resumo** (distância,
+  duração, velocidade máxima, e talvez uma trilha reduzida por amostragem) e
+  descarte os pontos brutos. Um resumo é uma linha; a trilha é milhares.
+- **Não existe cron no plano free da Vercel.** A limpeza tem que ser preguiçosa,
+  disparada por quem consulta — exatamente o padrão que
+  `app/api/sos/active/route.ts` já usa para a escalada de raio do SOS. Leia como
+  está feito lá e siga; o comentário no arquivo explica o porquê.
+
+Considere também reduzir a cadência de gravação: um ponto a cada 60s em vez de
+40s corta a tabela em um terço, com perda pequena de fidelidade para o que a
+feature precisa responder.
+
+### Invocações da Vercel
+
+Polling de 20 participantes por 3 horas, a cada 30s, dá ~7.200 invocações **por
+downwind**. A 60s, cai pela metade. Duas implicações de desenho:
+
+- **Um único `GET /posicoes` devolve todo mundo.** Nunca uma requisição por
+  participante — isso multiplicaria a conta pelo tamanho do grupo.
+- O polling **precisa** pausar com `document.hidden`, como o `ChatView` já faz.
+  Sem isso, celular no bolso continua consumindo invocação e bateria à toa.
+- Funções serverless no Hobby têm timeout curto (~10s). A query do mapa é
+  indexada e rápida, mas não empilhe trabalho pesado nela.
+
+### Cold start do Neon
+
+O free tier suspende o banco após inatividade. A **primeira** consulta depois de
+um tempo parado demora visivelmente. A tela do mapa precisa de estado de
+carregamento honesto na primeira carga — e não interpretar lentidão inicial como
+"sem sinal", o que seria um falso alarme logo na abertura.
 
 ---
 
