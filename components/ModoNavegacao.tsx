@@ -158,6 +158,30 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
   });
 
   const [desbloqueado, setDesbloqueado] = useState(false);
+
+  // A "tarja escura no rodapé" é um bug recorrente deste projeto e a causa é
+  // sempre a mesma: `.app-shell` é `position: fixed` ancorado na viewport, e
+  // quando `window.scrollY` sai de zero o shell fica preso a uma viewport
+  // deslocada, sobrando uma faixa vazia embaixo — que persiste ao trocar de
+  // aba, porque a rolagem é do documento e não da tela.
+  //
+  // Este overlay é um candidato natural a provocar isso: cobre a tela inteira
+  // e é montado/desmontado no meio da navegação. Zeramos na ENTRADA (para não
+  // herdar um deslocamento que já existia) e na SAÍDA (para não devolver o app
+  // a uma viewport torta). É a mesma defesa que lib/useKeyboardVisible.ts já
+  // aplica quando o teclado fecha.
+  useEffect(() => {
+    const zerarScroll = () => {
+      if (typeof window === 'undefined') return;
+      if (window.scrollY !== 0 || window.pageYOffset !== 0) {
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+      }
+      if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
+      if (document.documentElement.scrollTop !== 0) document.documentElement.scrollTop = 0;
+    };
+    zerarScroll();
+    return zerarScroll;
+  }, []);
   const desbloqueio = usePressAndHold(DESBLOQUEIO_HOLD_MS);
 
   // Relógio próprio só para recalcular "há quanto tempo" sem depender de re-render
@@ -190,20 +214,16 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
 
   return (
     <div
-      className="fixed inset-0 z-splash bg-black flex flex-col items-center justify-between overlay-safe-top overlay-safe-bottom select-none"
-      style={{ touchAction: 'none' }}
+      className="fixed inset-0 z-splash bg-black flex flex-col items-center justify-between overlay-safe-top overlay-safe-bottom select-none overflow-hidden"
+      // `touchAction: none` mata rolagem e zoom por gesto; `overscrollBehavior`
+      // impede que um arrasto aqui vire rolagem do documento por trás. As duas
+      // coisas juntas são o que garante que este overlay NÃO desloque a
+      // viewport — se `window.scrollY` sair de zero, o `.app-shell` (que é
+      // `position: fixed`) fica ancorado numa viewport deslocada e sobra a
+      // faixa escura no rodapé do iPhone, bug que já voltou mais de uma vez
+      // neste projeto. Ver também o `zerarScroll` no efeito acima.
+      style={{ touchAction: 'none', overscrollBehavior: 'none' }}
       onContextMenu={(e) => e.preventDefault()}
-      // Enquanto bloqueado, TODO toque na tela é o gesto de desbloqueio — nada
-      // mais reage. `preventDefault` no pointerdown evita que o iOS interprete
-      // o segurar como seleção de texto ou callout de contexto.
-      onPointerDown={(e) => {
-        if (desbloqueado) return;
-        e.preventDefault();
-        desbloqueio.iniciar(confirmarDesbloqueio);
-      }}
-      onPointerUp={() => !desbloqueado && desbloqueio.cancelar()}
-      onPointerCancel={() => !desbloqueado && desbloqueio.cancelar()}
-      onPointerLeave={() => !desbloqueado && desbloqueio.cancelar()}
     >
       {/* Topo: status do rastreamento — o essencial, nada além disso. */}
       <div className="flex flex-col items-center gap-1 pt-6 text-center px-6">
@@ -283,10 +303,31 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
         </div>
 
         {!desbloqueado ? (
-          <div className="relative flex items-center justify-center">
+          // O gesto de desbloqueio vive AQUI, no anel, e não no container da
+          // tela inteira. Uma versão anterior ouvia o pointerdown no overlay
+          // todo: qualquer toque prolongado em qualquer canto destravava — o
+          // que anula o propósito do bloqueio, já que o celular prensado
+          // dentro do colete mantém pressão contínua sobre a tela e
+          // destravaria sozinho, expondo os botões (inclusive o de sair) a
+          // toques acidentais no meio da navegação.
+          <button
+            type="button"
+            className="relative flex items-center justify-center rounded-full"
+            style={{ touchAction: 'none' }}
+            aria-label="Segure para desbloquear a tela"
+            onPointerDown={(e) => {
+              // `preventDefault` evita que o iOS trate o segurar como seleção
+              // de texto ou callout de contexto.
+              e.preventDefault();
+              desbloqueio.iniciar(confirmarDesbloqueio);
+            }}
+            onPointerUp={() => desbloqueio.cancelar()}
+            onPointerCancel={() => desbloqueio.cancelar()}
+            onPointerLeave={() => desbloqueio.cancelar()}
+          >
             <AnelProgresso progresso={desbloqueio.progresso} />
             <Lock size={20} className="absolute text-slate-600" />
-          </div>
+          </button>
         ) : (
           <div className="flex flex-col items-center gap-4">
             <div className="flex items-center gap-2 text-slate-500 text-[11px]">
