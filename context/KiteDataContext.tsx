@@ -277,11 +277,19 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           const body = await res.json().catch(() => null);
           const novas = (body?.messages ?? []) as ChatMessage[];
           if (novas.length > 0) {
+            // Avança o cursor pelo lote INTEIRO (inclusive mensagens próprias),
+            // senão a própria mensagem nunca sai da janela "since" e volta a
+            // aparecer como "nova" no próximo poll.
             lastChatCheckRef.current = body.latestAt || new Date().toISOString();
+            // Mas só conta como "notificação" quem NÃO fui eu: sem este filtro,
+            // mandar uma mensagem e sair da aba do chat fazia o próximo poll
+            // background achar a própria mensagem e notificar o remetente dela
+            // mesmo — quem devia ser avisado é quem recebeu, não quem mandou.
+            const novasDeOutros = novas.filter((m) => m.userId !== user?.id);
             // Se o usuário não está na aba chat, notifica
-            if (activeTab !== 'chat') {
-              setUnreadChatCount((c) => c + novas.length);
-              const ultima = novas[novas.length - 1];
+            if (activeTab !== 'chat' && novasDeOutros.length > 0) {
+              setUnreadChatCount((c) => c + novasDeOutros.length);
+              const ultima = novasDeOutros[novasDeOutros.length - 1];
               setLatestIncomingMessage(ultima);
 
               // Dispara notificação push do navegador se autorizado
