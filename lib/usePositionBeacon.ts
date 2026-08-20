@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Mantém `user_presence.lat/lng` fresco em QUALQUER tela do app.
@@ -58,9 +58,22 @@ export function lerPosicao(): Promise<{ lat: number; lng: number } | null> {
   });
 }
 
-export function usePositionBeacon(ativo: boolean): void {
+/**
+ * `ultimaPosicaoEm` é o instante do último POST que o SERVIDOR confirmou (2xx),
+ * não o da última tentativa. A diferença importa: é esse valor que alimenta o
+ * indicador de sinal do modo navegação (`estadoSinal` em `lib/downwind.ts`), e
+ * um indicador que ficasse verde só porque a requisição saiu — mesmo o servidor
+ * tendo respondido 500 — mentiria para quem está na água justamente no momento
+ * em que a informação precisa ser confiável.
+ */
+export interface PositionBeaconState {
+  ultimaPosicaoEm: Date | null;
+}
+
+export function usePositionBeacon(ativo: boolean): PositionBeaconState {
   // Evita empilhar requisições quando o 4G da praia demora mais que o intervalo.
   const emVoo = useRef(false);
+  const [ultimaPosicaoEm, setUltimaPosicaoEm] = useState<Date | null>(null);
 
   useEffect(() => {
     if (!ativo) return;
@@ -73,7 +86,7 @@ export function usePositionBeacon(ativo: boolean): void {
       try {
         const pos = await lerPosicao();
         if (cancelado || !pos) return;
-        await fetch('/api/chat/presence', {
+        const resp = await fetch('/api/chat/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // Sem `room` e sem `atSpotId` de propósito: este beacon diz "estou com
@@ -83,6 +96,10 @@ export function usePositionBeacon(ativo: boolean): void {
           // atSpotId nulo apagaria o spot que o velejador declarou à mão.
           body: JSON.stringify({ lat: pos.lat, lng: pos.lng }),
         });
+        // `fetch` só rejeita em falha de rede: um 4xx/5xx resolve normalmente.
+        // Sem checar `ok`, um erro do servidor seria contado como posição
+        // entregue e o indicador de sinal ficaria verde com o banco vazio.
+        if (!cancelado && resp.ok) setUltimaPosicaoEm(new Date());
       } catch {
         // Presença é best-effort: nunca deve estourar na UI.
       } finally {
@@ -106,4 +123,6 @@ export function usePositionBeacon(ativo: boolean): void {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [ativo]);
+
+  return { ultimaPosicaoEm };
 }

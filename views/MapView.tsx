@@ -4,9 +4,10 @@ import React, { useState, useCallback, useEffect, Suspense, useRef } from 'react
 import dynamic from 'next/dynamic';
 import { useKiteData } from '../context/KiteDataContext';
 import { Spot } from '../types';
-import { ChevronRight, Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2, Navigation } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
 import { MapLayer, UserPosition } from '@/components/LeafletMap';
+import { ModoNavegacao } from '@/components/ModoNavegacao';
 
 // Carregar Leaflet apenas no cliente (SSR = false) — Leaflet depende de window
 const LeafletMap = dynamic(
@@ -37,6 +38,10 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
   // Referência para o watch ID - precisa existir para limpar no unmount
   const watchIdRef = useRef<number | null>(null);
+  // Modo Navegação: tela cheia preta que mantém o app em primeiro plano
+  // durante uma travessia. Entra a partir daqui (aba Mapa) porque é onde o
+  // velejador está antes de ir para a água — ver components/ModoNavegacao.tsx.
+  const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
 
   const handleLayerChange = useCallback((layer: MapLayer) => {
     setActiveLayer(layer);
@@ -203,6 +208,31 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
           activeSosList={allActiveSosList}
         />
       </Suspense>
+
+      {/* Entrada do Modo Navegação (referência: botão de PLAY do Wind Maps).
+          Fica no meio da lateral direita de propósito: o topo (top-3 até
+          ~top-20 quando a busca de spot abre resultados) já está ocupado
+          pelos controles de camada/estilo/localização do LeafletMap, e o
+          rodapé (map-card-bottom + o menu flutuante, cuja altura real vem de
+          --nav-h) é ocupado pelo card do spot selecionado, que fica visível
+          quase sempre. Um ponto fixo na metade vertical da tela nunca cai
+          dentro de nenhuma dessas duas faixas, em nenhum iPhone. */}
+      {!modoNavegacaoAtivo && (
+        <button
+          type="button"
+          onClick={() => setModoNavegacaoAtivo(true)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 z-map-ui flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 border border-cyan-300/40 text-slate-950 shadow-2xl shadow-cyan-500/30 active:scale-95 transition-all"
+          aria-label="Entrar no Modo Navegação"
+          title="Iniciar Modo Navegação"
+        >
+          <Navigation size={20} className="fill-current stroke-[1.5]" />
+          <span className="text-[9px] font-black leading-none tracking-tight">INICIAR</span>
+        </button>
+      )}
+
+      {modoNavegacaoAtivo && (
+        <ModoNavegacao onSair={() => setModoNavegacaoAtivo(false)} />
+      )}
 
       {/* Selected Spot Bottom Floating Card */}
       {/* map-card-bottom (globals.css) levanta o card acima do menu fixo + safe
