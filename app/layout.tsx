@@ -55,6 +55,24 @@ export const metadata: Metadata = {
     // com ele em vez de criar uma faixa preta separada.
     statusBarStyle: "black-translucent",
   },
+  /*
+   * `appleWebApp.capable: true` acima só gera `mobile-web-app-capable`
+   * (verificado em node_modules/next/dist/lib/metadata/metadata.js:603-606,
+   * Next 16.3.1) — a tag PADRÃO, que o WebKit só passou a honrar a partir do
+   * iOS 17.4. Em qualquer iPhone com iOS anterior, SEM a tag legada
+   * `apple-mobile-web-app-capable`, o Safari não sabe que deve abrir o ícone
+   * da tela de início em modo standalone: ele abre como uma aba comum, com a
+   * barra de ferramentas do próprio Safari embaixo. Essa barra — fora da
+   * página, imune a qualquer CSS do app — é indistinguível de uma "tarja
+   * escura no rodapé" e explica sozinha por que nenhuma correção de cor ou
+   * geometria dentro do app jamais a teria afetado.
+   *
+   * Next.js não expõe essa tag pela API tipada; `other` é o escape hatch
+   * documentado para meta tags arbitrárias.
+   */
+  other: {
+    "apple-mobile-web-app-capable": "yes",
+  },
   openGraph: {
     title: "KiteNinja",
     description:

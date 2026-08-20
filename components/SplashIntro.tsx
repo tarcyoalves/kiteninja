@@ -443,12 +443,20 @@ const SplashVideo: React.FC<{
 
   return (
     <div
-      className={`fixed inset-0 z-splash bg-black overflow-hidden select-none transition-opacity duration-400 ${
+      className={`fixed inset-0 z-splash bg-[var(--app-bg)] overflow-hidden select-none transition-opacity duration-400 ${
         leaving ? 'opacity-0' : 'opacity-100'
       }`}
       /* Sem style de altura: `fixed inset-0` (classe) já cobre a tela inteira.
          O height/minHeight que havia aqui discordava do inset e deixava a faixa
-         escura do fundo aparecendo embaixo do vídeo no iPhone instalado. */
+         escura do fundo aparecendo embaixo do vídeo no iPhone instalado.
+
+         bg-[var(--app-bg)], não bg-black: o vídeo/poster cobrem a tela via
+         object-fit:cover, então este fundo normalmente não aparece — mas nos
+         ~350ms de fade ao entrar/sair (opacity-0 -> 100) ele fica visível por
+         baixo, e preto puro contra o --app-bg do resto do app (#0F172A) é
+         exatamente a mesma classe de divergência de cor já documentada em
+         globals.css. Ver a seção "COR DE FUNDO" lá antes de voltar a usar uma
+         cor solta aqui. */
       role="status"
       aria-label="Abertura do KiteNinja"
     >
