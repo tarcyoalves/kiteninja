@@ -16,6 +16,7 @@ import {
   podeTransicionarDownwind,
   podeTransicionarParticipante,
   progressoDownwind,
+  proximoSplitApoioTerra,
   velejadoresPendentes,
 } from './downwind';
 
@@ -423,5 +424,25 @@ describe('progressoDownwind', () => {
     expect(r.distanciaTotalKm).toBeGreaterThanOrEqual(0);
     expect(r.distanciaPercorridaKm).toBeGreaterThanOrEqual(0);
     expect(r.distanciaRestanteKm).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('proximoSplitApoioTerra — toggle do split mapa/chat do motorista', () => {
+  it('de equilibrado, expandir mapa vai para mapa', () => {
+    expect(proximoSplitApoioTerra('equilibrado', 'mapa')).toBe('mapa');
+  });
+
+  it('de equilibrado, expandir chat vai para chat', () => {
+    expect(proximoSplitApoioTerra('equilibrado', 'chat')).toBe('chat');
+  });
+
+  it('clicar de novo no botão já expandido colapsa de volta a equilibrado', () => {
+    expect(proximoSplitApoioTerra('mapa', 'mapa')).toBe('equilibrado');
+    expect(proximoSplitApoioTerra('chat', 'chat')).toBe('equilibrado');
+  });
+
+  it('trocar de expandido para o outro lado vai direto ao outro lado (sem passar por equilibrado)', () => {
+    expect(proximoSplitApoioTerra('mapa', 'chat')).toBe('chat');
+    expect(proximoSplitApoioTerra('chat', 'mapa')).toBe('mapa');
   });
 });

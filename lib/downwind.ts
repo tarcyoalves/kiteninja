@@ -328,3 +328,33 @@ export function progressoDownwind(
 
   return { distanciaTotalKm, distanciaPercorridaKm, distanciaRestanteKm, percentual };
 }
+
+// ---------------------------------------------------------------------------
+// 5. Split mapa/chat da tela do apoio em terra (motorista).
+// ---------------------------------------------------------------------------
+
+/** Três proporções fixas — ver views/DownwindAoVivoView.tsx: o motorista vê
+ * mapa e chat sempre juntos (nunca um por cima do outro), com dois botões
+ * pequenos para expandir um às custas do outro. */
+export type SplitApoioTerra = 'mapa' | 'equilibrado' | 'chat';
+
+/** Altura do mapa (o chat ocupa o restante) para cada estado. */
+export const ALTURA_MAPA_SPLIT_APOIO: Record<SplitApoioTerra, string> = {
+  mapa: '70%',
+  equilibrado: '50%',
+  chat: '30%',
+};
+
+/**
+ * Próximo estado ao clicar um dos dois botões ("expandir mapa" / "expandir
+ * chat"). Cada botão é o seu próprio colapso: clicar de novo no botão que já
+ * está expandido volta para 'equilibrado' — não existe um terceiro controle
+ * "recolher" separado, por simplicidade (pedido do dono aceitou essa
+ * alternativa a um resize por arraste).
+ */
+export function proximoSplitApoioTerra(
+  atual: SplitApoioTerra,
+  alvo: 'mapa' | 'chat'
+): SplitApoioTerra {
+  return atual === alvo ? 'equilibrado' : alvo;
+}

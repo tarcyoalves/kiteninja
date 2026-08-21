@@ -2,12 +2,12 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, X } from 'lucide-react';
+import { Ban, Car, Check, ChevronDown, ChevronUp, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, X } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useSosHold } from '../lib/useSosHold';
-import { estadoDeSaidaVelejo } from '../lib/downwind';
+import { ALTURA_MAPA_SPLIT_APOIO, estadoDeSaidaVelejo, proximoSplitApoioTerra, type SplitApoioTerra } from '../lib/downwind';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
@@ -102,6 +102,9 @@ export const DownwindAoVivoView: React.FC = () => {
   // normal (é o pedido do dono: "ao destravar a tela, continua no mapa ao
   // vivo").
   const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
+  // Split mapa/chat exclusivo do apoio_terra (motorista) — ver
+  // lib/downwind.ts (proximoSplitApoioTerra). O velejador nunca usa isto.
+  const [splitApoio, setSplitApoio] = useState<SplitApoioTerra>('equilibrado');
 
   // Só reporta/consulta posição quando o downwind de fato está em andamento
   // (aberto ainda não tem ninguém navegando) — ver lib/downwindAcesso.ts. O
@@ -203,14 +206,19 @@ export const DownwindAoVivoView: React.FC = () => {
             {souOrganizador ? ' · Organizador' : ''}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setChatAberto(true)}
-          className="shrink-0 p-2.5 rounded-full bg-slate-800 text-cyan-400 active:scale-95 transition-all"
-          aria-label="Abrir chat do grupo"
-        >
-          <MessageCircle size={18} />
-        </button>
+        {/* Apoio em terra não abre/fecha chat — ele já fica sempre visível
+            na metade de baixo da tela (ver o split abaixo). Este botão só
+            existe para o velejador. */}
+        {minhaParticipacao.papel === 'velejador' && (
+          <button
+            type="button"
+            onClick={() => setChatAberto(true)}
+            className="shrink-0 p-2.5 rounded-full bg-slate-800 text-cyan-400 active:scale-95 transition-all"
+            aria-label="Abrir chat do grupo"
+          >
+            <MessageCircle size={18} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 relative">
@@ -223,22 +231,9 @@ export const DownwindAoVivoView: React.FC = () => {
             </p>
           </div>
         ) : user ? (
-          <>
-            <DownwindMapa
-              meuUserId={user.id}
-              saida={downwindAtivo.saida}
-              chegada={downwindAtivo.chegada}
-              participantes={participantes}
-              minhaTrilha={minhaTrilha}
-              onSelecionarParticipante={setParticipanteSelecionado}
-            />
-            <DownwindFaixaInfo
-              meuUserId={user.id}
-              saida={downwindAtivo.saida}
-              chegada={downwindAtivo.chegada}
-              participantes={participantes}
-            />
-            {participanteSelecionado &&
+          (() => {
+            const painelSheet =
+              participanteSelecionado &&
               (() => {
                 const alvo = participantes.find((p) => p.userId === participanteSelecionado);
                 const eu = participantes.find((p) => p.userId === user.id);
@@ -256,8 +251,81 @@ export const DownwindAoVivoView: React.FC = () => {
                     }}
                   />
                 );
-              })()}
-          </>
+              })();
+
+            const mapaEFaixa = (
+              <>
+                <DownwindMapa
+                  meuUserId={user.id}
+                  saida={downwindAtivo.saida}
+                  chegada={downwindAtivo.chegada}
+                  participantes={participantes}
+                  minhaTrilha={minhaTrilha}
+                  onSelecionarParticipante={setParticipanteSelecionado}
+                />
+                <DownwindFaixaInfo
+                  meuUserId={user.id}
+                  saida={downwindAtivo.saida}
+                  chegada={downwindAtivo.chegada}
+                  participantes={participantes}
+                />
+                {painelSheet}
+              </>
+            );
+
+            // Só o apoio_terra (motorista) ganha o split fixo — ele não tem
+            // as mãos livres do velejador pra abrir/fechar um painel por
+            // cima do mapa, então o chat fica sempre visível embaixo. O
+            // velejador mantém o comportamento de sempre (mapa cheio +
+            // chat como overlay opcional, ver chatAberto abaixo).
+            if (minhaParticipacao.papel !== 'apoio_terra') return mapaEFaixa;
+
+            return (
+              <div className="w-full h-full flex flex-col">
+                <div
+                  className="relative overflow-hidden shrink-0"
+                  style={{ height: ALTURA_MAPA_SPLIT_APOIO[splitApoio] }}
+                >
+                  {mapaEFaixa}
+                </div>
+
+                {/* Dois botões pequenos, cada um alternando entre 50/50 e a
+                    proporção expandida do seu lado (70/30 ou 30/70) — clicar
+                    de novo no botão já ativo recolhe de volta pra 50/50
+                    (proximoSplitApoioTerra, lib/downwind.ts). Preferido a um
+                    divisor arrastável: mesmo resultado prático, muito mais
+                    barato de implementar e testar. */}
+                <div className="shrink-0 flex items-center justify-center gap-2 py-1.5 bg-[#0F172A] border-y border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setSplitApoio((atual) => proximoSplitApoioTerra(atual, 'mapa'))}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                      splitApoio === 'mapa' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                    }`}
+                    aria-label={splitApoio === 'mapa' ? 'Voltar mapa e chat ao mesmo tamanho' : 'Expandir o mapa'}
+                  >
+                    <ChevronUp size={12} />
+                    Mapa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSplitApoio((atual) => proximoSplitApoioTerra(atual, 'chat'))}
+                    className={`flex items-center gap-1 px-3 py-1 rounded-full text-[10px] font-bold transition-all ${
+                      splitApoio === 'chat' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-300'
+                    }`}
+                    aria-label={splitApoio === 'chat' ? 'Voltar mapa e chat ao mesmo tamanho' : 'Expandir o chat'}
+                  >
+                    <ChevronDown size={12} />
+                    Chat
+                  </button>
+                </div>
+
+                <div className="relative flex-1 min-h-0">
+                  <DownwindChat downwindId={downwindAtivo.id} />
+                </div>
+              </div>
+            );
+          })()
         ) : null}
       </div>
 

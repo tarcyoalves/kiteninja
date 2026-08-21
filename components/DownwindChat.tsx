@@ -30,7 +30,13 @@ interface UsuarioDoChat {
 
 interface DownwindChatProps {
   downwindId: string;
-  onFechar: () => void;
+  /**
+   * Ausente no uso embutido (apoio_terra em views/DownwindAoVivoView.tsx: o
+   * chat fica sempre visível na metade de baixo da tela, sem X para fechar).
+   * Presente no uso normal (painel que abre por cima do mapa) — aí sim tem
+   * como fechar.
+   */
+  onFechar?: () => void;
   /**
    * Sobrepõe o usuário lido de `useAuth()`. Existe para
    * app/dw-motorista/[token]/ConvidadoView.tsx: a sessão de convidado do
@@ -156,14 +162,16 @@ export const DownwindChat: React.FC<DownwindChatProps> = ({ downwindId, onFechar
     <div className="absolute inset-0 z-map-ui flex flex-col bg-[#0B1220]/97 backdrop-blur-md overlay-safe-top overlay-safe-bottom">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
         <h3 className="font-black text-sm text-white">Chat do grupo</h3>
-        <button
-          type="button"
-          onClick={onFechar}
-          className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
-          aria-label="Fechar chat"
-        >
-          <X size={18} />
-        </button>
+        {onFechar && (
+          <button
+            type="button"
+            onClick={onFechar}
+            className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+            aria-label="Fechar chat"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2">

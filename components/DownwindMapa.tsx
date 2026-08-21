@@ -2,9 +2,10 @@
 
 import 'leaflet/dist/leaflet.css';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { estadoSinal } from '@/lib/downwind';
 import { corDoUsuario, COR_SINAL } from '@/lib/downwindCores';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
@@ -175,8 +176,46 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
   const { corpo, cauda } = useMemo(() => dividirCauda(minhaTrilha), [minhaTrilha]);
   const minhaCor = corDoUsuario(meuUserId);
 
+  // Mesmo filtro usado pros marcadores (abaixo) — reaproveitado aqui pro
+  // botão "ver todos": só participantes com posição conhecida entram no
+  // fitBounds, senão o Leaflet erra num bounds com NaN.
+  const participantesComPosicao = useMemo(
+    () => participantes.filter((p) => p.lat !== null && p.lng !== null),
+    [participantes]
+  );
+  const podeVerTodos = participantesComPosicao.length >= 2;
+
+  // Toggle de dois estados (pedido do dono): 'meu-foco' é o comportamento de
+  // sempre (centraliza e trava zoom 16 na posição própria); 'todos' dá
+  // zoom-out pra enquadrar todo mundo com posição conhecida. Guardado aqui
+  // (não em MapaController) porque a ação é imperativa e disparada por
+  // clique, não por um efeito reagindo a props.
+  const [modoVisao, setModoVisao] = useState<'meu-foco' | 'todos'>('meu-foco');
+  const mapRef = useRef<L.Map | null>(null);
+
+  const alternarVisao = useCallback(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (modoVisao === 'meu-foco') {
+      if (!podeVerTodos) return;
+      const bounds = L.latLngBounds(
+        participantesComPosicao.map((p) => [p.lat as number, p.lng as number])
+      );
+      map.fitBounds(bounds, { padding: [48, 48] });
+      setModoVisao('todos');
+    } else {
+      // Volta pro mesmo comportamento padrão de centralização — reusa
+      // `centroInicial`, sem duplicar a lógica que já existe em
+      // MapaController.
+      if (centroInicial) map.setView(centroInicial, DEFAULT_ZOOM, { animate: true });
+      setModoVisao('meu-foco');
+    }
+  }, [modoVisao, podeVerTodos, participantesComPosicao, centroInicial]);
+
   return (
-    <MapContainer
+    <div className="relative w-full h-full">
+      <MapContainer
+        ref={mapRef}
       center={centroInicial ?? [-4.5, -37.5]}
       zoom={DEFAULT_ZOOM}
       zoomControl={false}
@@ -232,25 +271,37 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
         </>
       )}
 
-      {participantes
-        .filter((p) => p.lat !== null && p.lng !== null)
-        .map((p) => (
-          <Marker
-            key={p.userId}
-            position={[p.lat as number, p.lng as number]}
-            icon={
-              p.papel === 'apoio_terra'
-                ? criarIconeApoio(p)
-                : criarIconeVelejador(p, agora, p.userId === meuUserId)
-            }
-            zIndexOffset={p.userId === meuUserId ? 2200 : p.ehMeuApoio ? 2400 : 1000}
-            eventHandlers={
-              onSelecionarParticipante
-                ? { click: () => onSelecionarParticipante(p.userId) }
-                : undefined
-            }
-          />
-        ))}
+      {participantesComPosicao.map((p) => (
+        <Marker
+          key={p.userId}
+          position={[p.lat as number, p.lng as number]}
+          icon={
+            p.papel === 'apoio_terra'
+              ? criarIconeApoio(p)
+              : criarIconeVelejador(p, agora, p.userId === meuUserId)
+          }
+          zIndexOffset={p.userId === meuUserId ? 2200 : p.ehMeuApoio ? 2400 : 1000}
+          eventHandlers={
+            onSelecionarParticipante
+              ? { click: () => onSelecionarParticipante(p.userId) }
+              : undefined
+          }
+        />
+      ))}
     </MapContainer>
+
+      {/* Canto inferior direito: livre de FaixaInfo (topo) e da faixa de
+          ações (fora deste container relative, abaixo do mapa) — ver
+          views/DownwindAoVivoView.tsx. */}
+      <button
+        type="button"
+        onClick={alternarVisao}
+        disabled={modoVisao === 'meu-foco' && !podeVerTodos}
+        className="absolute bottom-3 right-3 z-map-ui w-11 h-11 rounded-full bg-[#0F172A]/90 backdrop-blur-sm border border-slate-700/80 text-cyan-400 shadow-lg flex items-center justify-center active:scale-95 transition-all disabled:opacity-40"
+        aria-label={modoVisao === 'meu-foco' ? 'Ver todos os participantes no mapa' : 'Voltar a centralizar na minha posição'}
+      >
+        {modoVisao === 'meu-foco' ? <Maximize2 size={18} /> : <Minimize2 size={18} />}
+      </button>
+    </div>
   );
 };
