@@ -1,8 +1,72 @@
 # Plano — Mapa ao vivo do Downwind
 
-Status: **plano, nada implementado.** A Fase 1 do Downwind (schema + regras
-puras) já existe e está em produção; ver `lib/downwind.ts`, `lib/schema.sql` e o
-commit `5e224fe`. Este documento especifica a camada seguinte.
+Status (21/08/2026): **implementado e commitado em 8 fases**, branch
+`claude/retomar-aplicacao-d7iyr7`. Falta só publicar (rodar `migrate.ts`
+contra o Neon de produção — ver aviso no fim desta seção — e fazer o deploy) e
+testar no aparelho. O restante deste documento é o plano original, mantido
+como referência de desenho; onde ele diverge do que foi de fato construído, a
+tabela abaixo manda.
+
+## O que mudou do plano original
+
+O pedido do dono trouxe três decisões que este documento não previa:
+
+1. **Entrada pelo evento, não por convite.** `downwind_convites` ficou fora de
+   escopo. O ponto de entrada é o botão no card do evento tipo Downwind em
+   `views/EventsAndAlertsView.tsx` — `POST /api/downwind/[id]/entrar`.
+2. **Takeover real, sem "usar o app".** Enquanto o velejador participa de um
+   downwind aberto/em andamento, `app/page.tsx` substitui as abas normais por
+   `views/DownwindAoVivoView.tsx` e o `BottomNav` some. Não existe minimizar —
+   a única saída sem encerrar é o **chat privado do próprio downwind** (sala
+   `dw:<id>` nova em `lib/chat.ts`, embutido no mapa via
+   `components/DownwindChat.tsx`). Só "Encerrar velejo" (a própria
+   participação) ou o organizador encerrando o downwind devolve as demais
+   páginas. Ver `context/DownwindContext.tsx` para a decisão completa.
+3. **Só a própria trilha, nunca a de terceiros.** O dono pediu trajeto no
+   mapa ("marcar o trajeto de cada velejador também"), mas decidiu, depois de
+   ver o trade-off de 20 trilhas cruzadas virando sopa visual, mostrar só a
+   trilha de quem está olhando. Isso simplificou o transporte
+   (`lib/trilhaDownwind.ts`): sem `?trilhaDe=`, sem alternância "minha/todas".
+
+## Onde cada peça mora
+
+| Peça | Arquivo |
+|---|---|
+| Schema (`apoio_user_id`, resumo, `ux_downwinds_event`) | `lib/schema.sql` |
+| Autorização (404 vs 403, guarda anti-fail-open, invariante do apoio) | `lib/downwindAcesso.ts` |
+| Transporte da trilha (amostragem, cursor, cauda viva) | `lib/trilhaDownwind.ts` |
+| Rotas | `app/api/downwind/ativo`, `app/api/downwind/[id]/{posicoes,status,entrar,participantes/[userId]}` |
+| Estado "estou num downwind agora?" | `context/DownwindContext.tsx` |
+| Tela de takeover | `views/DownwindAoVivoView.tsx` |
+| Mapa (marcadores, trilha própria) | `components/DownwindMapa.tsx` |
+| Faixa das 4 perguntas | `components/DownwindFaixaInfo.tsx` |
+| Detalhe do participante + vínculo de apoio | `components/DownwindParticipanteSheet.tsx` |
+| Chat privado do grupo | `components/DownwindChat.tsx` |
+| Iniciar → Modo Navegação → volta ao mapa | `components/ModoNavegacao.tsx` (props novas) |
+
+**ATENÇÃO PARA O DEPLOY:** o schema ganhou 4 colunas e um índice UNIQUE.
+Rodar `migrate.ts` contra o Neon de **produção** antes de publicar qualquer
+código desta feature — verde no `verify-sql.ts` (149 checks) só prova
+coerência interna, não que o banco real foi atualizado. Ver o incidente
+documentado em `docs/PENDENCIAS-20-08-2026.md` (item "INCIDENTE"). Antes de
+criar `ux_downwinds_event`, confirmar que não há dois downwinds com o mesmo
+`event_id` em produção:
+```sql
+SELECT event_id, COUNT(*) FROM downwinds
+ WHERE event_id IS NOT NULL GROUP BY event_id HAVING COUNT(*) > 1;
+```
+
+## Fora de escopo (não foi feito)
+
+Push "avisar meu apoio", convite por link (`downwind_convites`), trilha de
+terceiros/alternância "minha/todas" (decisão explícita do dono, ver acima),
+agrupamento de marcadores sobrepostos, amostragem por Douglas-Peucker (a
+amostragem por módulo em SQL já é suficiente para o volume de pontos de uma
+travessia).
+
+---
+
+## Plano original (referência de desenho)
 
 Público deste documento: um agente ou desenvolvedor que vai implementar isto sem
 ter participado das conversas anteriores. Tudo que você precisa saber está aqui

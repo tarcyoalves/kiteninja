@@ -56,6 +56,10 @@ interface LeafletMapProps {
   nearestSpotInfo: { spot: Spot; distanceKm: number } | null;
   userPosition: UserPosition | null;
   activeSosList?: ActiveSosMapData[];
+  /** Incrementado a cada clique manual no botão "Minha localização" — ver
+   * views/MapView.tsx. Recentraliza com zoom próximo mesmo depois da primeira
+   * localização automática, quando o watch de GPS já está rodando. */
+  recenterTrigger?: number;
 }
 
 /** Componente interno para controllable center (usado pelo botão Localizar) */
@@ -220,6 +224,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   nearestSpotInfo,
   userPosition,
   activeSosList = [],
+  recenterTrigger = 0,
 }) => {
   /* Animação ligada por padrão: é o principal ganho de leitura do mapa. Fica
      desligável porque partícula em canvas custa bateria, e na praia isso pesa. */
@@ -229,34 +234,46 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [mapCenter, setMapCenter] = useState<LatLng | null>(null);
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
 
-  // Quando o usuário é localizado, enquadrar mapa mostrando usuário E spot mais próximo juntos.
-  // fitBounds com padding garante que ambos fiquem visíveis na tela.
-  useEffect(() => {
-    if (locateStatus === 'success' && userPosition && nearestSpotInfo && mapRef.current) {
-      const map = mapRef.current;
-      const userLatLng: L.LatLngTuple = [userPosition.lat, userPosition.lng];
-      const spotLatLng: L.LatLngTuple = [nearestSpotInfo.spot.lat, nearestSpotInfo.spot.lng];
-
-      // Criar bounds com os dois pontos
-      const bounds = L.latLngBounds([userLatLng, spotLatLng]);
-
-      // Padding para não colar nas bordas - 15% em cada lado
-      const padding: L.PointTuple = [
-        window.innerWidth * 0.15,
-        window.innerHeight * 0.15,
-      ];
-
-      // Ajustar zoom e centro para mostrar os dois pontos
-      map.fitBounds(bounds, {
-        padding,
-        maxZoom: 14, // Zoom máximo para não perder contexto
-        animate: true,
-      });
-    }
-  }, [locateStatus, userPosition, nearestSpotInfo]);
+  /**
+   * Zoom que o botão "Minha localização" usa para chegar perto de verdade.
+   * Antes o pinça-para-zoom não vinha ao caso: o efeito abaixo fazia
+   * `fitBounds([usuário, spot mais próximo])`, capado em zoom 14 — se o spot
+   * mais próximo estivesse a dezenas de km (comum fora do litoral coberto),
+   * o enquadramento saía bem mais aberto que 14 para caber os dois pontos, e
+   * o botão "para centralizar" deixava o usuário longe da própria posição em
+   * vez de perto dela. Trocado por centralizar SÓ no usuário, sempre neste
+   * zoom fixo — o spot mais próximo continua mostrado no card inferior
+   * (nearestSpotInfo), só não dita mais o enquadramento da câmera.
+   */
+  const ZOOM_LOCALIZACAO = 16;
 
   // Estado para controlar se o usuário já foi localizado (para não re-enquadrar em cada atualização)
   const [hasInitiallyLocated, setHasInitiallyLocated] = useState(false);
+
+  // Quando o usuário é localizado, centraliza nele com zoom próximo. Só na
+  // PRIMEIRA localização bem-sucedida — depois disso o velejador pode dar
+  // zoom/arrastar livremente sem o mapa "puxar" de volta a cada atualização
+  // do watchPosition.
+  useEffect(() => {
+    if (locateStatus === 'success' && userPosition && mapRef.current && !hasInitiallyLocated) {
+      mapRef.current.setView([userPosition.lat, userPosition.lng], ZOOM_LOCALIZACAO, {
+        animate: true,
+      });
+    }
+  }, [locateStatus, userPosition, hasInitiallyLocated]);
+
+  // Clique manual no botão depois da primeira localização: recentraliza com
+  // zoom próximo usando a posição mais recente já conhecida, mesmo sem uma
+  // nova transição de locateStatus (o watch já está rodando havia tempo).
+  // `recenterTrigger > 0` evita disparar no mount, quando o valor nasce 0.
+  useEffect(() => {
+    if (recenterTrigger > 0 && userPosition && mapRef.current) {
+      mapRef.current.setView([userPosition.lat, userPosition.lng], ZOOM_LOCALIZACAO, {
+        animate: true,
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recenterTrigger]);
 
   // Após a primeira localização, apenas atualizar a posição do marcador (sem re-enquadrar)
   useEffect(() => {

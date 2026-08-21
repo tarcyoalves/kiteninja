@@ -958,6 +958,256 @@ async function main() {
     [dwId, adminId]
   );
 
+  console.log('\nDownwind — mapa ao vivo (posições, trilha, apoio, status):');
+
+  // Dois usuários descartáveis: um motorista que vai ser APAGADO (para provar o
+  // ON DELETE SET NULL de apoio_user_id sem destruir riderB, que a cascata
+  // adiante ainda usa) e um velejador que vai ser marcado 'encerrado' (para
+  // provar que quem saiu da água some do mapa).
+  const dwApoioDescartavel = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('apoio-descartavel@t.local', '$2b$12$x', 'Motorista Descartável', '3001') RETURNING id`
+    )
+  ).rows[0].id;
+  const dwSaiu = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('dw-saiu@t.local', '$2b$12$x', 'Velejador Que Saiu', '3002') RETURNING id`
+    )
+  ).rows[0].id;
+  await db.query(
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'apoio_terra')`,
+    [dwId, dwApoioDescartavel]
+  );
+  await db.query(
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'velejador')`,
+    [dwId, dwSaiu]
+  );
+  await db.query(
+    `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng) VALUES ($1, $2, -4.9500, -36.8700)`,
+    [dwId, dwSaiu]
+  );
+
+  // (1) Caminho feliz do vínculo de apoio: velejador aponta para um apoio_terra
+  // do mesmo downwind. A validação do invariante é da aplicação
+  // (lib/downwindAcesso.ts) — aqui provamos só que a coluna e a FK existem.
+  await expectOk(
+    db,
+    'apoio_user_id: velejador aponta para um apoio_terra do mesmo downwind',
+    `UPDATE downwind_participantes SET apoio_user_id = $3
+     WHERE downwind_id = $1 AND user_id = $2`,
+    [dwId, riderA, riderB]
+  );
+
+  // (2) A query central da rota GET /posicoes. LEFT JOIN LATERAL e não
+  // DISTINCT ON porque participante que NUNCA reportou tem que aparecer na
+  // lista com lat/lng nulos — DISTINCT ON some com ele.
+  const mapaPosicoes = await expectOk(
+    db,
+    'query da rota do mapa: participantes + última posição (LEFT JOIN LATERAL)',
+    `SELECT dp.user_id, u.name, u.avatar_url, dp.papel, dp.eh_organizador, dp.estado,
+            dp.apoio_user_id, p.lat, p.lng, p.accuracy_m, p.registrado_em
+     FROM downwind_participantes dp
+     JOIN users u ON u.id = dp.user_id
+     LEFT JOIN LATERAL (
+       SELECT lat, lng, accuracy_m, registrado_em
+       FROM downwind_posicoes
+       WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
+       ORDER BY registrado_em DESC LIMIT 1
+     ) p ON TRUE
+     WHERE dp.downwind_id = $1 AND dp.estado NOT IN ('encerrado', 'desistiu')`,
+    [dwId]
+  );
+  check(
+    'participante sem posição nenhuma aparece na lista (lat nulo), não some',
+    mapaPosicoes.some(
+      (r) => String(r.user_id) === dwApoioDescartavel && r.lat === null
+    )
+  );
+  check(
+    'a última posição trazida é a mais recente do participante',
+    Number(mapaPosicoes.find((r) => String(r.user_id) === riderA)?.lng) === -36.89
+  );
+
+  // (3) Quem já saiu da água para de ter posição compartilhada — continuar
+  // transmitindo seria vigiar a pessoa no caminho de casa.
+  await db.query(
+    `UPDATE downwind_participantes SET estado = 'encerrado', encerrou_em = NOW()
+     WHERE downwind_id = $1 AND user_id = $2`,
+    [dwId, dwSaiu]
+  );
+  const mapaSemQuemSaiu = await db.query(
+    `SELECT dp.user_id FROM downwind_participantes dp
+     WHERE dp.downwind_id = $1 AND dp.estado NOT IN ('encerrado', 'desistiu')`,
+    [dwId]
+  );
+  check(
+    "posição de quem está 'encerrado' não é servida no mapa",
+    !mapaSemQuemSaiu.rows.some(
+      (r) => String((r as Record<string, unknown>).user_id) === dwSaiu
+    )
+  );
+
+  // (4) A query de autorização do GET /posicoes. É este zero que a rota
+  // traduz em 404 (nunca 403: um 403 confirmaria que o downwind existe, e
+  // isso já é informação sobre onde um grupo está navegando).
+  const souParticipante = await expectOk(
+    db,
+    'query de autorização do mapa: sou participante deste downwind?',
+    `SELECT 1 AS ok FROM downwind_participantes
+     WHERE downwind_id = $1 AND user_id = $2 AND estado <> 'desistiu'`,
+    [dwId, riderA]
+  );
+  check('participante legítimo passa na checagem de acesso', souParticipante.length === 1);
+  const naoParticipante = await db.query(
+    `SELECT 1 AS ok FROM downwind_participantes
+     WHERE downwind_id = $1 AND user_id = $2 AND estado <> 'desistiu'`,
+    [dwId, riderPos]
+  );
+  check(
+    'quem não é participante recebe zero linhas (vira 404 na rota, não 403)',
+    naoParticipante.rows.length === 0
+  );
+
+  // (5) Apagar a conta do motorista não pode tirar o velejador do downwind,
+  // só deixá-lo sem apoio designado.
+  await db.query(
+    `UPDATE downwind_participantes SET apoio_user_id = $3
+     WHERE downwind_id = $1 AND user_id = $2`,
+    [dwId, dwSaiu, dwApoioDescartavel]
+  );
+  await db.query(`DELETE FROM users WHERE id = $1`, [dwApoioDescartavel]);
+  const apoiadoOrfao = await db.query<{ apoio_user_id: string | null }>(
+    `SELECT apoio_user_id FROM downwind_participantes
+     WHERE downwind_id = $1 AND user_id = $2`,
+    [dwId, dwSaiu]
+  );
+  check(
+    'apagar o motorista zera apoio_user_id mas mantém o velejador no downwind (SET NULL)',
+    apoiadoOrfao.rows.length === 1 && apoiadoOrfao.rows[0].apoio_user_id === null
+  );
+
+  // (6) Carga inicial da trilha, amostrada no banco: a travessia inteira tem
+  // centenas de pontos por pessoa e o payload não pode crescer com ela.
+  await expectOk(
+    db,
+    'query de trilha amostrada (row_number + módulo) para a carga inicial',
+    `SELECT user_id, lat, lng, registrado_em FROM (
+       SELECT user_id, lat, lng, registrado_em,
+              row_number() OVER (PARTITION BY user_id ORDER BY registrado_em DESC) AS rn,
+              count(*)     OVER (PARTITION BY user_id) AS total
+       FROM downwind_posicoes WHERE downwind_id = $1
+     ) t
+     WHERE rn = 1 OR rn % GREATEST(1, CEIL(total::numeric / $2)::int) = 0
+     ORDER BY user_id, registrado_em`,
+    [dwId, 120]
+  );
+
+  // (7) Em regime, cada poll traz só o que chegou desde o cursor anterior —
+  // é o que mantém o payload em poucos KB numa travessia de 3h.
+  const delta = await expectOk(
+    db,
+    'query de delta da trilha (só o que chegou desde o cursor)',
+    `SELECT user_id, lat, lng, registrado_em
+     FROM downwind_posicoes
+     WHERE downwind_id = $1 AND registrado_em > $2
+     ORDER BY user_id, registrado_em
+     LIMIT 1200`,
+    [dwId, new Date(Date.now() - 60_000).toISOString()]
+  );
+  check('delta traz só as posições recentes, não a trilha inteira', delta.length < 4);
+
+  // (8) O UPDATE de status é atômico com o timestamp, como o comentário do
+  // schema manda: coerência de máquina de estados é da camada que conhece as
+  // transições, não de um CHECK cross-column.
+  const iniciou = await expectOk(
+    db,
+    "início do downwind: UPDATE atômico status + iniciado_em, condicionado ao status atual",
+    `UPDATE downwinds SET status = 'em_andamento', iniciado_em = COALESCE(iniciado_em, NOW())
+     WHERE id = $1 AND status = 'aberto' RETURNING id`,
+    [dwId]
+  );
+  check('primeiro velejador a tocar Iniciar move o downwind para em_andamento', iniciou.length === 1);
+
+  // (9) Dois velejadores tocando Iniciar juntos: o `AND status =` resolve a
+  // corrida no banco, igual ao `WHERE used_at IS NULL` dos convites.
+  const iniciouDeNovo = await db.query(
+    `UPDATE downwinds SET status = 'em_andamento', iniciado_em = COALESCE(iniciado_em, NOW())
+     WHERE id = $1 AND status = 'aberto' RETURNING id`,
+    [dwId]
+  );
+  check(
+    'segundo Iniciar simultâneo não faz nada (0 linhas) — a corrida morre no banco',
+    iniciouDeNovo.rows.length === 0
+  );
+
+  // (10) Mesmo padrão no encerramento.
+  const encerrou = await expectOk(
+    db,
+    'encerramento do downwind: UPDATE atômico status + encerrado_em',
+    `UPDATE downwinds SET status = 'encerrado', encerrado_em = COALESCE(encerrado_em, NOW())
+     WHERE id = $1 AND status = 'em_andamento' RETURNING id`,
+    [dwId]
+  );
+  check('encerramento a partir de em_andamento funciona', encerrou.length === 1);
+
+  // (11) e (12) O invariante "um evento tem no máximo um downwind", que o
+  // rollback manual de app/api/events/route.ts já assume.
+  const evUnico = await db.query<{ id: string }>(
+    `INSERT INTO events (title, event_date, location, type, description, organizer)
+     VALUES ('Downwind Único', '30/08', 'RN', 'Downwind', 'D', 'Org') RETURNING id`
+  );
+  const evUnicoId = evUnico.rows[0].id;
+  await db.query(
+    `INSERT INTO downwinds (nome, event_id, criado_por) VALUES ('Primeiro', $1, $2)`,
+    [evUnicoId, adminId]
+  );
+  await expectFail(
+    db,
+    'ux_downwinds_event: segundo downwind no mesmo evento é rejeitado',
+    `INSERT INTO downwinds (nome, event_id, criado_por) VALUES ('Segundo', $1, $2)`,
+    [evUnicoId, adminId]
+  );
+  await expectOk(
+    db,
+    'ux_downwinds_event é parcial: vários downwinds sem evento convivem',
+    `INSERT INTO downwinds (nome, event_id, criado_por) VALUES ('Sem Evento A', NULL, $1),
+                                                              ('Sem Evento B', NULL, $1)`,
+    [adminId]
+  );
+
+  // (13) O resumo que permite apagar a trilha bruta depois sem destruir o que
+  // o velejador quer rever.
+  const resumo = await expectOk(
+    db,
+    'resumo da travessia: distancia_km, velocidade_max_nos e trilha_reduzida (JSONB)',
+    `UPDATE downwind_participantes
+     SET distancia_km = 18.40, velocidade_max_nos = 27.30, trilha_reduzida = $3::jsonb
+     WHERE downwind_id = $1 AND user_id = $2
+     RETURNING distancia_km, velocidade_max_nos, trilha_reduzida`,
+    [dwId, riderA, JSON.stringify([[-4.95, -36.88, 1700000000000], [-4.96, -36.89, 1700000060000]])]
+  );
+  check(
+    'resumo volta do banco com os três campos preenchidos',
+    Number(resumo[0].distancia_km) === 18.4 &&
+      Number(resumo[0].velocidade_max_nos) === 27.3 &&
+      Array.isArray(resumo[0].trilha_reduzida) &&
+      (resumo[0].trilha_reduzida as unknown[]).length === 2
+  );
+
+  // (14) Retenção. Não há cron no plano gratuito da Vercel, então a limpeza é
+  // preguiçosa — disparada por quem encerra um downwind, no espírito da
+  // escalada de raio do SOS (app/api/sos/active/route.ts).
+  await expectOk(
+    db,
+    'purga preguiçosa: apaga trilha bruta de downwinds encerrados há mais de 7 dias',
+    `DELETE FROM downwind_posicoes p USING downwinds d
+      WHERE d.id = p.downwind_id
+        AND d.status IN ('encerrado', 'cancelado')
+        AND d.encerrado_em < NOW() - INTERVAL '7 days'`
+  );
+
   console.log('\nDownwind — cascata ao apagar o downwind:');
   const dw2 = await db.query<{ id: string }>(
     `INSERT INTO downwinds (nome, criado_por) VALUES ('Descartável', $1) RETURNING id`,

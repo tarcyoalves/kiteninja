@@ -118,4 +118,18 @@ export const rateLimiters = {
       60 * 60 * 1000,
       'Limite de chamadas SOS atingido. Aguarde 1 hora — ligue 193 (Bombeiros) ou 185 (Marinha) se precisar de socorro imediato.'
     ),
+
+  // 120/min é ~40x a cadência normal de POST (a cada 45s — ver
+  // lib/trilhaDownwind.ts): só pega cliente em loop de erro, nunca um
+  // velejador de verdade.
+  downwindPosicao: (userId: string) =>
+    enforceRateLimit(`dw_pos:${userId}`, 120, 60 * 1000, 'Muitos envios de posição.'),
+
+  downwindEntrar: (userId: string) =>
+    enforceRateLimit(
+      `dw_entrar:${userId}`,
+      10,
+      60 * 1000,
+      'Muitas tentativas de entrar no downwind.'
+    ),
 };

@@ -1,0 +1,183 @@
+import { sql } from '@/lib/db';
+import { handle, readJson } from '@/lib/api';
+import { requireUser, HttpError } from '@/lib/auth';
+import { num } from '@/lib/validation';
+import { rateLimiters } from '@/lib/rateLimit';
+import { podeReportarPosicao, podeVerPosicoes, posicaoVisivel } from '@/lib/downwindAcesso';
+import { buscarContexto, ehUuid } from '@/lib/downwindDb';
+import { amostrarTrilha, MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ultimoTimestamp } from '@/lib/trilhaDownwind';
+import type { PontoTrilha } from '@/lib/trilhaDownwind';
+
+/**
+ * O coração do mapa ao vivo — o ÚNICO endpoint polled desta feature (a regra
+ * de custo do docs/PLANO-DOWNWIND-MAPA.md: nunca uma requisição por
+ * participante, um único GET devolve todo mundo).
+ *
+ * AUTORIZAÇÃO SEMPRE ANTES DE QUALQUER QUERY DE POSIÇÃO. É rastreamento de
+ * pessoas em tempo real — ver lib/downwindAcesso.ts para o porquê de cada
+ * decisão. Não-participante recebe 404, nunca 403.
+ */
+export const dynamic = 'force-dynamic';
+
+/** Alvo de amostragem da carga inicial da própria trilha. */
+const LIMITE_TRILHA_INICIAL = 120;
+
+interface Params {
+  params: Promise<{ id: string }>;
+}
+
+export async function GET(request: Request, ctx: Params) {
+  return handle(async () => {
+    const user = await requireUser();
+    const { id } = await ctx.params;
+    if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
+
+    const { status, participacao } = await buscarContexto(id, user.id);
+    const acesso = podeVerPosicoes({ statusDownwind: status, participacao });
+    if (!acesso.permitido) throw new HttpError(acesso.status, acesso.mensagem);
+
+    const url = new URL(request.url);
+    const desdeRaw = url.searchParams.get('desde');
+    const desdeMs = desdeRaw ? Date.parse(desdeRaw) : NaN;
+    const desde = Number.isFinite(desdeMs) ? new Date(desdeMs) : null;
+
+    if (!acesso.servePosicoes) {
+      // Downwind existe e o solicitante participa, mas já acabou (ou ainda não
+      // saiu do papel). Não é erro — é o caminho normal de "o organizador
+      // encerrou enquanto eu estava com a tela aberta". O cliente desmonta o
+      // takeover ao ver `servePosicoes: false`.
+      return {
+        downwind: { id, status, servePosicoes: false },
+        euSou: participacao,
+        participantes: [],
+        trilha: [] as PontoTrilha[],
+        cursor: null,
+      };
+    }
+
+    // Participantes + última posição. LEFT JOIN LATERAL, não DISTINCT ON:
+    // participante que NUNCA reportou tem que aparecer na lista (lat nulo),
+    // não sumir dela — é o que faz "quem ainda não reportou" ser visível.
+    const linhas = await sql`
+      SELECT dp.user_id, u.name, u.avatar_url, dp.papel, dp.eh_organizador, dp.estado,
+             dp.apoio_user_id, p.lat, p.lng, p.accuracy_m, p.registrado_em
+      FROM downwind_participantes dp
+      JOIN users u ON u.id = dp.user_id
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, accuracy_m, registrado_em
+        FROM downwind_posicoes
+        WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
+        ORDER BY registrado_em DESC LIMIT 1
+      ) p ON TRUE
+      WHERE dp.downwind_id = ${id}
+    `;
+
+    const meuApoioId = participacao?.apoioUserId ?? null;
+
+    const participantes = linhas.map((row) => {
+      const r = row as Record<string, unknown>;
+      const userId = String(r.user_id);
+      const estado = String(r.estado) as 'confirmado' | 'navegando' | 'encerrado' | 'desistiu';
+      const visivel = posicaoVisivel(estado);
+      return {
+        userId,
+        nome: String(r.name),
+        avatarUrl: r.avatar_url ? String(r.avatar_url) : null,
+        papel: r.papel as 'velejador' | 'apoio_terra',
+        ehOrganizador: Boolean(r.eh_organizador),
+        estado,
+        // Posição de quem já saiu da água não é servida a ninguém — nem à
+        // própria pessoa: ela vê seu último ponto de outro jeito (o Modo
+        // Navegação, enquanto ainda estava navegando).
+        lat: visivel && r.lat !== null ? Number(r.lat) : null,
+        lng: visivel && r.lng !== null ? Number(r.lng) : null,
+        accuracyM: visivel && r.accuracy_m !== null ? Number(r.accuracy_m) : null,
+        registradoEm:
+          visivel && r.registrado_em ? new Date(String(r.registrado_em)).toISOString() : null,
+        // Calculado no servidor: o cliente não deveria montar esse cruzamento,
+        // e centralizar evita a tela do velejador e a do motorista divergirem.
+        ehMeuApoio: meuApoioId !== null && userId === meuApoioId,
+        souApoioDele: String(r.apoio_user_id ?? '') === user.id,
+      };
+    });
+
+    // Trilha: só a do PRÓPRIO solicitante. O dono decidiu não mostrar o
+    // trajeto de terceiros no mapa — vinte trilhas cruzadas viram sopa visual
+    // e escondem justamente quem está para trás, e uma faixa de texto já
+    // responde "quem está mais atrás" sem precisar desenhar a rota de todo
+    // mundo (ver DownwindFaixaInfo). Continua vindo aqui, e não de uma rota
+    // separada, para caber no mesmo poll — ver lib/trilhaDownwind.ts sobre o
+    // custo de um segundo endpoint no plano gratuito.
+    let trilha: PontoTrilha[] = [];
+    let cursor: string | null = null;
+
+    if (posicaoVisivel(participacao!.estado)) {
+      if (desde) {
+        const delta = await sql`
+          SELECT lat, lng, registrado_em
+          FROM downwind_posicoes
+          WHERE downwind_id = ${id} AND user_id = ${user.id} AND registrado_em > ${desde.toISOString()}
+          ORDER BY registrado_em ASC
+          LIMIT ${LIMITE_DELTA}
+        `;
+        trilha = delta.map((r) => {
+          const row = r as Record<string, unknown>;
+          return [Number(row.lat), Number(row.lng), Date.parse(String(row.registrado_em))] as PontoTrilha;
+        });
+      } else {
+        const bruta = await sql`
+          SELECT lat, lng, registrado_em
+          FROM downwind_posicoes
+          WHERE downwind_id = ${id} AND user_id = ${user.id}
+          ORDER BY registrado_em ASC
+        `;
+        const pontos = bruta.map((r) => {
+          const row = r as Record<string, unknown>;
+          return [Number(row.lat), Number(row.lng), Date.parse(String(row.registrado_em))] as PontoTrilha;
+        });
+        trilha = amostrarTrilha(pontos, LIMITE_TRILHA_INICIAL);
+      }
+
+      const ultimo = ultimoTimestamp(trilha);
+      cursor = ultimo !== null ? new Date(ultimo).toISOString() : desdeRaw;
+    }
+
+    return {
+      downwind: { id, status, servePosicoes: true },
+      euSou: participacao,
+      participantes,
+      trilha,
+      cursor,
+    };
+  });
+}
+
+export async function POST(request: Request, ctx: Params) {
+  return handle(async () => {
+    const user = await requireUser();
+    const { id } = await ctx.params;
+    if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
+
+    const { status, participacao } = await buscarContexto(id, user.id);
+    const acesso = podeReportarPosicao({ statusDownwind: status, participacao });
+    if (!acesso.permitido) throw new HttpError(acesso.status, acesso.mensagem);
+
+    rateLimiters.downwindPosicao(user.id);
+
+    const body = await readJson(request);
+    const lat = num(body, 'lat', { min: -90, max: 90 });
+    const lng = num(body, 'lng', { min: -180, max: 180 });
+    const accuracyM = num(body, 'accuracyM', { optional: true, min: 0, max: 100000 });
+
+    const inserted = await sql`
+      INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m)
+      VALUES (${id}, ${user.id}, ${lat}, ${lng}, ${accuracyM})
+      RETURNING registrado_em
+    `;
+
+    return {
+      ok: true,
+      registradoEm: new Date(String((inserted[0] as Record<string, unknown>).registrado_em)).toISOString(),
+    };
+  });
+}

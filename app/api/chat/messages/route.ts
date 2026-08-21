@@ -2,8 +2,10 @@ import { after } from 'next/server';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
-import { CHAT_TEXT_MAX, parseRoomName, sanitizeMessageText } from '@/lib/chat';
+import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, sanitizeMessageText } from '@/lib/chat';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
+import { buscarParticipacao } from '@/lib/downwindDb';
+import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
 
 /** Teto de leitura por requisição. Acima disso o payload passa a doer no 3G. */
 const MAX_LIMIT = 100;
@@ -41,13 +43,27 @@ function toMessage(row: unknown) {
  * A checagem no banco importa: sem ela, um cliente com typo no slug cria uma
  * sala válida no formato mas invisível na UI (nenhum seletor aponta para ela),
  * e as mensagens somem sem erro aparente.
+ *
+ * A sala de downwind (`dw:<uuid>`) é a única PRIVADA do sistema, e por isso a
+ * única que exige autorização aqui: o nome dela é visível no cliente e trivial
+ * de montar a partir de um id de downwind, então quem não participa daquela
+ * travessia não pode ler nem escrever. Responde 404 (nunca 403) pelo mesmo
+ * motivo do mapa — um 403 confirmaria que aquele downwind existe.
  */
-async function requireExistingRoom(raw: unknown): Promise<string> {
+async function requireExistingRoom(raw: unknown, userId: string): Promise<string> {
   const parsed = parseRoomName(raw);
   if (!parsed) {
-    throw new HttpError(400, "Sala inválida. Use 'geral' ou 'spot:<id>'.");
+    throw new HttpError(400, "Sala inválida. Use 'geral', 'spot:<id>' ou 'dw:<id>'.");
   }
   if (parsed.kind === 'geral') return 'geral';
+
+  if (parsed.kind === 'downwind') {
+    const participacao = await buscarParticipacao(parsed.downwindId, userId);
+    if (!participacao || participacao.estado === 'desistiu') {
+      throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+    }
+    return downwindRoomName(parsed.downwindId);
+  }
 
   const rows = await sql`SELECT id FROM spots WHERE id = ${parsed.spotId} LIMIT 1`;
   if (rows.length === 0) throw new HttpError(404, 'Spot não encontrado.');
@@ -60,7 +76,7 @@ export async function GET(request: Request) {
     const user = await requireUser();
     const url = new URL(request.url);
 
-    const room = await requireExistingRoom(url.searchParams.get('room') ?? 'geral');
+    const room = await requireExistingRoom(url.searchParams.get('room') ?? 'geral', user.id);
 
     const rawLimit = Number(url.searchParams.get('limit'));
     const limit = Number.isFinite(rawLimit) && rawLimit > 0
@@ -147,7 +163,10 @@ export async function POST(request: Request) {
     const user = await requireUser();
     const body = await readJson(request);
 
-    const room = await requireExistingRoom((body as Record<string, unknown> | null)?.room);
+    const room = await requireExistingRoom(
+      (body as Record<string, unknown> | null)?.room,
+      user.id
+    );
 
     const clean = sanitizeMessageText((body as Record<string, unknown> | null)?.text);
     if (!clean.ok) throw new HttpError(400, clean.error);

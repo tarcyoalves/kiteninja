@@ -42,6 +42,10 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   // durante uma travessia. Entra a partir daqui (aba Mapa) porque é onde o
   // velejador está antes de ir para a água — ver components/ModoNavegacao.tsx.
   const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
+  // Incrementado a cada clique manual no botão "Minha localização", para o
+  // LeafletMap recentralizar mesmo quando o watch de GPS já está rodando (ver
+  // handleLocateButtonClick abaixo).
+  const [recenterTick, setRecenterTick] = useState(0);
 
   const handleLayerChange = useCallback((layer: MapLayer) => {
     setActiveLayer(layer);
@@ -146,6 +150,27 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   }, [spots, setLastKnownPosition]);
 
   /**
+   * Clique manual no botão "Minha localização".
+   *
+   * `handleLocateUser` só inicia o watch a primeira vez — a partir daí
+   * `watchIdRef.current` fica preenchido para sempre e a função vira um no-op
+   * silencioso (é assim que evita abrir um segundo watch). Isso fazia o botão
+   * "para centralizar" funcionar só uma vez, na abertura automática da tela:
+   * clicar de novo depois não fazia nada visível, nem recentralizava, nem
+   * pedia um fix novo de GPS. `recenterTick` é o sinal explícito de "quero
+   * ver minha posição agora", separado de "quero começar a rastrear" — o
+   * LeafletMap recentraliza com zoom próximo sempre que este contador muda,
+   * usando a posição mais recente já conhecida.
+   */
+  const handleLocateButtonClick = useCallback(() => {
+    if (watchIdRef.current === null) {
+      handleLocateUser();
+      return;
+    }
+    setRecenterTick((t) => t + 1);
+  }, [handleLocateUser]);
+
+  /**
    * Para o rastreamento quando o usuário sai da tela de mapa.
    */
   useEffect(() => {
@@ -201,7 +226,8 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
           onSelectSpot={handleSelectSpot}
           activeLayer={activeLayer}
           onLayerChange={handleLayerChange}
-          onLocateUser={handleLocateUser}
+          onLocateUser={handleLocateButtonClick}
+          recenterTrigger={recenterTick}
           locateStatus={locateStatus}
           nearestSpotInfo={nearestSpotInfo}
           userPosition={userPosition}
