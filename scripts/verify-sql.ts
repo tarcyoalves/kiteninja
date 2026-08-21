@@ -1099,7 +1099,7 @@ async function main() {
               count(*)     OVER (PARTITION BY user_id) AS total
        FROM downwind_posicoes WHERE downwind_id = $1
      ) t
-     WHERE rn = 1 OR rn % GREATEST(1, (total / $2)::int) = 0
+     WHERE rn = 1 OR rn % GREATEST(1, CEIL(total::numeric / $2)::int) = 0
      ORDER BY user_id, registrado_em`,
     [dwId, 120]
   );
