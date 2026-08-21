@@ -295,3 +295,56 @@ descarta, como sempre pôde fazer).
 **Sem mudança de schema** — `verify-sql.ts` continua em **164 checks**.
 `vitest` foi de 573 para **581 testes** (8 novos, todos em
 `lib/trilhaSessao.test.ts`). `tsc --noEmit` e `next build` limpos.
+
+## Item 21/08/2026 — mapa principal não centraliza no GPS ao abrir
+
+Relato do dono: na aba Mapa (mapa geral, `views/MapView.tsx`), o mapa não se
+move para a localização do usuário ao abrir a tela — fica preso na visão
+regional (nordeste do Brasil), mesmo esperando.
+
+### Investigação e sua limitação honesta
+Reli TODA a cadeia (`handleLocateUser`/`handleLocateButtonClick` em
+`views/MapView.tsx`, os efeitos de centralização em
+`components/LeafletMap.tsx`) e o histórico de commits — o mecanismo de
+"centralizar no GPS assim que localiza com sucesso" foi reescrito ontem
+(`37a7157`, trocando `fitBounds` capado em zoom 14 por `setView` direto em
+zoom 16) e a lógica lida linha a linha está correta: o efeito dispara
+sozinho ao montar a aba, sem exigir clique manual. **Não achei o defeito
+lendo o código** — e não consegui reproduzir ao vivo porque este ambiente
+sandbox não tem acesso de rede ao Neon (login trancado) nem GPS real de
+navegador para simular a permissão.
+
+### Hipótese mais provável, e o que foi corrigido de qualquer forma
+PWA instalado na tela de início do iOS pede a permissão de localização
+SEPARADA da do Safari — e há um bug conhecido do WebKit onde, quando essa
+permissão específica trava numa combinação ruim, `getCurrentPosition`/
+`watchPosition` nunca chamam nem `onSuccess` nem `onError`, mesmo com
+`timeout` explícito nas opções (que deveria, mas nem sempre, garantir uma
+resposta). O sintoma disso é indistinguível, de fora, de "o código não
+tenta centralizar": a tela fica presa para sempre em "Localizando..." sem
+nenhuma pista visível do que fazer.
+
+`views/MapView.tsx`: `handleLocateUser` ganhou um vigia de 10s
+(`LOCATE_WATCHDOG_MS`) — se nem sucesso nem erro chegou até lá, força
+`locateStatus = 'timeout'` e libera o watch morto (`clearWatch` +
+`watchIdRef.current = null`) para o botão "Minha localização" conseguir
+tentar de novo sem precisar sair e voltar à aba. `components/LeafletMap.tsx`
+ganhou uma mensagem específica para esse estado, apontando o velejador para
+conferir a permissão do APP instalado (não do navegador) nos Ajustes.
+
+### Isto é hardening, não confirmação de causa raiz
+Se o problema real for outra coisa (ex.: `maxBounds` do mapa cortando a
+posição real de fora da faixa `[[-35,-80],[10,-25]]`, ou permissão
+genuinamente negada sem o velejador notar o banner), este vigia não
+resolve sozinho — mas converte um travamento silencioso (o pior caso: some
+sem explicação) num estado visível e com ação de retry, o que já teria
+identificado a causa na próxima tentativa. Se o dono testar e o problema
+persistir com a mensagem de timeout aparecendo, é sinal forte de permissão
+de localização do PWA no iOS; se persistir SEM a mensagem aparecer (ou seja,
+loading resolve para 'success' mas o mapa não move), o defeito é outro e
+precisa de nova investigação, provavelmente com acesso a um dispositivo real.
+
+**Sem mudança de schema** — `verify-sql.ts` continua em 164 checks.
+`vitest` 581/581 (sem testes novos: a lógica adicionada é um temporizador
+de efeito colateral do navegador, não uma função pura isolável). `tsc
+--noEmit` e `next build` limpos.

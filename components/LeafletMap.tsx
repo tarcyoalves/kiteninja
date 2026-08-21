@@ -52,7 +52,7 @@ interface LeafletMapProps {
   activeLayer: MapLayer;
   onLayerChange: (layer: MapLayer) => void;
   onLocateUser: () => void;
-  locateStatus: 'idle' | 'loading' | 'success' | 'error' | 'denied';
+  locateStatus: 'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout';
   nearestSpotInfo: { spot: Spot; distanceKm: number } | null;
   userPosition: UserPosition | null;
   activeSosList?: ActiveSosMapData[];
@@ -551,6 +551,19 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               )}
               {locateStatus === 'denied' && 'Permissão negada. Ative nas configurações do navegador.'}
               {locateStatus === 'error' && 'Não foi possível obter sua localização. Verifique o GPS.'}
+              {/* App instalado na tela de início do iOS pede permissão de
+                  localização separada da do Safari — quando ela trava, o
+                  navegador às vezes nunca responde (nem sucesso, nem erro).
+                  Ver o vigia de timeout em views/MapView.tsx. */}
+              {locateStatus === 'timeout' && (
+                <div className="flex flex-col gap-1">
+                  <span>Sua localização está demorando demais para responder.</span>
+                  <span className="text-[10px] opacity-75 font-normal">
+                    Se você instalou o app na tela de início, confira se a permissão de
+                    localização foi concedida a ELE (separada da do navegador) nos Ajustes do celular.
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         )}

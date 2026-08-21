@@ -26,6 +26,14 @@ const LeafletMap = dynamic(
   }
 );
 
+/**
+ * Prazo do vigia de localização — ver `handleLocateUser`. Maior que o
+ * `timeout` de 8s do `getCurrentPosition` abaixo: a folga é justamente para
+ * cobrir o caso em que aquele `timeout` NÃO é respeitado pelo navegador (o
+ * bug que este vigia existe para pegar), não para duplicar o mesmo prazo.
+ */
+const LOCATE_WATCHDOG_MS = 10_000;
+
 interface MapViewProps {
   onSelectSpot: (spot: Spot) => void;
 }
@@ -41,7 +49,9 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   } = useKiteData();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
   const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
-  const [locateStatus, setLocateStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
+  const [locateStatus, setLocateStatus] = useState<
+    'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout'
+  >('idle');
   const [nearestSpotInfo, setNearestSpotInfo] = useState<{ spot: Spot; distanceKm: number } | null>(null);
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
   // Referência para o watch ID - precisa existir para limpar no unmount
@@ -127,8 +137,47 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     setNearestSpotInfo(null);
     setUserPosition(null);
 
+    /**
+     * Vigia do primeiro fix: existe porque um PWA instalado na tela de
+     * início do iOS pede a permissão de localização separada da do Safari
+     * — e em certas versões/combinações o WebKit não chama NEM onSuccess
+     * NEM onError quando essa permissão específica trava, mesmo com
+     * `timeout` explícito nas opções abaixo (que deveria, mas nem sempre,
+     * garantir uma resposta). Sem este vigia, a tela ficava presa para
+     * sempre em "Localizando..." sem nenhuma pista do que fazer — o
+     * sintoma real relatado ("o mapa não centraliza ao abrir") é
+     * indistinguível, de fora, de "ainda não recebi resposta nenhuma do
+     * navegador". `cancelarVigia()` só cancela o TEMPORIZADOR, nunca
+     * desliga onSuccess/onError — o watchPosition abaixo segue chamando
+     * onSuccess a cada atualização de posição pelo resto da sessão.
+     */
+    let vigiaAtivo = true;
+    const vigia = setTimeout(() => {
+      if (vigiaAtivo) {
+        vigiaAtivo = false;
+        setLocateStatus('timeout');
+        // Libera o botão "Minha localização" para tentar de novo: sem isto,
+        // watchIdRef.current continuaria preenchido (watchPosition devolve um
+        // ID síncrono mesmo quando nunca chama de volta), e um novo clique
+        // cairia no caminho de "só recentralizar" em vez de reiniciar o GPS
+        // de verdade — deixando o velejador sem nenhuma saída a não ser sair
+        // e voltar para a aba Mapa.
+        if (watchIdRef.current !== null) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+          watchIdRef.current = null;
+        }
+      }
+    }, LOCATE_WATCHDOG_MS);
+    const cancelarVigia = () => {
+      if (vigiaAtivo) {
+        vigiaAtivo = false;
+        clearTimeout(vigia);
+      }
+    };
+
     // Sucesso: atualiza posição e encontra spot mais próximo
     const onSuccess = (position: GeolocationPosition) => {
+      cancelarVigia();
       const { latitude, longitude, accuracy } = position.coords;
 
       // Guardar a posição real do usuário para desenhar no mapa
@@ -150,6 +199,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
 
     // Erro: traduzir código de erro em mensagem útil
     const onError = (error: GeolocationPositionError) => {
+      cancelarVigia();
       if (error.code === error.PERMISSION_DENIED) {
         setLocateStatus('denied');
       } else if (error.code === error.TIMEOUT) {
