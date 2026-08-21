@@ -141,6 +141,10 @@ describe('autorização das rotas de API', () => {
       'rollback manual de criação de downwind: desfaz o downwind que a própria requisição acabou de criar, pelo id retornado, se o passo seguinte (inserir o participante organizador) falhar',
     'events/route.ts::DELETE FROM events':
       'rollback manual de criação de downwind: desfaz o evento que a própria requisição acabou de criar, pelo id retornado, se downwinds/downwind_participantes falhar depois',
+    'downwind/[id]/status/route.ts::UPDATE downwinds':
+      'muda o status de UM downwind (WHERE id = ${id}), não dado de usuário; autorizado antes da query por lib/downwindAcesso.ts (podeIniciarDownwind/podeCancelarDownwind/podeEncerrarDownwindComoUsuario)',
+    'downwind/[id]/status/route.ts::DELETE FROM downwind_posicoes':
+      'purga preguiçosa de trilha de downwinds já encerrados/cancelados há mais de 7 dias (retenção, não dado ativo) — só roda depois que o encerramento, já autorizado, foi confirmado',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -187,6 +191,7 @@ describe('autorização das rotas de API', () => {
         rel === 'auth/change-password/route.ts' ||
         rel === 'invites/accept/route.ts' ||
         rel === 'events/route.ts' ||
+        rel === 'downwind/[id]/status/route.ts' ||
         rel.startsWith('sos/')
       ) {
         expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);

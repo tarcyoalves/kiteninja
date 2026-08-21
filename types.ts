@@ -223,6 +223,9 @@ export interface KiteEvent {
   imageUrl?: string;
   participantsCount: number;
   isRegistered?: boolean;
+  /** Presente só em eventos type === 'Downwind' que têm downwind vinculado. */
+  downwindId?: string | null;
+  downwindStatus?: 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado' | null;
 }
 
 // ------------------------------------------------------------- marketplace

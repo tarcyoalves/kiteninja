@@ -23,12 +23,15 @@ export async function GET() {
         e.organizer,
         e.image_url,
         e.created_at,
+        d.id AS downwind_id,
+        d.status AS downwind_status,
         (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = e.id) AS participants_count,
         CASE WHEN EXISTS (
           SELECT 1 FROM event_registrations er
           WHERE er.event_id = e.id AND er.user_id = ${user.id}
         ) THEN true ELSE false END AS is_registered
       FROM events e
+      LEFT JOIN downwinds d ON d.event_id = e.id
       ORDER BY e.event_date ASC
     `;
 
@@ -47,6 +50,8 @@ export async function GET() {
         timestamp: String(r.created_at),
         participantsCount: Number(r.participants_count),
         isRegistered: Boolean(r.is_registered),
+        downwindId: r.downwind_id ? String(r.downwind_id) : null,
+        downwindStatus: r.downwind_status ? String(r.downwind_status) as KiteEvent['downwindStatus'] : null,
       };
     });
 

@@ -35,12 +35,34 @@ export const GROUP_WINDOW_MS = 5 * 60 * 1000;
  */
 const SPOT_ROOM_RE = /^spot:([A-Za-z0-9_-]{1,64})$/;
 
-export type ChatRoom = { kind: 'geral' } | { kind: 'spot'; spotId: string };
+/**
+ * Sala privada de um downwind: `dw:<uuid do downwind>`.
+ *
+ * Existe porque o mapa ao vivo prende o velejador na travessia (ele não navega
+ * para as outras abas até encerrar), e sem um canal ali dentro o grupo voltaria
+ * a se coordenar por WhatsApp no meio da água — que é justamente o que a
+ * feature veio substituir.
+ *
+ * AVISO DE SEGURANÇA: o nome da sala é visível no cliente e trivial de
+ * adivinhar a partir de um id de downwind. Este regex só valida FORMATO. Quem
+ * autoriza é a rota, confirmando no banco que o solicitante é participante
+ * daquele downwind — sem isso, qualquer pessoa leria a conversa de um grupo
+ * do qual não faz parte.
+ */
+const DOWNWIND_ROOM_RE = /^dw:([0-9a-fA-F-]{36})$/;
+
+export type ChatRoom =
+  | { kind: 'geral' }
+  | { kind: 'spot'; spotId: string }
+  | { kind: 'downwind'; downwindId: string };
 
 /** Interpreta o nome da sala. Devolve null para qualquer coisa fora do formato. */
 export function parseRoomName(raw: unknown): ChatRoom | null {
   if (typeof raw !== 'string') return null;
   if (raw === GENERAL_ROOM) return { kind: 'geral' };
+
+  const downwind = DOWNWIND_ROOM_RE.exec(raw);
+  if (downwind) return { kind: 'downwind', downwindId: downwind[1].toLowerCase() };
 
   const match = SPOT_ROOM_RE.exec(raw);
   if (!match) return null;
@@ -53,6 +75,16 @@ export function isValidRoomName(raw: unknown): boolean {
 
 export function spotRoomName(spotId: string): string {
   return `spot:${spotId}`;
+}
+
+/**
+ * Nome da sala do downwind. Sempre em minúsculas: o UUID pode chegar em
+ * qualquer caixa vindo do cliente, e duas grafias do mesmo id não podem virar
+ * duas conversas separadas — metade do grupo ficaria numa sala e metade na
+ * outra, sem ninguém perceber.
+ */
+export function downwindRoomName(downwindId: string): string {
+  return `dw:${downwindId.toLowerCase()}`;
 }
 
 export type SanitizedText = { ok: true; text: string } | { ok: false; error: string };
