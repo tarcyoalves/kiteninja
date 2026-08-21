@@ -145,6 +145,10 @@ describe('autorização das rotas de API', () => {
       'muda o status de UM downwind (WHERE id = ${id}), não dado de usuário; autorizado antes da query por lib/downwindAcesso.ts (podeIniciarDownwind/podeCancelarDownwind/podeEncerrarDownwindComoUsuario)',
     'downwind/[id]/status/route.ts::DELETE FROM downwind_posicoes':
       'purga preguiçosa de trilha de downwinds já encerrados/cancelados há mais de 7 dias (retenção, não dado ativo) — só roda depois que o encerramento, já autorizado, foi confirmado',
+    'events/[id]/route.ts::DELETE FROM downwinds':
+      'apaga UM downwind (WHERE id = ${downwindId}) vinculado ao evento que está sendo apagado; autorizado antes por canModerate ou pelo criado_por do próprio downwind',
+    'events/[id]/route.ts::DELETE FROM events':
+      'apaga UM evento (WHERE id = ${id}), não dado de usuário; mesma autorização acima',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {

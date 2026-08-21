@@ -25,6 +25,7 @@ export async function GET() {
         e.created_at,
         d.id AS downwind_id,
         d.status AS downwind_status,
+        (d.criado_por = ${user.id}) AS downwind_criado_por_mim,
         (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = e.id) AS participants_count,
         CASE WHEN EXISTS (
           SELECT 1 FROM event_registrations er
@@ -52,6 +53,7 @@ export async function GET() {
         isRegistered: Boolean(r.is_registered),
         downwindId: r.downwind_id ? String(r.downwind_id) : null,
         downwindStatus: r.downwind_status ? String(r.downwind_status) as KiteEvent['downwindStatus'] : null,
+        downwindCriadoPorMim: Boolean(r.downwind_criado_por_mim),
       };
     });
 

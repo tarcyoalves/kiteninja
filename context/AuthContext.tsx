@@ -9,6 +9,11 @@ interface AuthContextType {
   isAdmin: boolean;
   /** admin/moderator/instructor pelo role, ou rider com a liberação pontual. */
   canOrganizeDownwind: boolean;
+  /** admin ou moderator — espelha lib/authz.ts `canModerate`. Usado para
+   * mostrar ações de moderação (ex.: apagar qualquer evento) na UI; a rota
+   * sempre reautoriza no servidor, isto só evita mostrar um botão que
+   * daria 403. */
+  canModerateEvents: boolean;
   /** null enquanto a sessão está sendo verificada no primeiro carregamento. */
   isLoading: boolean;
   mustChangePassword: boolean;
@@ -38,6 +43,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canOrganizeDownwind, setCanOrganizeDownwind] = useState(false);
+  const [canModerateEvents, setCanModerateEvents] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
@@ -49,6 +55,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setIsAdmin(false);
         setCanOrganizeDownwind(false);
+        setCanModerateEvents(false);
         return;
       }
 
@@ -57,6 +64,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(null);
         setIsAdmin(false);
         setCanOrganizeDownwind(false);
+        setCanModerateEvents(false);
         setMustChangePassword(false);
         return;
       }
@@ -65,6 +73,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(profile as UserProfile);
       setIsAdmin(role === 'admin');
       setCanOrganizeDownwind(Boolean(canOrganize));
+      setCanModerateEvents(role === 'admin' || role === 'moderator');
       setMustChangePassword(Boolean(mustChange));
     } catch {
       // Offline: mantemos o estado anterior em vez de deslogar o velejador que
@@ -170,6 +179,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAuthenticated: Boolean(user),
         isAdmin,
         canOrganizeDownwind,
+        canModerateEvents,
         isLoading,
         mustChangePassword,
         login,

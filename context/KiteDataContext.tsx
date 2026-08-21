@@ -48,6 +48,7 @@ interface KiteDataContextType {
   addSafetyAlert: (alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => void;
   events: KiteEvent[];
   toggleEventRegistration: (eventId: string) => void;
+  deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
   createDownwind: (data: {
     title: string;
     location: string;
@@ -598,6 +599,20 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .catch(() => loadFeedAndEvents());
   };
 
+  const deleteEvent = async (eventId: string): Promise<{ ok: boolean; error?: string }> => {
+    const anterior = events;
+    // Otimista: some da lista na hora. Reverte se o servidor recusar (ex.:
+    // downwind em_andamento, ou permissão perdida entre o clique e a resposta).
+    setEvents((prev) => prev.filter((ev) => ev.id !== eventId));
+    try {
+      await api(`/api/events/${eventId}`, { method: 'DELETE' });
+      return { ok: true };
+    } catch (err) {
+      setEvents(anterior);
+      return { ok: false, error: err instanceof Error ? err.message : 'Não foi possível apagar o evento.' };
+    }
+  };
+
   const createDownwind = async (data: {
     title: string;
     location: string;
@@ -724,6 +739,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addSafetyAlert,
         events,
         toggleEventRegistration,
+        deleteEvent,
         createDownwind,
         windUnit,
         setWindUnit,
