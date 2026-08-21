@@ -1,11 +1,28 @@
 'use client';
 
 import React, { useCallback, useRef, useState } from 'react';
-import { Ban, LifeBuoy, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { Ban, LifeBuoy, Loader2, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
+import { useAuth } from '../context/AuthContext';
 import { useSosHold } from '../lib/useSosHold';
+import { useDownwindBeacon } from '../lib/useDownwindBeacon';
+import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
+
+// Leaflet é client-only — mesmo padrão de views/MapView.tsx.
+const DownwindMapa = dynamic(
+  () => import('../components/DownwindMapa').then((m) => m.DownwindMapa),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex-1 flex items-center justify-center bg-[#090e1a] text-cyan-400">
+        <Loader2 size={28} className="animate-spin" />
+      </div>
+    ),
+  }
+);
 
 /**
  * Tela de takeover do mapa ao vivo do downwind.
@@ -57,9 +74,19 @@ export const DownwindAoVivoView: React.FC = () => {
   const { downwindAtivo, encerrarMinhaParticipacao, encerrarDownwind, cancelarDownwind } =
     useDownwind();
   const { myActiveSos, fetchActiveSos } = useKiteData();
+  const { user } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
+
+  // Só reporta/consulta posição quando o downwind de fato está em andamento
+  // (aberto ainda não tem ninguém navegando) — ver lib/downwindAcesso.ts.
+  const emAndamento = downwindAtivo?.status === 'em_andamento';
+  useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
+  const { participantes, minhaTrilha } = useDownwindPosicoes(
+    downwindAtivo?.id ?? null,
+    !emAndamento
+  );
 
   const sos = useSosHold({
     hasActiveSos: Boolean(myActiveSos),
@@ -109,12 +136,24 @@ export const DownwindAoVivoView: React.FC = () => {
         </button>
       </div>
 
-      {/* Placeholder do mapa — chega na Fase 5. */}
-      <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-slate-500">
-        <Route size={40} className="opacity-40" />
-        <p className="text-xs max-w-[240px] text-center">
-          Mapa ao vivo com participantes e apoio em terra chega aqui.
-        </p>
+      <div className="flex-1 min-h-0 relative">
+        {downwindAtivo.status === 'aberto' ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-500 bg-[#090e1a]">
+            <Route size={40} className="opacity-40" />
+            <p className="text-xs max-w-[240px] text-center">
+              O downwind ainda não começou. O mapa ao vivo liga assim que a
+              travessia iniciar.
+            </p>
+          </div>
+        ) : user ? (
+          <DownwindMapa
+            meuUserId={user.id}
+            saida={downwindAtivo.saida}
+            chegada={downwindAtivo.chegada}
+            participantes={participantes}
+            minhaTrilha={minhaTrilha}
+          />
+        ) : null}
       </div>
 
       {erro && (
