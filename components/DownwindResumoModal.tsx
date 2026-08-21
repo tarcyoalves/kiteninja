@@ -239,7 +239,11 @@ export const DownwindResumoModal: React.FC<DownwindResumoModalProps> = ({
                       <div className="flex items-center gap-1 text-slate-300">
                         <Wind size={12} className="text-amber-400" />
                         <span className="text-xs font-black tabular-nums">
-                          {p.velocidadeMaxNos !== null ? `${p.velocidadeMaxNos.toFixed(1)} nós` : '—'}
+                          {/* Velocidade do VELEJADOR (GPS), não do vento — por isso km/h,
+                              não nós. Mesma conversão de components/ModoNavegacao.tsx: o
+                              cálculo em lib/trilhaSessao.ts é interno em nós (limiares de
+                              GPS calibrados nessa unidade), converte só na exibição. */}
+                          {p.velocidadeMaxNos !== null ? `${(p.velocidadeMaxNos * 1.852).toFixed(1)} km/h` : '—'}
                         </span>
                       </div>
                     </div>

@@ -50,6 +50,17 @@ import { DownwindChat } from './DownwindChat';
 /** Tempo de toque contínuo para desbloquear a tela. Ver decisão acima. */
 const DESBLOQUEIO_HOLD_MS = 1500;
 
+/**
+ * `lib/trilhaSessao.ts` calcula e filtra tudo internamente em nós (os
+ * limiares de GPS ali — deslocamento mínimo, salto impossível — foram
+ * calibrados nessa unidade, contra o recorde mundial de kitesurf em nós).
+ * Convertemos só aqui, na exibição: o velejador lê a própria velocidade em
+ * km/h (como o app de referência mostra), enquanto o vento continua em nós
+ * em todo o resto do KiteNinja — são duas grandezas diferentes por
+ * convenção do esporte, não a mesma coisa em duas unidades.
+ */
+const NOS_PARA_KMH = 1.852;
+
 /** Recalcula "há quanto tempo" o sinal foi visto pela última vez. Não precisa
  * ser mais frequente que isso — é um indicador de leitura, não um alerta. */
 const RELOGIO_TICK_MS = 15_000;
@@ -323,9 +334,9 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
         <div className="flex flex-col items-center gap-3">
           <div className="flex items-baseline gap-2 tabular-nums">
             <span className="text-7xl font-black text-slate-50 leading-none">
-              {trilha.velocidadeNos === null ? '--' : trilha.velocidadeNos.toFixed(1)}
+              {trilha.velocidadeNos === null ? '--' : (trilha.velocidadeNos * NOS_PARA_KMH).toFixed(1)}
             </span>
-            <span className="text-lg font-bold text-slate-500">nós</span>
+            <span className="text-lg font-bold text-slate-500">km/h</span>
           </div>
 
           <div className="flex items-center gap-5 text-center tabular-nums">
@@ -340,10 +351,10 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
             <div className="w-px h-7 bg-slate-800" />
             <div className="flex flex-col items-center">
               <span className="text-xl font-bold text-slate-200">
-                {trilha.velocidadeMaxNos.toFixed(1)}
+                {(trilha.velocidadeMaxNos * NOS_PARA_KMH).toFixed(1)}
               </span>
               <span className="text-[10px] font-bold tracking-wide text-slate-600">
-                MÁX. NÓS
+                MÁX. KM/H
               </span>
             </div>
           </div>
