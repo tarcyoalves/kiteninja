@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DownwindParticipante,
+  estadoDeSaidaVelejo,
   estadoSinal,
   podeEncerrarDownwind,
   podeTransicionarDownwind,
@@ -341,6 +342,32 @@ describe('podeTransicionarParticipante', () => {
       expect(podeTransicionarParticipante(estado, estado), estado).toBe(false);
     }
   });
+});
+
+describe('estadoDeSaidaVelejo — corrige o bug de participante preso no takeover', () => {
+  it('quem está navegando termina a travessia (encerrado)', () => {
+    expect(estadoDeSaidaVelejo('navegando')).toBe('encerrado');
+  });
+
+  it(
+    "quem está 'confirmado' (nunca navegou — TODO apoio_terra, ou velejador " +
+      "que ainda não tocou Iniciar) desiste, não encerra",
+    () => {
+      expect(estadoDeSaidaVelejo('confirmado')).toBe('desistiu');
+    }
+  );
+
+  it(
+    'OBRIGATÓRIO: nos dois estados em que o botão de saída fica visível na UI ' +
+      '(confirmado, navegando — os únicos não-terminais), o alvo escolhido é ' +
+      'sempre uma transição válida segundo podeTransicionarParticipante',
+    () => {
+      for (const estado of ['confirmado', 'navegando'] as const) {
+        const alvo = estadoDeSaidaVelejo(estado);
+        expect(podeTransicionarParticipante(estado, alvo), `${estado} -> ${alvo}`).toBe(true);
+      }
+    }
+  );
 });
 
 describe('progressoDownwind', () => {

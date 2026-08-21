@@ -18,6 +18,7 @@ import {
   podeMudarEstadoDeParticipante,
   podeReportarPosicao,
   podeVerPosicoes,
+  podeVerResumoDownwind,
   posicaoVisivel,
   type MinhaParticipacao,
 } from './downwindAcesso';
@@ -113,6 +114,66 @@ describe('posicaoVisivel — de quem a coordenada é servida', () => {
       expect(posicaoVisivel(estado)).toBe(false);
     }
   );
+});
+
+describe('podeVerResumoDownwind — mais permissivo que o mapa ao vivo, de propósito', () => {
+  it('participante comum vê o resumo de um downwind encerrado', () => {
+    const v = podeVerResumoDownwind({
+      solicitante: { role: 'rider' },
+      statusDownwind: 'encerrado',
+      participacao: participacao({ estado: 'encerrado' }),
+    });
+    expect(v.permitido).toBe(true);
+  });
+
+  it("DIFERENÇA-CHAVE com podeVerPosicoes: quem 'desistiu' AINDA vê o resumo", () => {
+    // No mapa ao vivo, 'desistiu' perde o acesso junto com a participação
+    // (ver podeVerPosicoes). No resumo não: é histórico do grupo, não
+    // rastreamento em tempo real, e quem desistiu pode querer ver como foi.
+    const v = podeVerResumoDownwind({
+      solicitante: { role: 'rider' },
+      statusDownwind: 'encerrado',
+      participacao: participacao({ estado: 'desistiu' }),
+    });
+    expect(v.permitido).toBe(true);
+  });
+
+  it('moderação vê sem participar — é dado agregado, não posição individual ao vivo', () => {
+    const v = podeVerResumoDownwind({
+      solicitante: { role: 'admin' },
+      statusDownwind: 'encerrado',
+      participacao: null,
+    });
+    expect(v.permitido).toBe(true);
+  });
+
+  it('não-participante recebe 404, nunca 403', () => {
+    const v = podeVerResumoDownwind({
+      solicitante: { role: 'rider' },
+      statusDownwind: 'encerrado',
+      participacao: null,
+    });
+    expect(v.permitido).toBe(false);
+    expect(v.status).toBe(404);
+  });
+
+  it('downwind inexistente e downwind de terceiro dão a mesma resposta', () => {
+    const inexistente = podeVerResumoDownwind({
+      solicitante: { role: 'rider' },
+      statusDownwind: null,
+      participacao: null,
+    });
+    expect(inexistente.mensagem).toBe(MSG_DOWNWIND_NAO_ENCONTRADO);
+  });
+
+  it('funciona também para downwind em_andamento (resumo parcial de quem já encerrou a própria parte)', () => {
+    const v = podeVerResumoDownwind({
+      solicitante: { role: 'rider' },
+      statusDownwind: 'em_andamento',
+      participacao: participacao(),
+    });
+    expect(v.permitido).toBe(true);
+  });
 });
 
 describe('podeReportarPosicao', () => {

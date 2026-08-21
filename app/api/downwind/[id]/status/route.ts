@@ -91,6 +91,22 @@ async function resumirEPurgar(downwindId: string) {
   } catch (err) {
     console.error('[downwind] falha na purga preguiçosa de trilha', err);
   }
+
+  try {
+    // Mesma lógica preguiçosa para as contas-convidadas do link de 12h (ver
+    // lib/schema.sql, `users.downwind_guest_of`): elas nunca deveriam
+    // sobreviver além da janela de acesso, e o encerramento de UM downwind
+    // qualquer é um bom gatilho de baixa frequência para varrer as de
+    // qualquer downwind — 2 dias de folga sobre as 12h de validade real.
+    // CASCADE em downwind_guest_of já limpa participação/posições/sessão
+    // junto (ver a mesma tabela).
+    await sql`
+      DELETE FROM users
+      WHERE downwind_guest_of IS NOT NULL AND created_at < NOW() - INTERVAL '2 days'
+    `;
+  } catch (err) {
+    console.error('[downwind] falha na purga preguiçosa de contas-convidadas', err);
+  }
 }
 
 interface Params {

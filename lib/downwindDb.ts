@@ -1,6 +1,7 @@
 import 'server-only';
 
 import { sql } from './db';
+import { hashToken } from './auth';
 import type { MinhaParticipacao } from './downwindAcesso';
 import type { DownwindStatus } from './downwind';
 
@@ -97,6 +98,45 @@ export async function buscarContexto(
     : null;
 
   return { status: String(r.status) as DownwindStatus, participacao };
+}
+
+export interface ConviteDownwindValido {
+  id: string;
+  downwindId: string;
+  downwindNome: string;
+}
+
+/**
+ * Valida o link de 12h para apoio em terra sem conta (ver lib/schema.sql,
+ * `downwind_convites`) — usado tanto pelo Server Component da página pública
+ * (app/dw-motorista/[token]/page.tsx, que pré-valida antes de renderizar
+ * qualquer formulário, mesmo padrão de `findUsableInvite` em
+ * app/convite/[token]/page.tsx) quanto pela rota que efetivamente cria a
+ * conta-convidada. Uma função só, para as duas nunca poderem divergir sobre
+ * o que conta como "válido".
+ *
+ * `null` cobre token errado, revogado, expirado, sem usos restantes, OU
+ * downwind que já terminou — de propósito uma mensagem só para todos esses
+ * casos no chamador, sem distinguir qual foi (não é privacidade aqui, é só
+ * não complicar a UI com motivos que o convidado não pode fazer nada a
+ * respeito de qualquer forma).
+ */
+export async function buscarConviteValido(token: string): Promise<ConviteDownwindValido | null> {
+  const rows = await sql`
+    SELECT c.id, c.downwind_id, d.nome, d.status
+    FROM downwind_convites c
+    JOIN downwinds d ON d.id = c.downwind_id
+    WHERE c.token_hash = ${hashToken(token)}
+      AND c.revogado_em IS NULL
+      AND c.expira_em > NOW()
+      AND (c.max_usos IS NULL OR c.usos < c.max_usos)
+    LIMIT 1
+  `;
+  if (rows.length === 0) return null;
+  const r = rows[0] as Record<string, unknown>;
+  const status = String(r.status);
+  if (status !== 'aberto' && status !== 'em_andamento') return null;
+  return { id: String(r.id), downwindId: String(r.downwind_id), downwindNome: String(r.nome) };
 }
 
 /**

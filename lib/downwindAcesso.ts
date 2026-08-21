@@ -276,6 +276,33 @@ export function podeCancelarDownwind(args: {
   return OK;
 }
 
+/**
+ * Quem pode ver o RESUMO (histórico: distância, velocidade máxima, trilha
+ * reduzida) de um downwind — diferente de `podeVerPosicoes`, que é sobre
+ * posição AO VIVO.
+ *
+ * Deliberadamente mais permissivo que o mapa ao vivo: um resumo já
+ * encerrado não é rastreamento em tempo real, é histórico do grupo — e
+ * qualquer participante, mesmo quem 'desistiu' antes de ir (que perde o
+ * mapa ao vivo, ver `podeVerPosicoes`), pode querer ver como o downwind
+ * correu para o resto do grupo. Moderação também vê, sem precisar
+ * participar — é dado agregado do evento, não posição individual ao vivo.
+ *
+ * Mesma regra de privacidade no "não confirma existência": não-participante
+ * recebe 404, nunca 403.
+ */
+export function podeVerResumoDownwind(args: {
+  solicitante: { role: Role };
+  statusDownwind: DownwindStatus | null;
+  participacao: MinhaParticipacao | null;
+}): Veredito {
+  const { solicitante, statusDownwind, participacao } = args;
+  if (statusDownwind === null) return negar(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+  if (canModerate(solicitante.role)) return OK;
+  if (participacao === null) return negar(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+  return OK;
+}
+
 // ---------------------------------------------------------------------------
 // 5. Estado de um participante.
 // ---------------------------------------------------------------------------

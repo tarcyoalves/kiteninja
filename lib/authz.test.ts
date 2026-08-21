@@ -145,6 +145,14 @@ describe('autorização das rotas de API', () => {
       'muda o status de UM downwind (WHERE id = ${id}), não dado de usuário; autorizado antes da query por lib/downwindAcesso.ts (podeIniciarDownwind/podeCancelarDownwind/podeEncerrarDownwindComoUsuario)',
     'downwind/[id]/status/route.ts::DELETE FROM downwind_posicoes':
       'purga preguiçosa de trilha de downwinds já encerrados/cancelados há mais de 7 dias (retenção, não dado ativo) — só roda depois que o encerramento, já autorizado, foi confirmado',
+    'downwind/[id]/status/route.ts::DELETE FROM users':
+      'purga preguiçosa das contas-convidadas do link de 12h (downwind_guest_of IS NOT NULL) com mais de 2 dias — nunca atinge conta normal (a coluna é NULL para todas), e não é dado de OUTRO usuário sendo apagado por alguém: é lixo de sessão descartável cuja janela de acesso real já fechou',
+    'events/[id]/route.ts::DELETE FROM downwinds':
+      'apaga UM downwind (WHERE id = ${downwindId}) vinculado ao evento que está sendo apagado; autorizado antes por canModerate ou pelo criado_por do próprio downwind',
+    'events/[id]/route.ts::DELETE FROM events':
+      'apaga UM evento (WHERE id = ${id}), não dado de usuário; mesma autorização acima',
+    'downwind/convite/[token]/entrar/route.ts::UPDATE downwind_convites':
+      'incrementa usos de UM convite (WHERE id = ${convite.id}), já validado (não revogado, não expirado, dentro do limite) por buscarConviteValido logo acima na mesma rota',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -186,12 +194,21 @@ describe('autorização das rotas de API', () => {
        * (`${eventId}`/`${downwindId}` no rollback manual de events/route.ts).
        * O que importa é existir `WHERE id = ${...}` — sem isso o
        * UPDATE/DELETE varreria a tabela.
+       *
+       * downwind/convite/[token]/entrar/route.ts é PÚBLICA de propósito (é o
+       * onboarding do link de convidado sem conta) — não tem checagem de
+       * papel para exigir. O `${c.id}` do UPDATE é o convite que a MESMA
+       * requisição acabou de validar por token (não revogado, não expirado,
+       * dentro do limite de usos) algumas linhas acima — mesma família de
+       * "alvo que a própria requisição provou ser o certo" dos outros casos
+       * desta lista.
        */
       if (
         rel === 'auth/change-password/route.ts' ||
         rel === 'invites/accept/route.ts' ||
         rel === 'events/route.ts' ||
         rel === 'downwind/[id]/status/route.ts' ||
+        rel === 'downwind/convite/[token]/entrar/route.ts' ||
         rel.startsWith('sos/')
       ) {
         expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);

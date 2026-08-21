@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuthOptional } from '../context/AuthContext';
 import { CHAT_TEXT_MAX, downwindRoomName, formatClockTime } from '../lib/chat';
 import type { ChatMessage } from '../types';
 
@@ -20,13 +20,36 @@ import type { ChatMessage } from '../types';
 
 const POLL_MS = 4000;
 
+/** Só o que este componente de fato usa do usuário — ver `meuUsuario` abaixo. */
+interface UsuarioDoChat {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  riderId: string;
+}
+
 interface DownwindChatProps {
   downwindId: string;
   onFechar: () => void;
+  /**
+   * Sobrepõe o usuário lido de `useAuth()`. Existe para
+   * app/dw-motorista/[token]/ConvidadoView.tsx: a sessão de convidado do
+   * link de 12h não passa por `AuthContext` (aquele contexto trata sessão de
+   * convidado como "não logado" de propósito — ver GET /api/auth/me — para o
+   * convidado nunca herdar o app inteiro por engano). Sem esta prop,
+   * `useAuth().user` viria `null` para o convidado e o campo de envio ficaria
+   * travado para sempre. Nos outros usos (ModoNavegacao, DownwindAoVivoView,
+   * dentro do app normal) a prop fica de fora e o comportamento é o mesmo de
+   * sempre.
+   */
+  meuUsuario?: UsuarioDoChat;
 }
 
-export const DownwindChat: React.FC<DownwindChatProps> = ({ downwindId, onFechar }) => {
-  const { user } = useAuth();
+export const DownwindChat: React.FC<DownwindChatProps> = ({ downwindId, onFechar, meuUsuario }) => {
+  // useAuthOptional() (não useAuth()) porque este componente também é usado
+  // fora do AuthProvider — ver o comentário de `meuUsuario` acima.
+  const userDoContexto = useAuthOptional()?.user ?? null;
+  const user = meuUsuario ?? userDoContexto;
   const room = downwindRoomName(downwindId);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);

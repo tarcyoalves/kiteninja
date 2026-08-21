@@ -642,12 +642,15 @@ CREATE INDEX IF NOT EXISTS idx_downwind_posicoes_user_tempo
   ON downwind_posicoes (downwind_id, user_id, registrado_em DESC);
 
 -- Convite por link, reutilizável (vários participantes entram com o mesmo
--- token), para usuário JÁ autenticado — não cria conta, por isso é tabela
--- separada de `invites`, que é para isso. Mesmo padrão de token: token_hash
--- guarda SHA-256, o token em claro nunca é gravado. criado_por é CASCADE,
--- igual a invites.created_by: se quem gerou o link perde a conta, os
--- convites em aberto dele saem de circulação junto — mesmo comportamento do
--- convite de conta, por consistência.
+-- token). Hoje serve o link de 12h para apoio em terra sem conta (pedido do
+-- dono): quem abre o link e digita o nome ganha uma conta-convidada
+-- descartável (users.downwind_guest_of aponta para cá — ver a coluna logo
+-- abaixo) e uma sessão scoped a ESTE downwind, expirando com o convite. É
+-- por isso que fica em tabela separada de `invites` (que é convite de conta
+-- de verdade, de uso único, gerado só pelo admin) — mesmo padrão de token:
+-- token_hash guarda SHA-256, o token em claro nunca é gravado. criado_por é
+-- CASCADE, igual a invites.created_by: se quem gerou o link perde a conta,
+-- os convites em aberto dele saem de circulação junto.
 CREATE TABLE IF NOT EXISTS downwind_convites (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   downwind_id   UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
@@ -669,6 +672,28 @@ CREATE TABLE IF NOT EXISTS downwind_convites (
 CREATE INDEX IF NOT EXISTS idx_downwind_convites_open
   ON downwind_convites (downwind_id, expira_em)
   WHERE revogado_em IS NULL;
+
+-- Marca uma conta como CONVIDADA de um downwind específico — o link de 12h
+-- para apoio em terra sem conta (ver downwind_convites acima). NULL para
+-- toda conta normal, que é a esmagadora maioria das linhas desta tabela.
+--
+-- Por que aqui, e não uma flag genérica `is_guest`: aponta para O DOWNWIND
+-- exato, então lib/auth.ts consegue recusar a sessão fora do escopo dela
+-- sem outra consulta (`requireUser()` rejeita QUALQUER conta com esta coluna
+-- preenchida por padrão — só as poucas rotas de mapa/chat do próprio
+-- downwind leem o valor para conferir o escopo, via getSessionUser()
+-- direto). "12 horas" não é só a validade do convite: a SESSÃO do convidado
+-- nasce com expires_at = +12h em auth_sessions (não os 30 dias padrão), e
+-- sem senha cadastrada não há como logar de novo depois disso — o acesso
+-- morre sozinho, sem precisar de um passo de "encerrar" explícito.
+--
+-- ON DELETE CASCADE: a conta-convidada não tem propósito nenhum fora do
+-- downwind que a criou. Se o downwind for apagado, a conta (e a sessão, e
+-- qualquer posição/mensagem que ela tenha deixado, via as CASCADEs já
+-- existentes de downwind_id/user_id) some junto — não fica um usuário
+-- órfão de e-mail falso vivendo pra sempre no banco.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS downwind_guest_of UUID
+  REFERENCES downwinds(id) ON DELETE CASCADE;
 
 -- Vínculo do velejador com o carro de apoio que o atende. Um motorista apoia
 -- vários velejadores; um velejador tem no máximo um apoio. Existe porque a

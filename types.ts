@@ -226,6 +226,11 @@ export interface KiteEvent {
   /** Presente só em eventos type === 'Downwind' que têm downwind vinculado. */
   downwindId?: string | null;
   downwindStatus?: 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado' | null;
+  /** True quando EU fui quem criou o downwind vinculado — controla se o botão
+   * de apagar aparece para um organizador comum (que não é admin/moderador)
+   * além da moderação. Calculado no servidor (GET /api/events), nunca no
+   * cliente — evita mostrar um botão que a rota de apagar recusaria. */
+  downwindCriadoPorMim?: boolean;
 }
 
 // ------------------------------------------------------------- marketplace

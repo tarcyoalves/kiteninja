@@ -2,11 +2,12 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, LifeBuoy, Loader2, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
+import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, X } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useSosHold } from '../lib/useSosHold';
+import { estadoDeSaidaVelejo } from '../lib/downwind';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
@@ -86,6 +87,14 @@ export const DownwindAoVivoView: React.FC = () => {
   const { myActiveSos, fetchActiveSos } = useKiteData();
   const { user } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
+  // Link de 12h para apoio em terra sem conta (pedido do dono). O token só
+  // existe nesta resposta e nesta tela — o banco guarda só o hash (mesmo
+  // padrão de invites/downwind_convites em geral).
+  const [convidarAberto, setConvidarAberto] = useState(false);
+  const [gerandoLink, setGerandoLink] = useState(false);
+  const [linkApoio, setLinkApoio] = useState<string | null>(null);
+  const [erroLink, setErroLink] = useState<string | null>(null);
+  const [linkCopiado, setLinkCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
   // Tela preta do Modo Navegação, sobreposta a este mapa — ver o botão
@@ -121,12 +130,52 @@ export const DownwindAoVivoView: React.FC = () => {
     onSosTriggered: () => fetchActiveSos(),
   });
 
+  const gerarLinkApoio = useCallback(async () => {
+    if (!downwindAtivo) return;
+    setConvidarAberto(true);
+    setGerandoLink(true);
+    setErroLink(null);
+    setLinkCopiado(false);
+    try {
+      const res = await fetch(`/api/downwind/${downwindAtivo.id}/convites`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? 'Não foi possível gerar o link.');
+      const url = `${window.location.origin}/dw-motorista/${body.token}`;
+      setLinkApoio(url);
+    } catch (err) {
+      setErroLink(err instanceof Error ? err.message : 'Falha de conexão.');
+    } finally {
+      setGerandoLink(false);
+    }
+  }, [downwindAtivo]);
+
+  const copiarLinkApoio = useCallback(() => {
+    if (!linkApoio) return;
+    navigator.clipboard?.writeText(linkApoio).then(
+      () => {
+        setLinkCopiado(true);
+        setTimeout(() => setLinkCopiado(false), 2000);
+      },
+      () => {
+        // Clipboard indisponível (contexto não-seguro, permissão negada): o
+        // link continua selecionável na tela, só a cópia automática falha.
+      }
+    );
+  }, [linkApoio]);
+
+  // BUG CORRIGIDO (achado em produção): mandar sempre 'encerrado' fazia quem
+  // ainda não tinha navegado (estado 'confirmado' — TODO apoio_terra, que
+  // nunca tem botão Iniciar, e um velejador que entrou mas não tocou Iniciar)
+  // receber 409 e ficar PRESO no takeover para sempre: essa transição só é
+  // válida a partir de 'navegando'. estadoDeSaidaVelejo (lib/downwind.ts)
+  // escolhe o alvo certo a partir do estado atual.
   const encerrarVelejo = useCallback(async () => {
+    const alvo = estadoDeSaidaVelejo(downwindAtivo?.minhaParticipacao.estado ?? 'confirmado');
     setProcessando(true);
-    const res = await encerrarMinhaParticipacao('encerrado');
+    const res = await encerrarMinhaParticipacao(alvo);
     setProcessando(false);
     if (!res.ok) setErro(res.error ?? 'Falha ao encerrar.');
-  }, [encerrarMinhaParticipacao]);
+  }, [downwindAtivo, encerrarMinhaParticipacao]);
 
   const holdEncerrar = usePressAndHold(HOLD_ENCERRAR_MS, () => {
     try {
@@ -254,26 +303,55 @@ export const DownwindAoVivoView: React.FC = () => {
           </button>
         )}
 
-        <button
-          type="button"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            holdEncerrar.iniciar();
-          }}
-          onPointerUp={holdEncerrar.cancelar}
-          onPointerCancel={holdEncerrar.cancelar}
-          onPointerLeave={holdEncerrar.cancelar}
-          disabled={processando}
-          className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden"
-          aria-label="Segurar para encerrar o velejo"
-        >
-          <div
-            className="absolute inset-0 bg-cyan-500/30 origin-left transition-transform"
-            style={{ transform: `scaleX(${holdEncerrar.progresso})` }}
-          />
-          <Navigation size={16} className="relative" />
-          <span className="text-[10px] font-bold relative">Encerrar velejo</span>
-        </button>
+        {/* Rótulo e ícone dependem do estado real: quem já está 'navegando'
+            está terminando a travessia (Navigation); quem ainda está
+            'confirmado' — todo apoio_terra, ou velejador que não tocou
+            Iniciar — está desistindo antes de sair (LogOut). O alvo enviado
+            (estadoDeSaidaVelejo) segue a mesma distinção — ver o bug corrigido
+            no comentário de encerrarVelejo acima. */}
+        {(() => {
+          const navegando = minhaParticipacao.estado === 'navegando';
+          return (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                holdEncerrar.iniciar();
+              }}
+              onPointerUp={holdEncerrar.cancelar}
+              onPointerCancel={holdEncerrar.cancelar}
+              onPointerLeave={holdEncerrar.cancelar}
+              disabled={processando}
+              className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden"
+              aria-label={navegando ? 'Segurar para encerrar o velejo' : 'Segurar para sair do downwind'}
+            >
+              <div
+                className="absolute inset-0 bg-cyan-500/30 origin-left transition-transform"
+                style={{ transform: `scaleX(${holdEncerrar.progresso})` }}
+              />
+              {navegando ? <Navigation size={16} className="relative" /> : <LogOut size={16} className="relative" />}
+              <span className="text-[10px] font-bold relative">
+                {navegando ? 'Encerrar velejo' : 'Sair do downwind'}
+              </span>
+            </button>
+          );
+        })()}
+
+        {/* Link de 12h para apoio em terra sem conta — pedido do dono.
+            Disponível enquanto o downwind ainda não terminou (aberto ou
+            em_andamento); qualquer organizador pode gerar, reutilizável para
+            vários motoristas com o MESMO link. */}
+        {souOrganizador && (
+          <button
+            type="button"
+            onClick={gerarLinkApoio}
+            className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 active:scale-95 transition-all"
+            aria-label="Gerar link de convite para apoio em terra"
+          >
+            <Car size={16} />
+            <span className="text-[10px] font-bold">Convidar apoio</span>
+          </button>
+        )}
 
         {souOrganizador && downwindAtivo.status === 'aberto' && (
           // Cancelar só faz sentido ANTES de sair da praia: uma vez
@@ -319,6 +397,64 @@ export const DownwindAoVivoView: React.FC = () => {
         <DownwindChat downwindId={downwindAtivo.id} onFechar={() => setChatAberto(false)} />
       )}
 
+      {convidarAberto && (
+        <div className="absolute inset-0 z-map-ui flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-3">
+          <div className="w-full max-w-sm bg-[#0F172A] border border-slate-800 rounded-3xl shadow-2xl p-5 space-y-4 overlay-safe-bottom">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-sm text-white flex items-center gap-1.5">
+                <Car size={16} className="text-cyan-400" />
+                Link de apoio (12h)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setConvidarAberto(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {gerandoLink && (
+              <div className="py-6 flex justify-center">
+                <Loader2 size={24} className="animate-spin text-cyan-400" />
+              </div>
+            )}
+
+            {!gerandoLink && erroLink && (
+              <p className="text-xs text-rose-300">{erroLink}</p>
+            )}
+
+            {!gerandoLink && linkApoio && (
+              <>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Compartilhe com quem for de carro. Válido por 12h, sem
+                  precisar de conta — quem abrir vê o mapa ao vivo e o chat
+                  do grupo, e o próprio carro aparece no mapa para os
+                  velejadores.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={linkApoio}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-200 text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={copiarLinkApoio}
+                    className="shrink-0 w-11 h-11 rounded-xl bg-cyan-500 text-slate-950 flex items-center justify-center active:scale-95 transition-all"
+                    aria-label="Copiar link"
+                  >
+                    {linkCopiado ? <Check size={18} /> : <Copy size={18} />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Sobreposto ao mapa inteiro (fixed inset-0 dentro do próprio
           componente). O mapa continua montado por baixo — sair daqui é
           instantâneo, sem remontar Leaflet nem recarregar tiles. */}
@@ -327,6 +463,7 @@ export const DownwindAoVivoView: React.FC = () => {
           rotuloSair="Voltar ao mapa"
           onSair={() => setModoNavegacaoAtivo(false)}
           ultimaPosicaoConfirmadaEm={beacon.ultimaPosicaoEm}
+          downwindId={downwindAtivo.id}
         />
       )}
     </div>

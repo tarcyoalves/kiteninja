@@ -17,18 +17,31 @@ import {
   Info,
   ChevronRight,
   Route,
+  Trophy,
   Waves,
   X,
   Loader2,
+  Trash2,
 } from 'lucide-react';
+import { DownwindResumoModal } from '../components/DownwindResumoModal';
 
 export const EventsAndAlertsView: React.FC = () => {
-  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, spots, beachMode, createDownwind } =
+  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, deleteEvent, spots, beachMode, createDownwind } =
     useKiteData();
-  const { user, openAuthModal, canOrganizeDownwind } = useAuth();
+  const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
+  const [apagandoId, setApagandoId] = useState<string | null>(null);
+  const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
+
+  const handleApagarEvento = async (eventId: string, titulo: string) => {
+    if (!confirm(`Apagar "${titulo}"? Esta ação não pode ser desfeita.`)) return;
+    setApagandoId(eventId);
+    const res = await deleteEvent(eventId);
+    setApagandoId(null);
+    if (!res.ok) setErroEntrar(res.error ?? 'Não foi possível apagar o evento.');
+  };
 
   const [activeSubTab, setActiveSubTab] = useState<'alertas' | 'eventos'>('alertas');
   const [isReportingAlert, setIsReportingAlert] = useState(false);
@@ -490,9 +503,31 @@ export const EventsAndAlertsView: React.FC = () => {
 
               {/* Event Content */}
               <div className="p-4 space-y-3">
-                <h3 className="font-black text-base text-white leading-tight">
-                  {event.title}
-                </h3>
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-black text-base text-white leading-tight">
+                    {event.title}
+                  </h3>
+                  {/* Apagar: moderação sempre, ou quem criou o downwind deste
+                      evento (downwindCriadoPorMim, calculado no servidor —
+                      GET /api/events). Eventos sem downwind só moderação
+                      apaga, porque `organizer` é texto livre sem user_id. */}
+                  {(canModerateEvents || event.downwindCriadoPorMim) && (
+                    <button
+                      type="button"
+                      onClick={() => handleApagarEvento(event.id, event.title)}
+                      disabled={apagandoId === event.id}
+                      className="shrink-0 p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/40 active:scale-95 transition-all disabled:opacity-50"
+                      aria-label={`Apagar ${event.title}`}
+                      title="Apagar evento"
+                    >
+                      {apagandoId === event.id ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={15} />
+                      )}
+                    </button>
+                  )}
+                </div>
 
                 <div className="space-y-1 text-xs text-slate-300">
                   <p className="flex items-center gap-1.5 font-bold text-white">
@@ -565,6 +600,20 @@ export const EventsAndAlertsView: React.FC = () => {
                       </span>
                     </button>
                   )}
+
+                {/* Resumo estilo Strava: só depois que o downwind terminou —
+                    é histórico, não convite para entrar em nada. */}
+                {event.type === 'Downwind' &&
+                  event.downwindId &&
+                  event.downwindStatus === 'encerrado' && (
+                    <button
+                      onClick={() => setResumoDownwindId(event.downwindId!)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all"
+                    >
+                      <Trophy size={15} className="text-amber-400" />
+                      <span>Ver Resumo</span>
+                    </button>
+                  )}
               </div>
             </div>
           ))}
@@ -591,6 +640,14 @@ export const EventsAndAlertsView: React.FC = () => {
             <span>Criar Downwind</span>
           </button>
         </div>
+      )}
+
+      {resumoDownwindId && user && (
+        <DownwindResumoModal
+          downwindId={resumoDownwindId}
+          meuUserId={user.id}
+          onFechar={() => setResumoDownwindId(null)}
+        />
       )}
     </div>
   );
