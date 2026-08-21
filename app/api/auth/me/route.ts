@@ -6,7 +6,13 @@ import { canOrganizeDownwind } from '@/lib/authz';
 export async function GET() {
   return handle(async () => {
     const session = await getSessionUser();
-    if (!session) return { user: null };
+    // Sessão de convidado (link de 12h) não conta como "logado" para o app
+    // principal — ela é escopada só ao mapa/chat de UM downwind (ver
+    // lib/auth.ts, SessionUser.guestDownwindId). Sem isto, um convidado que
+    // abrisse a raiz do app em vez de /dw-motorista/[token] receberia o shell
+    // inteiro (Feed, Mapa geral, Chat geral, Perfil) em vez de "logado
+    // apenas para o mapa e chat da própria travessia".
+    if (!session || session.guestDownwindId) return { user: null };
 
     const rows = await sql`
       SELECT id, email, name, role, must_change_password, avatar_url, rider_id,

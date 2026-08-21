@@ -204,3 +204,16 @@ export const useAuth = () => {
   if (!context) throw new Error('useAuth precisa estar dentro de AuthProvider');
   return context;
 };
+
+/**
+ * Igual a `useAuth()`, mas devolve `undefined` em vez de lançar quando não há
+ * `AuthProvider` na árvore — para componentes reaproveitados FORA do app
+ * principal, como components/DownwindChat.tsx a partir de
+ * app/dw-motorista/[token]/ConvidadoView.tsx (a página do link de convidado
+ * não monta AuthProvider de propósito — a sessão de convidado não deve
+ * herdar o app inteiro por engano). Preferido a um `try/catch` em volta de
+ * `useAuth()`: hook dentro de try/catch é sinalizado pelo eslint-plugin-
+ * react-hooks e quebra a garantia de que hooks são sempre chamados na mesma
+ * ordem.
+ */
+export const useAuthOptional = () => useContext(AuthContext);

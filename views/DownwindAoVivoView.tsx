@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
+import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, X } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -87,6 +87,14 @@ export const DownwindAoVivoView: React.FC = () => {
   const { myActiveSos, fetchActiveSos } = useKiteData();
   const { user } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
+  // Link de 12h para apoio em terra sem conta (pedido do dono). O token só
+  // existe nesta resposta e nesta tela — o banco guarda só o hash (mesmo
+  // padrão de invites/downwind_convites em geral).
+  const [convidarAberto, setConvidarAberto] = useState(false);
+  const [gerandoLink, setGerandoLink] = useState(false);
+  const [linkApoio, setLinkApoio] = useState<string | null>(null);
+  const [erroLink, setErroLink] = useState<string | null>(null);
+  const [linkCopiado, setLinkCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
   // Tela preta do Modo Navegação, sobreposta a este mapa — ver o botão
@@ -121,6 +129,39 @@ export const DownwindAoVivoView: React.FC = () => {
     hasActiveSos: Boolean(myActiveSos),
     onSosTriggered: () => fetchActiveSos(),
   });
+
+  const gerarLinkApoio = useCallback(async () => {
+    if (!downwindAtivo) return;
+    setConvidarAberto(true);
+    setGerandoLink(true);
+    setErroLink(null);
+    setLinkCopiado(false);
+    try {
+      const res = await fetch(`/api/downwind/${downwindAtivo.id}/convites`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? 'Não foi possível gerar o link.');
+      const url = `${window.location.origin}/dw-motorista/${body.token}`;
+      setLinkApoio(url);
+    } catch (err) {
+      setErroLink(err instanceof Error ? err.message : 'Falha de conexão.');
+    } finally {
+      setGerandoLink(false);
+    }
+  }, [downwindAtivo]);
+
+  const copiarLinkApoio = useCallback(() => {
+    if (!linkApoio) return;
+    navigator.clipboard?.writeText(linkApoio).then(
+      () => {
+        setLinkCopiado(true);
+        setTimeout(() => setLinkCopiado(false), 2000);
+      },
+      () => {
+        // Clipboard indisponível (contexto não-seguro, permissão negada): o
+        // link continua selecionável na tela, só a cópia automática falha.
+      }
+    );
+  }, [linkApoio]);
 
   // BUG CORRIGIDO (achado em produção): mandar sempre 'encerrado' fazia quem
   // ainda não tinha navegado (estado 'confirmado' — TODO apoio_terra, que
@@ -296,6 +337,22 @@ export const DownwindAoVivoView: React.FC = () => {
           );
         })()}
 
+        {/* Link de 12h para apoio em terra sem conta — pedido do dono.
+            Disponível enquanto o downwind ainda não terminou (aberto ou
+            em_andamento); qualquer organizador pode gerar, reutilizável para
+            vários motoristas com o MESMO link. */}
+        {souOrganizador && (
+          <button
+            type="button"
+            onClick={gerarLinkApoio}
+            className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 active:scale-95 transition-all"
+            aria-label="Gerar link de convite para apoio em terra"
+          >
+            <Car size={16} />
+            <span className="text-[10px] font-bold">Convidar apoio</span>
+          </button>
+        )}
+
         {souOrganizador && downwindAtivo.status === 'aberto' && (
           // Cancelar só faz sentido ANTES de sair da praia: uma vez
           // 'em_andamento' há gente na água, e o caminho correto passa a ser
@@ -338,6 +395,64 @@ export const DownwindAoVivoView: React.FC = () => {
 
       {chatAberto && (
         <DownwindChat downwindId={downwindAtivo.id} onFechar={() => setChatAberto(false)} />
+      )}
+
+      {convidarAberto && (
+        <div className="absolute inset-0 z-map-ui flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-3">
+          <div className="w-full max-w-sm bg-[#0F172A] border border-slate-800 rounded-3xl shadow-2xl p-5 space-y-4 overlay-safe-bottom">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-sm text-white flex items-center gap-1.5">
+                <Car size={16} className="text-cyan-400" />
+                Link de apoio (12h)
+              </h3>
+              <button
+                type="button"
+                onClick={() => setConvidarAberto(false)}
+                className="p-1.5 rounded-full text-slate-400 hover:text-white hover:bg-slate-800"
+                aria-label="Fechar"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {gerandoLink && (
+              <div className="py-6 flex justify-center">
+                <Loader2 size={24} className="animate-spin text-cyan-400" />
+              </div>
+            )}
+
+            {!gerandoLink && erroLink && (
+              <p className="text-xs text-rose-300">{erroLink}</p>
+            )}
+
+            {!gerandoLink && linkApoio && (
+              <>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Compartilhe com quem for de carro. Válido por 12h, sem
+                  precisar de conta — quem abrir vê o mapa ao vivo e o chat
+                  do grupo, e o próprio carro aparece no mapa para os
+                  velejadores.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    readOnly
+                    value={linkApoio}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="flex-1 min-w-0 px-3 py-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-slate-200 text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={copiarLinkApoio}
+                    className="shrink-0 w-11 h-11 rounded-xl bg-cyan-500 text-slate-950 flex items-center justify-center active:scale-95 transition-all"
+                    aria-label="Copiar link"
+                  >
+                    {linkCopiado ? <Check size={18} /> : <Copy size={18} />}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Sobreposto ao mapa inteiro (fixed inset-0 dentro do próprio

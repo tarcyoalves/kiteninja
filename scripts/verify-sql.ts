@@ -1208,6 +1208,75 @@ async function main() {
         AND d.encerrado_em < NOW() - INTERVAL '7 days'`
   );
 
+  console.log('\nDownwind — link de convidado (apoio em terra sem conta, 12h):');
+
+  const dwConvite = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (nome, criado_por) VALUES ('Convite Teste', $1) RETURNING id`,
+    [adminId]
+  );
+  const dwConviteId = dwConvite.rows[0].id;
+
+  await expectOk(
+    db,
+    'convite de apoio: criação do link com papel_destino apoio_terra',
+    `INSERT INTO downwind_convites (downwind_id, token_hash, criado_por, papel_destino, expira_em)
+     VALUES ($1, 'dw-motorista-hash', $2, 'apoio_terra', NOW() + INTERVAL '12 hours')
+     RETURNING id`,
+    [dwConviteId, adminId]
+  );
+
+  const guestUser = await expectOk(
+    db,
+    'conta-convidada: criação com downwind_guest_of apontando para o downwind',
+    `INSERT INTO users (email, password_hash, name, rider_id, downwind_guest_of)
+     VALUES ('convidado-abc123@dw.kiteninja.guest', '$2b$12$x', 'Motorista Convidado', 'CONV-ABC123', $1)
+     RETURNING id, downwind_guest_of`,
+    [dwConviteId]
+  );
+  const guestUserId = String(guestUser[0].id);
+  check(
+    'downwind_guest_of da conta bate com o downwind do convite',
+    String(guestUser[0].downwind_guest_of) === dwConviteId
+  );
+
+  await expectOk(
+    db,
+    'conta-convidada entra como apoio_terra, igual a qualquer participante',
+    `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'apoio_terra')`,
+    [dwConviteId, guestUserId]
+  );
+
+  await expectOk(
+    db,
+    'query de escopo do convidado: getSessionUser() traz downwind_guest_of junto do resto da sessão',
+    `SELECT u.id, u.downwind_guest_of FROM users u WHERE u.id = $1`,
+    [guestUserId]
+  );
+
+  await expectOk(
+    db,
+    'purga preguiçosa de contas-convidadas expiradas (roda junto do encerramento do downwind)',
+    `DELETE FROM users WHERE downwind_guest_of IS NOT NULL AND created_at < NOW() - INTERVAL '2 days'`
+  );
+  const guestAindaViva = await db.query(`SELECT id FROM users WHERE id = $1`, [guestUserId]);
+  check(
+    'purga não apaga conta-convidada recém-criada (fora da janela de 2 dias)',
+    guestAindaViva.rows.length === 1
+  );
+
+  await db.query(`DELETE FROM downwinds WHERE id = $1`, [dwConviteId]);
+  const guestOrfaa = await db.query(`SELECT id FROM users WHERE id = $1`, [guestUserId]);
+  check(
+    'OBRIGATÓRIO: apagar o downwind apaga a conta-convidada junto (ON DELETE CASCADE)',
+    guestOrfaa.rows.length === 0
+  );
+
+  const contaNormalIntacta = await db.query(`SELECT id FROM users WHERE id = $1`, [riderA]);
+  check(
+    'uma conta NORMAL (downwind_guest_of NULL) não é afetada pela cascata de downwind nenhum',
+    contaNormalIntacta.rows.length === 1
+  );
+
   console.log('\nDownwind — cascata ao apagar o downwind:');
   const dw2 = await db.query<{ id: string }>(
     `INSERT INTO downwinds (nome, criado_por) VALUES ('Descartável', $1) RETURNING id`,

@@ -1,11 +1,24 @@
 import { after } from 'next/server';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { HttpError, requireUser } from '@/lib/auth';
+import { getSessionUser, HttpError, type SessionUser } from '@/lib/auth';
 import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, sanitizeMessageText } from '@/lib/chat';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
 import { buscarParticipacao } from '@/lib/downwindDb';
 import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
+
+/**
+ * Resolve o usuário da requisição, aceitando a sessão de convidado do link
+ * de 12h (lib/auth.ts, `SessionUser.guestDownwindId`) — `requireUser()`
+ * rejeitaria de cara. O escopo do convidado (só a sala `dw:<seu downwind>`)
+ * é checado em `requireExistingRoom`, que conhece o room de destino; aqui só
+ * garante que existe uma sessão.
+ */
+async function resolverUsuarioChat(): Promise<SessionUser> {
+  const user = await getSessionUser();
+  if (!user) throw new HttpError(401, 'Não autenticado.');
+  return user;
+}
 
 /** Teto de leitura por requisição. Acima disso o payload passa a doer no 3G. */
 const MAX_LIMIT = 100;
@@ -49,16 +62,26 @@ function toMessage(row: unknown) {
  * de montar a partir de um id de downwind, então quem não participa daquela
  * travessia não pode ler nem escrever. Responde 404 (nunca 403) pelo mesmo
  * motivo do mapa — um 403 confirmaria que aquele downwind existe.
+ *
+ * CONVIDADO DO LINK DE 12H (`user.guestDownwindId` preenchido) só alcança a
+ * sala `dw:<seu próprio downwind>` — nunca 'geral' nem 'spot:*', que são fora
+ * do escopo "mapa e chat da travessia" prometido a ele. Aqui é 403, não 404:
+ * salas geral/spot sempre existem, não há existência nenhuma a esconder.
  */
-async function requireExistingRoom(raw: unknown, userId: string): Promise<string> {
+async function requireExistingRoom(raw: unknown, user: SessionUser): Promise<string> {
   const parsed = parseRoomName(raw);
   if (!parsed) {
     throw new HttpError(400, "Sala inválida. Use 'geral', 'spot:<id>' ou 'dw:<id>'.");
   }
+
+  if (user.guestDownwindId && (parsed.kind !== 'downwind' || parsed.downwindId !== user.guestDownwindId)) {
+    throw new HttpError(403, 'Este acesso de convidado só alcança o chat da própria travessia.');
+  }
+
   if (parsed.kind === 'geral') return 'geral';
 
   if (parsed.kind === 'downwind') {
-    const participacao = await buscarParticipacao(parsed.downwindId, userId);
+    const participacao = await buscarParticipacao(parsed.downwindId, user.id);
     if (!participacao || participacao.estado === 'desistiu') {
       throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
     }
@@ -73,10 +96,10 @@ async function requireExistingRoom(raw: unknown, userId: string): Promise<string
 
 export async function GET(request: Request) {
   return handle(async () => {
-    const user = await requireUser();
+    const user = await resolverUsuarioChat();
     const url = new URL(request.url);
 
-    const room = await requireExistingRoom(url.searchParams.get('room') ?? 'geral', user.id);
+    const room = await requireExistingRoom(url.searchParams.get('room') ?? 'geral', user);
 
     const rawLimit = Number(url.searchParams.get('limit'));
     const limit = Number.isFinite(rawLimit) && rawLimit > 0
@@ -160,12 +183,12 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   return handle(async () => {
-    const user = await requireUser();
+    const user = await resolverUsuarioChat();
     const body = await readJson(request);
 
     const room = await requireExistingRoom(
       (body as Record<string, unknown> | null)?.room,
-      user.id
+      user
     );
 
     const clean = sanitizeMessageText((body as Record<string, unknown> | null)?.text);

@@ -1,9 +1,14 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser, HttpError } from '@/lib/auth';
+import { getSessionUser, HttpError } from '@/lib/auth';
 import { num } from '@/lib/validation';
 import { rateLimiters } from '@/lib/rateLimit';
-import { podeReportarPosicao, podeVerPosicoes, posicaoVisivel } from '@/lib/downwindAcesso';
+import {
+  MSG_DOWNWIND_NAO_ENCONTRADO,
+  podeReportarPosicao,
+  podeVerPosicoes,
+  posicaoVisivel,
+} from '@/lib/downwindAcesso';
 import { buscarContexto, ehUuid } from '@/lib/downwindDb';
 import { amostrarTrilha, MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ultimoTimestamp } from '@/lib/trilhaDownwind';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
@@ -26,11 +31,29 @@ interface Params {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * Resolve o usuário aceitando também a sessão de convidado do link de 12h
+ * (lib/auth.ts, `SessionUser.guestDownwindId`) — DESDE QUE escopada a ESTE
+ * downwind. `requireUser()` não serve aqui: ela rejeita convidado por
+ * padrão (o comportamento seguro para as outras ~30 rotas), e mapa+chat do
+ * próprio downwind são exatamente os dois lugares que precisam aceitar.
+ * Convidado de OUTRO downwind recebe 404, mesma regra de "não confirma
+ * existência" de quem simplesmente não participa.
+ */
+async function resolverUsuario(downwindId: string) {
+  const user = await getSessionUser();
+  if (!user) throw new HttpError(401, 'Não autenticado.');
+  if (user.guestDownwindId && user.guestDownwindId !== downwindId) {
+    throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+  }
+  return user;
+}
+
 export async function GET(request: Request, ctx: Params) {
   return handle(async () => {
-    const user = await requireUser();
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
+    const user = await resolverUsuario(id);
 
     const { status, participacao } = await buscarContexto(id, user.id);
     const acesso = podeVerPosicoes({ statusDownwind: status, participacao });
@@ -154,9 +177,9 @@ export async function GET(request: Request, ctx: Params) {
 
 export async function POST(request: Request, ctx: Params) {
   return handle(async () => {
-    const user = await requireUser();
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
+    const user = await resolverUsuario(id);
 
     const { status, participacao } = await buscarContexto(id, user.id);
     const acesso = podeReportarPosicao({ statusDownwind: status, participacao });

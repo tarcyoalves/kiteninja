@@ -21,6 +21,19 @@ export interface SessionUser {
   name: string;
   role: Role;
   mustChangePassword: boolean;
+  /**
+   * NULL para toda conta normal. Preenchido com o id do downwind quando esta
+   * sessão é do link de 12h para apoio em terra sem conta (ver
+   * lib/schema.sql, `users.downwind_guest_of`).
+   *
+   * `requireUser()` REJEITA por padrão qualquer sessão com este campo
+   * preenchido — é o comportamento seguro para as dezenas de rotas
+   * existentes, que nunca precisaram pensar em "e se for um convidado?". As
+   * poucas rotas que o convidado de fato usa (mapa e chat do PRÓPRIO
+   * downwind) chamam `getSessionUser()` direto e conferem
+   * `guestDownwindId === id` da rota antes de continuar.
+   */
+  guestDownwindId: string | null;
 }
 
 // ------------------------------------------------------------------ hashing
@@ -66,9 +79,22 @@ export function generatePassword(): string {
 
 // ------------------------------------------------------------------ sessões
 
-export async function createSession(userId: string, userAgent?: string): Promise<string> {
+export async function createSession(
+  userId: string,
+  userAgent?: string,
+  opts?: {
+    /**
+     * Substitui os 30 dias padrão. Único uso hoje: a sessão do link de
+     * convidado (12h — ver app/api/downwind/convite/[token]/entrar/route.ts),
+     * que precisa expirar sozinha sem depender de ninguém chamar logout.
+     */
+    expiresInHours?: number;
+  }
+): Promise<string> {
   const token = newToken();
-  const expiresAt = new Date(Date.now() + SESSION_DAYS * 86_400_000);
+  const expiresAt = opts?.expiresInHours
+    ? new Date(Date.now() + opts.expiresInHours * 3_600_000)
+    : new Date(Date.now() + SESSION_DAYS * 86_400_000);
 
   await sql`
     INSERT INTO auth_sessions (user_id, token_hash, user_agent, expires_at)
@@ -108,7 +134,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!token) return null;
 
   const rows = await sql`
-    SELECT u.id, u.email, u.name, u.role, u.must_change_password
+    SELECT u.id, u.email, u.name, u.role, u.must_change_password, u.downwind_guest_of
     FROM auth_sessions s
     JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ${hashToken(token)}
@@ -126,13 +152,27 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     name: String(row.name),
     role: row.role as Role,
     mustChangePassword: Boolean(row.must_change_password),
+    guestDownwindId: row.downwind_guest_of ? String(row.downwind_guest_of) : null,
   };
 }
 
-/** Igual a getSessionUser, mas lança 401 — use em rotas que exigem login. */
+/**
+ * Igual a getSessionUser, mas lança 401 — use em rotas que exigem login.
+ *
+ * REJEITA sessão de convidado (`guestDownwindId` preenchido) por padrão —
+ * ver o comentário em `SessionUser.guestDownwindId`. Isto é o que faz o
+ * convidado do link de 12h ficar automaticamente de fora de TODAS as rotas
+ * existentes (spots, feed, chat geral, admin, perfil...) sem precisar tocar
+ * em nenhuma delas: elas já chamam `requireUser()`. As poucas rotas que
+ * precisam aceitar convidado (mapa e chat do downwind) NÃO usam esta
+ * função — usam `getSessionUser()` direto e conferem o escopo elas mesmas.
+ */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw new HttpError(401, 'Não autenticado.');
+  if (user.guestDownwindId) {
+    throw new HttpError(401, 'Este acesso de convidado não inclui esta função.');
+  }
   return user;
 }
 
