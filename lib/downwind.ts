@@ -247,6 +247,36 @@ export function podeTransicionarParticipante(
   return TRANSICOES_PARTICIPANTE[de]?.has(para) ?? false;
 }
 
+/**
+ * Estado-alvo correto para o botão de saída do participante ("Encerrar
+ * velejo" na UI), a partir do estado atual.
+ *
+ * BUG QUE ISTO CORRIGE (achado em produção): a UI mandava sempre
+ * `estado: 'encerrado'`, mas essa transição só é válida a partir de
+ * 'navegando' (ver TRANSICOES_PARTICIPANTE acima). Quem ainda está
+ * 'confirmado' — TODO `apoio_terra`, que nunca tem botão "Iniciar" e por
+ * isso NUNCA chega a 'navegando', e também um `velejador` que entrou no
+ * downwind mas ainda não tocou Iniciar — recebia 409 "transição inválida" e
+ * ficava PRESO no takeover de tela cheia para sempre: a única outra saída
+ * era o organizador cancelar o downwind INTEIRO, o que não é uma opção
+ * pessoal de quem só queria sair.
+ *
+ * A resposta certa depende de ONDE a pessoa está: 'navegando' significa que
+ * ela está de fato na água/na rota, então 'encerrado' ("terminei a
+ * travessia") é a semântica certa; qualquer outro estado ('confirmado', ou
+ * já um estado terminal) significa que ela nunca chegou a navegar, então
+ * 'desistiu' ("não vou mais") é a única transição válida.
+ *
+ * 'encerrado' e 'desistiu' já são ambos terminais em TRANSICOES_PARTICIPANTE
+ * (sem transição de saída), então chamar esta função de novo sobre o
+ * resultado anterior é inofensivo — devolve 'desistiu', e a rota trata
+ * `estadoAtual === novoEstado` como idempotente (ver
+ * lib/downwindAcesso.ts, `podeMudarEstadoDeParticipante`).
+ */
+export function estadoDeSaidaVelejo(estadoAtual: ParticipanteEstado): 'encerrado' | 'desistiu' {
+  return estadoAtual === 'navegando' ? 'encerrado' : 'desistiu';
+}
+
 // ---------------------------------------------------------------------------
 // 4. Progresso do percurso.
 // ---------------------------------------------------------------------------

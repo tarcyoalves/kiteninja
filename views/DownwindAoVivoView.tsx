@@ -2,11 +2,12 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, LifeBuoy, Loader2, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
+import { Ban, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useSosHold } from '../lib/useSosHold';
+import { estadoDeSaidaVelejo } from '../lib/downwind';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
@@ -121,12 +122,19 @@ export const DownwindAoVivoView: React.FC = () => {
     onSosTriggered: () => fetchActiveSos(),
   });
 
+  // BUG CORRIGIDO (achado em produção): mandar sempre 'encerrado' fazia quem
+  // ainda não tinha navegado (estado 'confirmado' — TODO apoio_terra, que
+  // nunca tem botão Iniciar, e um velejador que entrou mas não tocou Iniciar)
+  // receber 409 e ficar PRESO no takeover para sempre: essa transição só é
+  // válida a partir de 'navegando'. estadoDeSaidaVelejo (lib/downwind.ts)
+  // escolhe o alvo certo a partir do estado atual.
   const encerrarVelejo = useCallback(async () => {
+    const alvo = estadoDeSaidaVelejo(downwindAtivo?.minhaParticipacao.estado ?? 'confirmado');
     setProcessando(true);
-    const res = await encerrarMinhaParticipacao('encerrado');
+    const res = await encerrarMinhaParticipacao(alvo);
     setProcessando(false);
     if (!res.ok) setErro(res.error ?? 'Falha ao encerrar.');
-  }, [encerrarMinhaParticipacao]);
+  }, [downwindAtivo, encerrarMinhaParticipacao]);
 
   const holdEncerrar = usePressAndHold(HOLD_ENCERRAR_MS, () => {
     try {
@@ -254,26 +262,39 @@ export const DownwindAoVivoView: React.FC = () => {
           </button>
         )}
 
-        <button
-          type="button"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            holdEncerrar.iniciar();
-          }}
-          onPointerUp={holdEncerrar.cancelar}
-          onPointerCancel={holdEncerrar.cancelar}
-          onPointerLeave={holdEncerrar.cancelar}
-          disabled={processando}
-          className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden"
-          aria-label="Segurar para encerrar o velejo"
-        >
-          <div
-            className="absolute inset-0 bg-cyan-500/30 origin-left transition-transform"
-            style={{ transform: `scaleX(${holdEncerrar.progresso})` }}
-          />
-          <Navigation size={16} className="relative" />
-          <span className="text-[10px] font-bold relative">Encerrar velejo</span>
-        </button>
+        {/* Rótulo e ícone dependem do estado real: quem já está 'navegando'
+            está terminando a travessia (Navigation); quem ainda está
+            'confirmado' — todo apoio_terra, ou velejador que não tocou
+            Iniciar — está desistindo antes de sair (LogOut). O alvo enviado
+            (estadoDeSaidaVelejo) segue a mesma distinção — ver o bug corrigido
+            no comentário de encerrarVelejo acima. */}
+        {(() => {
+          const navegando = minhaParticipacao.estado === 'navegando';
+          return (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                holdEncerrar.iniciar();
+              }}
+              onPointerUp={holdEncerrar.cancelar}
+              onPointerCancel={holdEncerrar.cancelar}
+              onPointerLeave={holdEncerrar.cancelar}
+              disabled={processando}
+              className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden"
+              aria-label={navegando ? 'Segurar para encerrar o velejo' : 'Segurar para sair do downwind'}
+            >
+              <div
+                className="absolute inset-0 bg-cyan-500/30 origin-left transition-transform"
+                style={{ transform: `scaleX(${holdEncerrar.progresso})` }}
+              />
+              {navegando ? <Navigation size={16} className="relative" /> : <LogOut size={16} className="relative" />}
+              <span className="text-[10px] font-bold relative">
+                {navegando ? 'Encerrar velejo' : 'Sair do downwind'}
+              </span>
+            </button>
+          );
+        })()}
 
         {souOrganizador && downwindAtivo.status === 'aberto' && (
           // Cancelar só faz sentido ANTES de sair da praia: uma vez
@@ -327,6 +348,7 @@ export const DownwindAoVivoView: React.FC = () => {
           rotuloSair="Voltar ao mapa"
           onSair={() => setModoNavegacaoAtivo(false)}
           ultimaPosicaoConfirmadaEm={beacon.ultimaPosicaoEm}
+          downwindId={downwindAtivo.id}
         />
       )}
     </div>

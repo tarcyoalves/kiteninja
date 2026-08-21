@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Lock, LogOut, LifeBuoy, Phone, Siren, Unlock } from 'lucide-react';
+import { AlertTriangle, Lock, LogOut, LifeBuoy, MessageCircle, Phone, Siren, Unlock } from 'lucide-react';
 import { estadoSinal } from '../lib/downwind';
 import { useWakeLock } from '../lib/useWakeLock';
 import { useTrilhaSessao } from '../lib/useTrilhaSessao';
 import { useSosHold } from '../lib/useSosHold';
 import { useKiteData } from '../context/KiteDataContext';
+import { DownwindChat } from './DownwindChat';
 
 /**
  * Tela preta de navegação — mantém o app em primeiro plano com Wake Lock
@@ -155,13 +156,29 @@ interface ModoNavegacaoProps {
    * trilha local, como sempre foi no mapa geral).
    */
   ultimaPosicaoConfirmadaEm?: Date | null;
+  /**
+   * Quando presente, mostra um botão de Chat no estado destravado, abrindo o
+   * chat privado DESTE downwind por cima da tela preta.
+   *
+   * Existe porque o chat era inalcançável enquanto o Modo Navegação estava
+   * por cima (`z-splash`, acima do `z-map-ui` que components/DownwindChat.tsx
+   * usa) — a única saída era "Sair" e voltar ao mapa ao vivo, perdendo a
+   * trava. Segue o MESMO princípio de segurança do SOS logo abaixo: só fica
+   * acessível DEPOIS de desbloquear (nunca no estado travado), porque o
+   * celular vai dentro do colete e um toque acidental não pode abrir nada.
+   * Ao contrário do SOS, uma mensagem de chat enviada por engano não é
+   * perigosa — por isso não tem hold, só toque simples, igual a Sair/Travar.
+   */
+  downwindId?: string;
 }
 
 export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
   onSair,
   rotuloSair = 'Sair',
   ultimaPosicaoConfirmadaEm,
+  downwindId,
 }) => {
+  const [chatAberto, setChatAberto] = useState(false);
   const { ativo: wakeLockAtivo, suportado: wakeLockSuportado } = useWakeLock(true);
   const trilha = useTrilhaSessao(true);
 
@@ -388,6 +405,19 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
                 <span className="text-[10px] font-bold">Travar</span>
               </button>
 
+              {downwindId && (
+                <button
+                  type="button"
+                  onClick={() => setChatAberto(true)}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 active:scale-95 transition-all"
+                  aria-label="Abrir chat do grupo"
+                >
+                  <MessageCircle size={16} />
+                  <span className="text-[10px] font-bold">Chat</span>
+                </button>
+              )}
+
               {!hasActiveSos && (
                 <div className="relative">
                   <button
@@ -482,6 +512,15 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
           <span className="text-[10px] text-slate-700">segure para desbloquear</span>
         )}
       </div>
+
+      {/* Renderizado AQUI DENTRO (não como irmão em outro componente) de
+          propósito: por ser descendente deste `fixed inset-0 z-splash`, o
+          chat empilha por cima da tela preta só por ordem do DOM, sem
+          precisar de um z-index maior que z-splash em lugar nenhum do app —
+          ver o comentário da prop `downwindId` acima. */}
+      {chatAberto && downwindId && (
+        <DownwindChat downwindId={downwindId} onFechar={() => setChatAberto(false)} />
+      )}
     </div>
   );
 };
