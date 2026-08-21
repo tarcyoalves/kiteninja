@@ -544,9 +544,12 @@ CREATE INDEX IF NOT EXISTS idx_downwinds_ativos
 -- o velejador já espera encontrá-lo. SET NULL, não CASCADE, pelo mesmo motivo
 -- de `criado_por` acima: apagar o evento (ex.: post administrativo removido)
 -- não pode arrastar a trilha de segurança do downwind, que é histórico
--- próprio. Sem índice: a tabela é pequena e a única consulta prevista por
--- `event_id` é "este evento específico tem downwind?", um lookup avulso, não
--- um filtro recorrente que justifique manter um índice a mais.
+-- próprio. O índice desta coluna é o `ux_downwinds_event` no fim desta seção
+-- (UNIQUE parcial) — ele nasceu para garantir o invariante "um evento tem no
+-- máximo um downwind" e serve ao lookup de graça. Este comentário antes dizia
+-- que não valia índice nenhum aqui, porque a consulta por `event_id` era um
+-- lookup avulso; deixou de ser quando `GET /api/events` passou a resolver o
+-- downwind de TODO evento listado, para o card saber se tem mapa ao vivo.
 ALTER TABLE downwinds ADD COLUMN IF NOT EXISTS event_id UUID
   REFERENCES events(id) ON DELETE SET NULL;
 
@@ -666,4 +669,58 @@ CREATE TABLE IF NOT EXISTS downwind_convites (
 CREATE INDEX IF NOT EXISTS idx_downwind_convites_open
   ON downwind_convites (downwind_id, expira_em)
   WHERE revogado_em IS NULL;
+
+-- Vínculo do velejador com o carro de apoio que o atende. Um motorista apoia
+-- vários velejadores; um velejador tem no máximo um apoio. Existe porque a
+-- pergunta "cadê o MEU carro?" é de logística real: num downwind com 12
+-- pessoas e 3 carros, o seu é o que tem suas chaves, sua água e sua roupa —
+-- hoje isso se resolve no grito.
+--
+-- SET NULL e não CASCADE: apagar a conta do motorista não pode tirar o
+-- velejador do downwind, só deixá-lo sem apoio designado — mesmo raciocínio
+-- de downwinds.criado_por, que também não arrasta histórico de segurança.
+--
+-- INVARIANTE QUE A FK NÃO GARANTE, e que a aplicação PRECISA validar (ver
+-- `apoioValido` em lib/downwindAcesso.ts): o apontado tem que ser
+-- participante DO MESMO downwind, com papel='apoio_terra', e diferente do
+-- próprio user_id. A FK só garante que o usuário existe em algum lugar.
+--
+-- Sem índice de propósito: são dezenas de linhas por downwind e toda leitura
+-- já entra pelo prefixo da PK (downwind_id). Um índice a mais só custaria
+-- escrita na tabela que mais recebe UPDATE de estado durante a travessia.
+ALTER TABLE downwind_participantes
+  ADD COLUMN IF NOT EXISTS apoio_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
+-- Resumo da travessia, gravado NO ENCERRAMENTO da participação, para a trilha
+-- bruta poder ser apagada depois sem destruir o que o velejador quer rever.
+-- A trilha virou informação visível no mapa (o rastro de cada um), então
+-- apagar os pontos sem guardar nada seria perder produto, não só histórico.
+--
+-- Colunas na própria linha do participante em vez de tabela nova: é fato 1:1
+-- de uma linha que já existe, e uma tabela separada só criaria PK, FK e regra
+-- de cascata novas para zero ganho.
+--
+-- trilha_reduzida é JSONB com no máximo ~200 pontos [[lat, lng, tsMs], ...]:
+-- ~5 KB contra os ~540 KB da trilha bruta de um downwind, redução de ~100x.
+-- JSONB e não tabela de pontos porque isto é lido inteiro ou nada, nunca
+-- filtrado ou ordenado por ponto.
+ALTER TABLE downwind_participantes
+  ADD COLUMN IF NOT EXISTS distancia_km        NUMERIC(7,2);
+ALTER TABLE downwind_participantes
+  ADD COLUMN IF NOT EXISTS velocidade_max_nos  NUMERIC(5,2);
+ALTER TABLE downwind_participantes
+  ADD COLUMN IF NOT EXISTS trilha_reduzida     JSONB;
+
+-- Um evento tem no máximo um downwind. O código de criação já assume isso —
+-- app/api/events/route.ts cria os dois na mesma requisição e faz rollback
+-- manual se o segundo INSERT falhar. Sem a constraint, uma retentativa depois
+-- de um erro parcial deixaria dois downwinds apontando para o mesmo evento, e
+-- o card do evento passaria a abrir um downwind arbitrário dos dois.
+--
+-- UNIQUE PARCIAL (WHERE event_id IS NOT NULL) porque downwind sem evento é
+-- legítimo e vários NULLs precisam conviver — um UNIQUE comum trataria os
+-- NULLs como distintos no Postgres, mas o parcial deixa a intenção explícita
+-- e mantém o índice menor.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_downwinds_event
+  ON downwinds (event_id) WHERE event_id IS NOT NULL;
 
