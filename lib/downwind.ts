@@ -333,28 +333,26 @@ export function progressoDownwind(
 // 5. Split mapa/chat da tela do apoio em terra (motorista).
 // ---------------------------------------------------------------------------
 
-/** Três proporções fixas — ver views/DownwindAoVivoView.tsx: o motorista vê
- * mapa e chat sempre juntos (nunca um por cima do outro), com dois botões
- * pequenos para expandir um às custas do outro. */
-export type SplitApoioTerra = 'mapa' | 'equilibrado' | 'chat';
-
-/** Altura do mapa (o chat ocupa o restante) para cada estado. */
-export const ALTURA_MAPA_SPLIT_APOIO: Record<SplitApoioTerra, string> = {
-  mapa: '70%',
-  equilibrado: '50%',
-  chat: '30%',
-};
+/**
+ * Altura do mapa como % da área do split — o chat ocupa o restante. Percentual
+ * contínuo (arrastável por uma alça entre os dois painéis), não mais três
+ * estados fixos: a primeira versão (proximoSplitApoioTerra, três paradas) foi
+ * substituída porque o pedido explícito passou a ser "puxar para aumentar ou
+ * diminuir", que um enum de 3 valores não expressa.
+ *
+ * Os botões de atalho ("expandir mapa" / "expandir chat" / "equilibrar") na UI
+ * continuam existindo — eles só chamam esta mesma função com um alvo fixo
+ * (70/50/30), em vez de um enum próprio.
+ */
+export const SPLIT_APOIO_MAPA_MIN_PCT = 20;
+export const SPLIT_APOIO_MAPA_MAX_PCT = 80;
 
 /**
- * Próximo estado ao clicar um dos dois botões ("expandir mapa" / "expandir
- * chat"). Cada botão é o seu próprio colapso: clicar de novo no botão que já
- * está expandido volta para 'equilibrado' — não existe um terceiro controle
- * "recolher" separado, por simplicidade (pedido do dono aceitou essa
- * alternativa a um resize por arraste).
+ * Limita o percentual de altura do mapa a uma faixa que nunca deixa nenhum
+ * dos dois painéis desaparecer por completo — nem no fim de um arrasto solto
+ * fora da tela, nem num clique de atalho mal calculado.
  */
-export function proximoSplitApoioTerra(
-  atual: SplitApoioTerra,
-  alvo: 'mapa' | 'chat'
-): SplitApoioTerra {
-  return atual === alvo ? 'equilibrado' : alvo;
+export function clampAlturaMapaSplitApoio(percentDesejado: number): number {
+  if (!Number.isFinite(percentDesejado)) return 50;
+  return Math.min(SPLIT_APOIO_MAPA_MAX_PCT, Math.max(SPLIT_APOIO_MAPA_MIN_PCT, percentDesejado));
 }

@@ -2,10 +2,12 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { AlertTriangle, Car, Clock, Loader2, MessageCircle, PartyPopper } from 'lucide-react';
+import { AlertTriangle, Car, Clock, Loader2, PartyPopper } from 'lucide-react';
 import { useDownwindBeacon } from '@/lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '@/lib/useDownwindPosicoes';
 import { DownwindChat } from '@/components/DownwindChat';
+import { SplitDragHandle } from '@/components/SplitDragHandle';
+import { useSplitArrastavel } from '@/lib/useSplitArrastavel';
 
 /**
  * Experiência do link de 12h para apoio em terra sem conta.
@@ -56,7 +58,11 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
   const [meuUserId, setMeuUserId] = useState<string | null>(null);
   const [meuNome, setMeuNome] = useState<string | null>(null);
   const [meuRiderId, setMeuRiderId] = useState<string | null>(null);
-  const [chatAberto, setChatAberto] = useState(false);
+  // Este link é SEMPRE apoio em terra (é o que "acesso de apoio" significa —
+  // não existe convidado velejador). Por isso o split mapa+chat, sem toggle
+  // de papel: é o mesmo layout que views/DownwindAoVivoView.tsx usa só para
+  // quem é apoio_terra, aqui aplicado direto.
+  const split = useSplitArrastavel(50);
 
   // "Já tenho sessão de convidado válida?" — cobre o refresh da página, que
   // reseta o estado React mas não o cookie httpOnly de 12h.
@@ -198,19 +204,14 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
             Acesso de apoio · válido por 12h
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setChatAberto(true)}
-          className="shrink-0 p-2.5 rounded-full bg-slate-800 text-cyan-400 active:scale-95 transition-all"
-          aria-label="Abrir chat do grupo"
-        >
-          <MessageCircle size={18} />
-        </button>
       </div>
 
-      <div className="flex-1 min-h-0 relative">
-        {emAndamento ? (
-          meuUserId && (
+      {emAndamento && meuUserId ? (
+        // Split fixo, sem toggle: este link é sempre apoio em terra, então
+        // é sempre o layout de mapa+chat divididos — mesmo componente que
+        // views/DownwindAoVivoView.tsx usa para o apoio_terra com conta.
+        <div ref={split.containerRef} className="flex-1 min-h-0 flex flex-col">
+          <div className="relative overflow-hidden shrink-0" style={{ height: `${split.alturaMapaPct}%` }}>
             <DownwindMapa
               meuUserId={meuUserId}
               saida={downwind.saida}
@@ -218,31 +219,33 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
               participantes={participantes}
               minhaTrilha={minhaTrilha}
             />
-          )
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-500 px-6">
-            <Car size={40} className="opacity-40" />
-            <p className="text-xs text-center max-w-[240px]">
-              O downwind ainda não começou. O mapa ao vivo liga assim que a
-              travessia iniciar.
-            </p>
+            {!beacon.ultimaPosicaoEm && (
+              <div className="absolute bottom-0 inset-x-0 px-4 py-2 bg-amber-950/80 backdrop-blur-sm border-t border-amber-800/40 text-amber-300 text-[11px] flex items-center gap-1.5">
+                <AlertTriangle size={12} className="shrink-0" />
+                Aguardando sua localização — confirme a permissão de GPS do navegador.
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {!beacon.ultimaPosicaoEm && emAndamento && (
-        <div className="shrink-0 px-4 py-2 bg-amber-950/40 border-t border-amber-800/40 text-amber-300 text-[11px] flex items-center gap-1.5 overlay-safe-bottom">
-          <AlertTriangle size={12} className="shrink-0" />
-          Aguardando sua localização — confirme a permissão de GPS do navegador.
+          <SplitDragHandle handleProps={split.handleProps} onAtalho={(alvo) => split.setAlturaMapaPct(alvo)} />
+
+          <div className="relative flex-1 min-h-0">
+            {meuNome && meuRiderId && (
+              <DownwindChat
+                downwindId={downwind.id}
+                meuUsuario={{ id: meuUserId, name: meuNome, riderId: meuRiderId }}
+              />
+            )}
+          </div>
         </div>
-      )}
-
-      {chatAberto && meuUserId && meuNome && meuRiderId && (
-        <DownwindChat
-          downwindId={downwind.id}
-          onFechar={() => setChatAberto(false)}
-          meuUsuario={{ id: meuUserId, name: meuNome, riderId: meuRiderId }}
-        />
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 text-slate-500 px-6">
+          <Car size={40} className="opacity-40" />
+          <p className="text-xs text-center max-w-[240px]">
+            O downwind ainda não começou. O mapa e o chat ligam assim que a
+            travessia iniciar.
+          </p>
+        </div>
       )}
     </main>
   );

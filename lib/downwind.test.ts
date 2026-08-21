@@ -16,7 +16,7 @@ import {
   podeTransicionarDownwind,
   podeTransicionarParticipante,
   progressoDownwind,
-  proximoSplitApoioTerra,
+  clampAlturaMapaSplitApoio,
   velejadoresPendentes,
 } from './downwind';
 
@@ -427,22 +427,20 @@ describe('progressoDownwind', () => {
   });
 });
 
-describe('proximoSplitApoioTerra — toggle do split mapa/chat do motorista', () => {
-  it('de equilibrado, expandir mapa vai para mapa', () => {
-    expect(proximoSplitApoioTerra('equilibrado', 'mapa')).toBe('mapa');
+describe('clampAlturaMapaSplitApoio — arraste do split mapa/chat do motorista', () => {
+  it('valor dentro da faixa passa inalterado', () => {
+    expect(clampAlturaMapaSplitApoio(50)).toBe(50);
+    expect(clampAlturaMapaSplitApoio(20)).toBe(20);
+    expect(clampAlturaMapaSplitApoio(80)).toBe(80);
   });
 
-  it('de equilibrado, expandir chat vai para chat', () => {
-    expect(proximoSplitApoioTerra('equilibrado', 'chat')).toBe('chat');
+  it('arraste solto além do limite trava na borda, não desaparece o painel', () => {
+    expect(clampAlturaMapaSplitApoio(-40)).toBe(20);
+    expect(clampAlturaMapaSplitApoio(150)).toBe(80);
   });
 
-  it('clicar de novo no botão já expandido colapsa de volta a equilibrado', () => {
-    expect(proximoSplitApoioTerra('mapa', 'mapa')).toBe('equilibrado');
-    expect(proximoSplitApoioTerra('chat', 'chat')).toBe('equilibrado');
-  });
-
-  it('trocar de expandido para o outro lado vai direto ao outro lado (sem passar por equilibrado)', () => {
-    expect(proximoSplitApoioTerra('mapa', 'chat')).toBe('chat');
-    expect(proximoSplitApoioTerra('chat', 'mapa')).toBe('mapa');
+  it('valor não-finito (NaN de um gesto interrompido) cai no meio, não trava a UI', () => {
+    expect(clampAlturaMapaSplitApoio(NaN)).toBe(50);
+    expect(clampAlturaMapaSplitApoio(Infinity)).toBe(50);
   });
 });

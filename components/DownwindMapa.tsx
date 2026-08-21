@@ -138,6 +138,17 @@ interface DownwindMapaProps {
   participantes: DownwindParticipanteMapa[];
   minhaTrilha: PontoTrilha[];
   onSelecionarParticipante?: (userId: string) => void;
+  /**
+   * O Modo Navegação (tela preta) cobre este mapa por cima (`z-splash`), mas
+   * NÃO o desmonta — o mapa continua vivo, só escondido, às vezes por horas
+   * numa travessia. `MapaController` só chama `map.invalidateSize()` uma vez,
+   * na montagem: sem esta prop, o Leaflet nunca fica sabendo que precisa
+   * remedir/redesenhar ao voltar a ficar visível, e a tela "trava" (tiles
+   * desatualizados, cliques/arrasto sem efeito visível, botão de zoom
+   * aparentando não fazer nada). Passe `true` enquanto o Modo Navegação
+   * estiver coberto o mapa; a transição true→false é o gatilho.
+   */
+  escondidoPeloModoNavegacao?: boolean;
 }
 
 export const DownwindMapa: React.FC<DownwindMapaProps> = ({
@@ -147,6 +158,7 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
   participantes,
   minhaTrilha,
   onSelecionarParticipante,
+  escondidoPeloModoNavegacao = false,
 }) => {
   // Relógio próprio para o anel de sinal continuar correndo entre um poll e
   // outro, em vez de ficar congelado no valor do último fetch — mesmo padrão
@@ -211,6 +223,26 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
       setModoVisao('meu-foco');
     }
   }, [modoVisao, podeVerTodos, participantesComPosicao, centroInicial]);
+
+  // Só age na TRANSIÇÃO de escondido -> visível (não em todo render com
+  // `false`, que incluiria a montagem inicial — nesse caso MapaController já
+  // cuida do invalidateSize/centralização iniciais sozinho). O ref evita
+  // repetir a ação a cada re-render enquanto o valor não muda de verdade.
+  const estavaEscondido = useRef(escondidoPeloModoNavegacao);
+  useEffect(() => {
+    const map = mapRef.current;
+    const ficouVisivel = estavaEscondido.current && !escondidoPeloModoNavegacao;
+    estavaEscondido.current = escondidoPeloModoNavegacao;
+    if (!map || !ficouVisivel) return;
+
+    map.invalidateSize({ animate: false });
+    // "Ao sair, deve travar na posição do usuário" — não na última posição
+    // imperativa que o mapa tinha (podia estar em modo 'todos', ou num ponto
+    // arrastado à mão antes de abrir o Modo Navegação). Reaproveita a MESMA
+    // regra de centralização de sempre, não uma terceira lógica.
+    if (centroInicial) map.setView(centroInicial, DEFAULT_ZOOM, { animate: false });
+    setModoVisao('meu-foco');
+  }, [escondidoPeloModoNavegacao, centroInicial]);
 
   return (
     <div className="relative w-full h-full">
