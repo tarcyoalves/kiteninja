@@ -4,7 +4,9 @@ import {
   ESTADO_INICIAL_TRILHA,
   EstadoTrilha,
   marcarIndisponivel,
+  paraPrefillLogbook,
   processarAmostra,
+  valePenaRegistrarSessao,
 } from './trilhaSessao';
 
 /**
@@ -253,5 +255,74 @@ describe('marcarIndisponivel', () => {
     const indisponivel = marcarIndisponivel(estado);
     expect(indisponivel.indisponivel).toBe(true);
     expect(indisponivel.distanciaKm).toBe(estado.distanciaKm);
+  });
+});
+
+describe('valePenaRegistrarSessao', () => {
+  it('rejeita sessão sem distância nem velocidade (toque acidental no botão)', () => {
+    expect(valePenaRegistrarSessao({ distanciaKm: 0, velocidadeMaxNos: 0 })).toBe(false);
+  });
+
+  it('rejeita distância e velocidade abaixo dos dois limiares', () => {
+    expect(valePenaRegistrarSessao({ distanciaKm: 0.05, velocidadeMaxNos: 0.5 })).toBe(false);
+  });
+
+  it('aceita quando a distância cruza o limiar, mesmo com velocidade baixa', () => {
+    expect(valePenaRegistrarSessao({ distanciaKm: 0.1, velocidadeMaxNos: 0 })).toBe(true);
+    expect(valePenaRegistrarSessao({ distanciaKm: 5, velocidadeMaxNos: 0 })).toBe(true);
+  });
+
+  it('aceita quando a velocidade cruza o limiar, mesmo com distância baixa', () => {
+    expect(valePenaRegistrarSessao({ distanciaKm: 0, velocidadeMaxNos: 1 })).toBe(true);
+    expect(valePenaRegistrarSessao({ distanciaKm: 0, velocidadeMaxNos: 25 })).toBe(true);
+  });
+});
+
+describe('paraPrefillLogbook', () => {
+  it('converte distância e velocidade máxima com uma casa decimal', () => {
+    const prefill = paraPrefillLogbook(
+      {
+        distanciaKm: 28.4444,
+        velocidadeMaxNos: 26.789,
+        iniciadoEm: new Date('2026-08-21T15:30:00'),
+      },
+      new Date('2026-08-21T17:00:00')
+    );
+    expect(prefill.distanceKm).toBe(28.4);
+    expect(prefill.maxSpeedKnots).toBe(26.8);
+  });
+
+  it('calcula a duração em minutos a partir de início e agora', () => {
+    const prefill = paraPrefillLogbook(
+      {
+        distanciaKm: 10,
+        velocidadeMaxNos: 20,
+        iniciadoEm: new Date('2026-08-21T15:30:00'),
+      },
+      new Date('2026-08-21T17:00:00')
+    );
+    expect(prefill.durationMinutes).toBe(90);
+  });
+
+  it('nunca devolve duração zero — mínimo de 1 minuto mesmo para sessão de segundos', () => {
+    const inicio = new Date('2026-08-21T15:30:00');
+    const prefill = paraPrefillLogbook(
+      { distanciaKm: 0.1, velocidadeMaxNos: 1, iniciadoEm: inicio },
+      new Date(inicio.getTime() + 3_000) // 3 segundos depois
+    );
+    expect(prefill.durationMinutes).toBe(1);
+  });
+
+  it('formata data (YYYY-MM-DD) e horário (HH:MM) a partir do início, com zero à esquerda', () => {
+    const prefill = paraPrefillLogbook(
+      {
+        distanciaKm: 10,
+        velocidadeMaxNos: 20,
+        iniciadoEm: new Date('2026-01-05T08:05:00'),
+      },
+      new Date('2026-01-05T09:00:00')
+    );
+    expect(prefill.date).toBe('2026-01-05');
+    expect(prefill.startTime).toBe('08:05');
   });
 });

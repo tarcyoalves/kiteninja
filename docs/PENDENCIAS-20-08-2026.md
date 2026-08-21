@@ -223,3 +223,75 @@ confirmação de leitura — o chat geral não tem, DM não nasce com mais recur
 que ele. O deep-link `/?tab=chat` do push (mesma convenção do SOS,
 `/?tab=mapa&sos=...`) não é lido por `app/page.tsx` no carregamento — é uma
 lacuna pré-existente dos dois casos de push do app, não introduzida aqui.
+
+## Item 21/08/2026 — botão "Iniciar" do mapa normal vira registro pessoal
+
+Pedido do dono: "Temos um botão de iniciar no mapa normal do app. Vamos
+deixar ele para registro pessoal de cada velejador."
+
+### O que existia antes desta mudança
+O botão "INICIAR" de `views/MapView.tsx` (mapa geral, fora de qualquer
+downwind em grupo) só abria `components/ModoNavegacao.tsx` — a tela preta com
+Wake Lock que já mede distância e velocidade máxima em tempo real via
+`lib/useTrilhaSessao.ts` (o mesmo hook usado no downwind). Ao sair
+("Sair"), esses números eram só descartados: nenhum registro sobrevivia à
+sessão. O logbook pessoal (`components/SessionLoggerModal.tsx`, aberto pelo
+botão "+ Velejo" do Header) já existia, mas 100% de digitação manual —
+inclusive Distância/Velocidade Máx/Salto, que tinham valores de EXEMPLO
+fixos (28.4 / 26.8 / 9.2) como estado inicial dos campos, não dados reais.
+
+### Decisão de arquitetura
+Não criar uma tabela nem uma tela nova — reaproveitar o logbook que já existe
+e já tem toda a validação/persistência (`POST /api/sessions`). O que faltava
+era só a PONTE entre "sessão real de GPS" e "rascunho do formulário":
+
+- **`lib/trilhaSessao.ts`** ganhou duas funções puras (testadas em
+  `lib/trilhaSessao.test.ts`, 8 casos novos):
+  - `valePenaRegistrarSessao(resumo)` — filtra toque acidental no botão
+    Iniciar (sessão sem distância nem velocidade real) para não interromper
+    a saída com um formulário vazio.
+  - `paraPrefillLogbook(resumo, agora)` — converte {distanciaKm,
+    velocidadeMaxNos, iniciadoEm} num rascunho {distanceKm, maxSpeedKnots,
+    durationMinutes, date, startTime}. Só os campos que o GPS de fato mede —
+    vento, maré, prancha, tamanho da pipa, nota da sessão e salto (exige
+    acelerômetro, não GPS) continuam SEMPRE preenchimento manual, igual a
+    qualquer outro registro do logbook.
+- **`components/ModoNavegacao.tsx`:** `onSair` passa a receber um
+  `ResumoNavegacao` (distância, velocidade máxima, instante de montagem do
+  componente como aproximação de "início da sessão"). Assinatura
+  retrocompatível: `views/DownwindAoVivoView.tsx` continua passando
+  `onSair={() => setModoNavegacaoAtivo(false)}` sem tocar no argumento — uma
+  função de zero parâmetros é atribuível a um tipo que espera um parâmetro em
+  TypeScript, então nada mudou nesse outro caller.
+- **`context/KiteDataContext.tsx`:** `loggerPrefill` + `abrirLoggerComResumo`
+  + `limparLoggerPrefill` — seta o rascunho e abre o modal numa chamada só;
+  o prefill é consumido (e apagado) assim que o modal aplica os valores, para
+  uma abertura manual seguinte do "+ Velejo" não herdar dado de uma sessão
+  de GPS antiga.
+- **`components/SessionLoggerModal.tsx`:** ao abrir com um `loggerPrefill`
+  presente, sobrescreve Distância/Velocidade Máx/Duração/Data/Horário com os
+  valores reais e ZERA Salto Mais Alto (em vez de deixar o "9.2" de exemplo
+  ao lado de números que agora são de verdade — mostrar um número fake ao
+  lado de dado real seria pior que deixar em branco). Um banner
+  "Distância, velocidade máxima... vieram do rastreamento real do Modo
+  Navegação" aparece na seção de Telemetria GPS sempre que os valores vieram
+  de uma sessão real, para o velejador nunca confundir com digitação manual.
+- **`views/MapView.tsx`:** ao sair do Modo Navegação, chama
+  `valePenaRegistrarSessao` e, se passar, `abrirLoggerComResumo`. É o único
+  lugar que liga essa ponte — `DownwindAoVivoView.tsx` não foi tocado e
+  continua sem criar um SessionLog automático ao sair de um downwind (aquele
+  fluxo já tem seu próprio resumo por participante via
+  `GET /api/downwind/[id]/resumo` / `DownwindResumoModal`; duplicar viraria
+  dois registros divergentes da mesma travessia).
+
+### Por que não é "criar sessão automaticamente"
+GPS não sabe vento, maré, tamanho de pipa, prancha, nem como foi a sessão
+(rating) — inventar um valor plausível para esses campos seria pior que
+pedir para o velejador preencher. Por isso o fluxo continua terminando no
+MESMO formulário de sempre, só que com os campos que o GPS de fato mede já
+prontos — o velejador confere, completa o resto e confirma (ou fecha o X e
+descarta, como sempre pôde fazer).
+
+**Sem mudança de schema** — `verify-sql.ts` continua em **164 checks**.
+`vitest` foi de 573 para **581 testes** (8 novos, todos em
+`lib/trilhaSessao.test.ts`). `tsc --noEmit` e `next build` limpos.

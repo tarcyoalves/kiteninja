@@ -7,7 +7,8 @@ import { Spot } from '../types';
 import { ChevronRight, Loader2, Navigation } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
 import { MapLayer, UserPosition } from '@/components/LeafletMap';
-import { ModoNavegacao } from '@/components/ModoNavegacao';
+import { ModoNavegacao, ResumoNavegacao } from '@/components/ModoNavegacao';
+import { paraPrefillLogbook, valePenaRegistrarSessao } from '@/lib/trilhaSessao';
 
 // Carregar Leaflet apenas no cliente (SSR = false) — Leaflet depende de window
 const LeafletMap = dynamic(
@@ -30,7 +31,14 @@ interface MapViewProps {
 }
 
 export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
-  const { spots, convertWind, beachMode, allActiveSosList, setLastKnownPosition } = useKiteData();
+  const {
+    spots,
+    convertWind,
+    beachMode,
+    allActiveSosList,
+    setLastKnownPosition,
+    abrirLoggerComResumo,
+  } = useKiteData();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
   const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
   const [locateStatus, setLocateStatus] = useState<'idle' | 'loading' | 'success' | 'error' | 'denied'>('idle');
@@ -46,6 +54,24 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   // LeafletMap recentralizar mesmo quando o watch de GPS já está rodando (ver
   // handleLocateButtonClick abaixo).
   const [recenterTick, setRecenterTick] = useState(0);
+
+  /**
+   * Registro pessoal: ao sair do Modo Navegação a partir DESTE mapa (sempre
+   * um velejo solo, nunca um downwind em grupo — ver ModoNavegacaoProps em
+   * components/ModoNavegacao.tsx), o resumo real de GPS vira um rascunho do
+   * logbook em vez de simplesmente ser descartado. `valePenaRegistrarSessao`
+   * filtra sessões sem dado real (ex.: toque acidental no botão Iniciar), e
+   * `paraPrefillLogbook` só converte o que o GPS de fato mede — vento, maré,
+   * prancha e nota da sessão continuam sempre preenchimento manual.
+   */
+  const handleSairModoNavegacao = useCallback(
+    (resumo: ResumoNavegacao) => {
+      setModoNavegacaoAtivo(false);
+      if (!valePenaRegistrarSessao(resumo)) return;
+      abrirLoggerComResumo(paraPrefillLogbook(resumo, new Date()));
+    },
+    [abrirLoggerComResumo]
+  );
 
   const handleLayerChange = useCallback((layer: MapLayer) => {
     setActiveLayer(layer);
@@ -257,7 +283,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       )}
 
       {modoNavegacaoAtivo && (
-        <ModoNavegacao onSair={() => setModoNavegacaoAtivo(false)} />
+        <ModoNavegacao onSair={handleSairModoNavegacao} />
       )}
 
       {/* Selected Spot Bottom Floating Card */}

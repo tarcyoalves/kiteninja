@@ -5,6 +5,7 @@ import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit,
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
+import { PrefillLogbook } from '../lib/trilhaSessao';
 
 /**
  * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
@@ -94,6 +95,20 @@ interface KiteDataContextType {
   setIsSidebarOpen: (open: boolean) => void;
   isLoggerOpen: boolean;
   setIsLoggerOpen: (open: boolean) => void;
+  /**
+   * Rascunho do logbook vindo de uma sessão real do Modo Navegação (mapa
+   * normal, fora de um downwind em grupo) — ver `lib/trilhaSessao.ts`,
+   * `paraPrefillLogbook`. `null` numa abertura manual comum do botão "+
+   * Velejo" do Header.
+   */
+  loggerPrefill: PrefillLogbook | null;
+  /** Seta o prefill e abre o modal numa chamada só — usado por
+   * views/MapView.tsx ao sair do Modo Navegação com dado real de GPS. */
+  abrirLoggerComResumo: (prefill: PrefillLogbook) => void;
+  /** Limpa o prefill sem fechar o modal — chamado por SessionLoggerModal
+   * assim que aplica os valores, para uma reabertura manual seguinte não
+   * herdar dado de uma sessão de GPS antiga. */
+  limparLoggerPrefill: () => void;
   isCalculatorOpen: boolean;
   setIsCalculatorOpen: (open: boolean) => void;
   isNewPostOpen: boolean;
@@ -227,6 +242,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Modais e navegação
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isLoggerOpen, setIsLoggerOpen] = useState(false);
+  const [loggerPrefill, setLoggerPrefill] = useState<PrefillLogbook | null>(null);
+
+  const abrirLoggerComResumo = useCallback((prefill: PrefillLogbook) => {
+    setLoggerPrefill(prefill);
+    setIsLoggerOpen(true);
+  }, []);
+
+  const limparLoggerPrefill = useCallback(() => {
+    setLoggerPrefill(null);
+  }, []);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
@@ -869,6 +894,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsSidebarOpen,
         isLoggerOpen,
         setIsLoggerOpen,
+        loggerPrefill,
+        abrirLoggerComResumo,
+        limparLoggerPrefill,
         isCalculatorOpen,
         setIsCalculatorOpen,
         isNewPostOpen,

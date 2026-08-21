@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
-import { X, Calendar, Clock, Wind, Waves, Star, Compass, Camera, Sparkles, Gauge, ArrowUpCircle, ImagePlus, Loader2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { X, Calendar, Clock, Wind, Waves, Star, Compass, Camera, Sparkles, Gauge, ArrowUpCircle, ImagePlus, Loader2, Satellite } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
@@ -11,7 +11,15 @@ const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar,
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
 
 export const SessionLoggerModal: React.FC = () => {
-  const { isLoggerOpen, setIsLoggerOpen, spots, addSession, convertWind } = useKiteData();
+  const {
+    isLoggerOpen,
+    setIsLoggerOpen,
+    spots,
+    addSession,
+    convertWind,
+    loggerPrefill,
+    limparLoggerPrefill,
+  } = useKiteData();
   const { user } = useAuth();
 
   const [selectedSpotId, setSelectedSpotId] = useState(spots[0]?.id || 'ponta-do-mel');
@@ -36,6 +44,38 @@ export const SessionLoggerModal: React.FC = () => {
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  // Distância/velocidade máxima vieram de uma sessão real do Modo Navegação
+  // (mapa normal), não de digitação manual — controla só o banner informativo
+  // abaixo, nunca a validação nem o envio.
+  const [prefilledFromGps, setPrefilledFromGps] = useState(false);
+
+  /**
+   * Aplica o rascunho de `lib/trilhaSessao.ts` (via context) quando o modal
+   * abre vindo de uma sessão de GPS real (`views/MapView.tsx`, ao sair do
+   * Modo Navegação). `highestJumpM` é zerado de propósito: `useTrilhaSessao`
+   * não mede altura de salto (exigiria acelerômetro, não GPS), então deixar o
+   * valor de exemplo (9.2) ali pareceria um dado real ao lado dos números que
+   * de fato vieram do GPS — ver docs sobre nunca fingir saber o que não se
+   * sabe. `limparLoggerPrefill()` evita que uma abertura manual seguinte
+   * (botão "+ Velejo" do Header) herde o resumo desta sessão antiga.
+   */
+  useEffect(() => {
+    if (!isLoggerOpen || !loggerPrefill) return;
+    setDistanceKm(loggerPrefill.distanceKm);
+    setMaxSpeedKnots(loggerPrefill.maxSpeedKnots);
+    setHighestJumpM('');
+    setDurationMinutes(loggerPrefill.durationMinutes);
+    setDate(loggerPrefill.date);
+    setStartTime(loggerPrefill.startTime);
+    setPrefilledFromGps(true);
+    limparLoggerPrefill();
+  }, [isLoggerOpen, loggerPrefill, limparLoggerPrefill]);
+
+  // Some o banner de "veio do GPS" ao fechar, para uma abertura manual
+  // seguinte (sem prefill nenhum) não carregar o aviso de uma sessão antiga.
+  useEffect(() => {
+    if (!isLoggerOpen) setPrefilledFromGps(false);
+  }, [isLoggerOpen]);
 
   if (!isLoggerOpen) return null;
 
@@ -306,11 +346,26 @@ export const SessionLoggerModal: React.FC = () => {
           </div>
 
           {/* GPS / Performance Telemetry */}
-          <div className="p-3.5 bg-[#1E293B] rounded-2xl border border-slate-700/80 space-y-2">
+          <div
+            className={`p-3.5 rounded-2xl border space-y-2 ${
+              prefilledFromGps
+                ? 'bg-cyan-950/30 border-cyan-500/40'
+                : 'bg-[#1E293B] border-slate-700/80'
+            }`}
+          >
             <h4 className="font-black text-xs text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <Gauge size={14} className="text-cyan-400" />
               <span>Telemetria GPS / WOO / Garmin (Opcional)</span>
             </h4>
+
+            {prefilledFromGps && (
+              <p className="flex items-start gap-1.5 text-[11px] leading-snug text-cyan-300">
+                <Satellite size={13} className="shrink-0 mt-0.5" />
+                Distância, velocidade máxima, data, horário e duração vieram
+                do rastreamento real do Modo Navegação. Salto mais alto não é
+                medido por GPS — preencha só se souber por outro aparelho.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <label className="block text-slate-400 mb-0.5">Distância (km)</label>

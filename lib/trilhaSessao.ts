@@ -271,3 +271,91 @@ export function processarAmostra(estado: EstadoTrilha, amostra: AmostraGps): Est
 export function marcarIndisponivel(estado: EstadoTrilha): EstadoTrilha {
   return { ...estado, indisponivel: true };
 }
+
+// ---------------------------------------------------------------------------
+// Registro pessoal: converter uma sessão do Modo Navegação (mapa normal, fora
+// de um downwind em grupo) num rascunho do logbook (SessionLoggerModal).
+// ---------------------------------------------------------------------------
+
+/** Abaixo disso, `Iniciar` foi provavelmente um toque acidental (ex.: o
+ * velejador testou o botão parado na praia) — não vale interromper a saída
+ * com um formulário de registro. */
+export const DISTANCIA_MINIMA_PARA_REGISTRO_KM = 0.1;
+
+/** Mesma ideia acima, mas pelo ângulo da velocidade: cobre o caso raro de
+ * velocidade máxima ter subido (leitura direta do aparelho) sem que a
+ * distância acumulada tenha cruzado o limiar de deslocamento mínimo. */
+const VELOCIDADE_MINIMA_PARA_REGISTRO_NOS = 1;
+
+/**
+ * Decide se uma sessão do Modo Navegação rendeu dado real o bastante para
+ * valer a pena oferecer o registro no logbook ao sair. Só olha para os
+ * números que o GPS mediu de fato — nunca duração sozinha, porque o app pode
+ * ter ficado minutos aberto sem o velejador ter se movido nada.
+ */
+export function valePenaRegistrarSessao(resumo: {
+  distanciaKm: number;
+  velocidadeMaxNos: number;
+}): boolean {
+  return (
+    resumo.distanciaKm >= DISTANCIA_MINIMA_PARA_REGISTRO_KM ||
+    resumo.velocidadeMaxNos >= VELOCIDADE_MINIMA_PARA_REGISTRO_NOS
+  );
+}
+
+/**
+ * Rascunho do logbook (`components/SessionLoggerModal.tsx`) preenchido só
+ * com o que o GPS de fato mediu. Vento, maré, prancha, tamanho da pipa e nota
+ * da sessão NUNCA entram aqui — o GPS não tem como saber essas coisas, e
+ * forjar um valor plausível seria pior que deixar em branco para o velejador
+ * preencher (mesmo princípio de honestidade dos avisos em
+ * components/ModoNavegacao.tsx: nunca fingir saber o que não se sabe).
+ */
+export interface PrefillLogbook {
+  distanceKm: number;
+  maxSpeedKnots: number;
+  durationMinutes: number;
+  /** formato YYYY-MM-DD, mesmo formato do `<input type="date">` do logger. */
+  date: string;
+  /** formato HH:MM, mesmo formato do `<input type="time">` do logger. */
+  startTime: string;
+}
+
+/**
+ * Converte o resumo bruto de uma sessão do Modo Navegação (distância,
+ * velocidade máxima, instante de início) num `PrefillLogbook`.
+ *
+ * `agora` é recebido por parâmetro (em vez de `new Date()` direto) para a
+ * função continuar pura e testável sem mockar relógio — mesmo padrão do
+ * resto deste arquivo, que nunca toca `navigator`/`Date.now()` internamente.
+ */
+export function paraPrefillLogbook(
+  resumo: { distanciaKm: number; velocidadeMaxNos: number; iniciadoEm: Date },
+  agora: Date
+): PrefillLogbook {
+  // Mínimo de 1 min: uma sessão de poucos segundos ainda é uma sessão real
+  // (o velejador saiu e voltou rápido), e "0 min" tropeçaria na validação do
+  // formulário (min="10", mas sem isso o campo nasceria com um valor inválido
+  // em vez de só baixo).
+  const duracaoMs = agora.getTime() - resumo.iniciadoEm.getTime();
+  const durationMinutes = Math.max(1, Math.round(duracaoMs / 60_000));
+
+  const pad2 = (n: number) => String(n).padStart(2, '0');
+  const date = [
+    resumo.iniciadoEm.getFullYear(),
+    pad2(resumo.iniciadoEm.getMonth() + 1),
+    pad2(resumo.iniciadoEm.getDate()),
+  ].join('-');
+  const startTime = `${pad2(resumo.iniciadoEm.getHours())}:${pad2(resumo.iniciadoEm.getMinutes())}`;
+
+  return {
+    // Uma casa decimal: é a precisão que o próprio formulário já usa nos
+    // campos equivalentes (step="0.1"), então arredondar aqui evita mostrar
+    // "28.4000000001" vindo direto do acúmulo de ponto flutuante da trilha.
+    distanceKm: Math.round(resumo.distanciaKm * 10) / 10,
+    maxSpeedKnots: Math.round(resumo.velocidadeMaxNos * 10) / 10,
+    durationMinutes,
+    date,
+    startTime,
+  };
+}

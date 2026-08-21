@@ -144,6 +144,21 @@ function AnelProgresso({ progresso, tamanho = 64 }: { progresso: number; tamanho
   );
 }
 
+/**
+ * Resumo da sessão que se encerra ao sair do Modo Navegação — o que o GPS de
+ * fato mediu (`useTrilhaSessao`), para quem chama `onSair` decidir se vale a
+ * pena oferecer o registro pessoal (ver `lib/trilhaSessao.ts`,
+ * `valePenaRegistrarSessao` e `paraPrefillLogbook`). `iniciadoEm` é o
+ * instante em que ESTE componente montou, não um dado da trilha em si — é a
+ * melhor aproximação disponível de "quando a sessão começou" sem um relógio
+ * próprio dentro de `useTrilhaSessao`.
+ */
+export interface ResumoNavegacao {
+  distanciaKm: number;
+  velocidadeMaxNos: number;
+  iniciadoEm: Date;
+}
+
 interface ModoNavegacaoProps {
   /**
    * Sai do modo e devolve à UI normal. Sempre disponível após desbloquear.
@@ -153,8 +168,14 @@ interface ModoNavegacaoProps {
    * (views/DownwindAoVivoView.tsx) é ESSE mapa, não as abas do app — o
    * velejador continua "preso" na travessia (ver context/DownwindContext.tsx)
    * até encerrar de fato, só o Modo Navegação abre e fecha por cima.
+   *
+   * Recebe o `ResumoNavegacao` da sessão que está terminando. Opcional: quem
+   * chama a partir do downwind (que já tem seu próprio resumo por participante
+   * via GET /api/downwind/[id]/resumo) pode simplesmente ignorar o argumento —
+   * uma função de zero parâmetros continua sendo um `onSair` válido em
+   * TypeScript.
    */
-  onSair: () => void;
+  onSair: (resumo: ResumoNavegacao) => void;
   /** Rótulo do botão "Sair". Default mantém o texto original do mapa geral. */
   rotuloSair?: string;
   /**
@@ -192,6 +213,12 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
   const [chatAberto, setChatAberto] = useState(false);
   const { ativo: wakeLockAtivo, suportado: wakeLockSuportado } = useWakeLock(true);
   const trilha = useTrilhaSessao(true);
+
+  // Instante em que este componente montou — aproximação de "início da
+  // sessão" para o resumo passado a `onSair` (ver ResumoNavegacao acima).
+  // `useState` com inicializador de função roda só uma vez, na primeira
+  // renderização: não deve reavaliar `new Date()` a cada render.
+  const [iniciadoEm] = useState(() => new Date());
 
   // `myActiveSos`/`fetchActiveSos` vêm direto do contexto (mesma fonte que
   // components/SidebarDrawer.tsx usa), em vez de MapView.tsx repassar por
@@ -396,7 +423,13 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={onSair}
+                onClick={() =>
+                  onSair({
+                    distanciaKm: trilha.distanciaKm,
+                    velocidadeMaxNos: trilha.velocidadeMaxNos,
+                    iniciadoEm,
+                  })
+                }
                 onPointerDown={(e) => e.stopPropagation()}
                 className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 active:scale-95 transition-all"
                 aria-label={rotuloSair}
