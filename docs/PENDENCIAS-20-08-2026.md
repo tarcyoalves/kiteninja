@@ -168,3 +168,58 @@ direto. Repo é CRLF, não usar `sed -i`.
 - `docs/DEBUG-TARJA-RODAPE.md` — postmortem da tarja do rodapé (resolvida,
   causa era `black-translucent` na status bar — NÃO reabrir isso sem medir
   primeiro com `components/DiagTela.tsx`).
+
+## Item 21/08/2026 — Chat direto (DM), as 4 fases de `docs/PLANO-CHAT-DIRETO.md`
+
+Motivado por um bug relatado pelo dono depois de testar o mapa ao vivo do
+downwind em produção: "Depois resolva o chat direto" — o botão "Acenar 🤙" na
+aba Online postava a saudação no chat GERAL, visível para todo mundo, quando
+a intenção era mandar um recado privado só para aquela pessoa.
+
+- **`lib/chat.ts`:** `salaDireta(idA, idB)` gera a sala canônica
+  `dm:<menor>:<maior>`; `parseRoomName` reconhece o formato e REJEITA ordem
+  trocada e auto-DM (não normaliza — ver comentário de `DM_ROOM_RE` no
+  arquivo sobre por que aceitar as duas ordens duplicaria a conversa em duas
+  strings de `room` diferentes).
+- **`lib/authz.ts`:** `canAccessDm(userId, a, b)` — só os dois participantes,
+  SEM bypass de moderação (diferente de `canResolveSos`/`canManageListing`:
+  uma DM é conteúdo privado, não recurso de moderação).
+- **`app/api/chat/messages/route.ts`:** `requireExistingRoom` autoriza
+  `dm:*` via `canAccessDm` (403 — a existência do par de UUIDs não é segredo,
+  só o conteúdo é).
+- **`app/api/chat/dms/route.ts` (novo):** inbox de conversas diretas —
+  `DISTINCT ON (room)` + `ORDER BY room, created_at DESC` (a linha mais
+  recente de cada sala).
+- **`views/ChatView.tsx`:** nova aba "Diretas" (inbox); "Acenar 🤙" agora abre
+  `salaDireta()` de verdade; `handleSend` ganhou um `targetRoom` opcional
+  para não perder a mensagem no race de `setState` ao abrir uma DM nova e
+  mandar a saudação no mesmo clique.
+- **`context/KiteDataContext.tsx` + `components/Header.tsx`:**
+  `dmUnreadCount` separado do `unreadChatCount` do geral (cada DM tem sua
+  própria "linha d'água", já que o inbox só devolve a última mensagem por
+  sala); somados no badge do sino.
+- **Push (Fase 4):** `sendPushToUser()` — mesmo padrão do SOS — dispara em
+  DM dentro de `after()`. Chat geral/spot continuam sem push (ruído demais:
+  viraria notificação para todo mundo online).
+- **Achado durante a Fase 3, fora do plano original:**
+  `presenceSafeRoom()` em `lib/chat.ts`. `GET /api/chat/presence` devolve o
+  campo `room` de TODO MUNDO para QUALQUER usuário autenticado (é assim que
+  a aba Online sempre funcionou). Sem essa função, abrir uma DM gravaria
+  `dm:<a>:<b>` em `user_presence.room`, e qualquer terceiro consultando esse
+  endpoint veria com quem alguém está conversando — vazamento de METADADO
+  mesmo com o conteúdo já protegido por `canAccessDm`. Toda sala `dm:*` agora
+  vira `null` nos dois pontos que gravam presença (heartbeat dedicado e o
+  `after()` de `messages/route.ts`).
+
+**Sem mudança de schema** (`chat_messages.room` continua `TEXT` livre, como o
+plano previa) — `verify-sql.ts` continua em **164 checks** (não muda desde a
+sessão anterior). `vitest` foi de 560 para **573 testes**, todos verdes,
+incluindo o teste explícito de terceiro usuário negado numa sala `dm:*`
+alheia (critério de aceite do plano). `tsc --noEmit` e `next build` limpos.
+
+### O que NÃO foi feito (fora de escopo desta fase, por decisão do plano)
+Sem grupos, sem editar/apagar mensagem de DM, sem "digitando...", sem
+confirmação de leitura — o chat geral não tem, DM não nasce com mais recurso
+que ele. O deep-link `/?tab=chat` do push (mesma convenção do SOS,
+`/?tab=mapa&sos=...`) não é lido por `app/page.tsx` no carregamento — é uma
+lacuna pré-existente dos dois casos de push do app, não introduzida aqui.

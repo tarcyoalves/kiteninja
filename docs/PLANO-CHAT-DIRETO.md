@@ -1,9 +1,36 @@
 # Plano — Chat direto (DM) e conserto do "Salve"
 
-Status: **plano, nada implementado.** Escrito em 20/08/2026 a partir de um bug
-relatado pelo dono: mandar um "salve" para um velejador específico, visto
-online, na verdade postava no chat GERAL — visível para todos, não só para o
-destinatário.
+Status: **implementado (21/08/2026), as 4 fases.** Escrito em 20/08/2026 a
+partir de um bug relatado pelo dono: mandar um "salve" para um velejador
+específico, visto online, na verdade postava no chat GERAL — visível para
+todos, não só para o destinatário.
+
+## O que foi entregue
+
+- **Fase 1** (`lib/chat.ts`): `salaDireta()` + `parseRoomName` reconhecendo
+  `dm:<a>:<b>` na ordem canônica, com `lib/chat.test.ts` cobrindo ordem,
+  auto-DM, normalização de caixa e formatos malformados.
+- **Fase 2** (`app/api/chat/messages/route.ts`): `canAccessDm()` em
+  `lib/authz.ts` autoriza só os dois participantes (403, não 404 — a
+  existência do par não é segredo, só o conteúdo). `app/api/chat/dms/route.ts`
+  (novo) expõe o inbox via `DISTINCT ON (room)`.
+- **Fase 3** (`views/ChatView.tsx`): nova aba "Diretas" (inbox); "Acenar 🤙"
+  na aba Online abre `salaDireta()` de verdade em vez de postar no geral;
+  `dmUnreadCount` separado do `unreadChatCount` do geral
+  (`context/KiteDataContext.tsx`), somados no sino do `Header.tsx`.
+- **Fase 4**: `sendPushToUser()` (mesmo padrão do SOS) dispara em DM, dentro
+  de `after()` — chat geral/spot continuam sem push (ruído demais).
+- **Extra, encontrado durante a Fase 3**: `presenceSafeRoom()` em
+  `lib/chat.ts` — sem ela, abrir uma DM gravaria `dm:<a>:<b>` em
+  `user_presence.room`, e `GET /api/chat/presence` devolve `room` de todo
+  mundo para qualquer autenticado. Isso vazaria METADADO (quem fala com
+  quem) para terceiros, mesmo com o conteúdo já protegido por `canAccessDm`.
+  Sala de DM agora nunca é gravada em presença.
+
+Critérios de aceite (seção abaixo) verificados: `verify-sql.ts` (164 checks,
+0 falhas — sem mudança de schema), `vitest` (573 testes, 0 falhas, incluindo
+o teste explícito de terceiro usuário negado numa sala `dm:*` alheia), `tsc
+--noEmit` limpo, `next build` limpo.
 
 ## O bug de origem, e por que não é "só" um bug
 
