@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { useDownwind } from '../context/DownwindContext';
 import {
   AlertTriangle,
   Calendar,
@@ -16,6 +17,7 @@ import {
   Info,
   ChevronRight,
   Route,
+  Waves,
   X,
   Loader2,
 } from 'lucide-react';
@@ -24,6 +26,9 @@ export const EventsAndAlertsView: React.FC = () => {
   const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, spots, beachMode, createDownwind } =
     useKiteData();
   const { user, openAuthModal, canOrganizeDownwind } = useAuth();
+  const { entrarNoDownwind } = useDownwind();
+  const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
+  const [erroEntrar, setErroEntrar] = useState<string | null>(null);
 
   const [activeSubTab, setActiveSubTab] = useState<'alertas' | 'eventos'>('alertas');
   const [isReportingAlert, setIsReportingAlert] = useState(false);
@@ -111,6 +116,25 @@ export const EventsAndAlertsView: React.FC = () => {
     setDwLocation('');
     setDwDescription('');
     setActiveSubTab('eventos');
+  };
+
+  /**
+   * Entra num downwind pelo card do evento — o ponto de entrada que o dono
+   * pediu ("ao entrar no downwind, ele vai clicar lá dentro do evento para
+   * iniciar"). Depois disso o shell troca de tela sozinho (app/page.tsx
+   * observa `downwindAtivo` em context/DownwindContext.tsx) — não navegamos
+   * por setActiveTab, o takeover não é uma aba.
+   */
+  const handleEntrarDownwind = async (downwindId: string) => {
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+    setErroEntrar(null);
+    setEntrandoEmId(downwindId);
+    const res = await entrarNoDownwind(downwindId, 'velejador');
+    setEntrandoEmId(null);
+    if (!res.ok) setErroEntrar(res.error ?? 'Não foi possível entrar no downwind.');
   };
 
   return (
@@ -516,9 +540,40 @@ export const EventsAndAlertsView: React.FC = () => {
                     )}
                   </button>
                 </div>
+
+                {/* Entrada no mapa ao vivo do downwind — só em eventos tipo
+                    Downwind com downwind vinculado (ver GET /api/events) e
+                    ainda não encerrado/cancelado. */}
+                {event.type === 'Downwind' &&
+                  event.downwindId &&
+                  event.downwindStatus !== 'encerrado' &&
+                  event.downwindStatus !== 'cancelado' && (
+                    <button
+                      onClick={() => handleEntrarDownwind(event.downwindId!)}
+                      disabled={entrandoEmId === event.downwindId}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-xs font-black active:scale-95 transition-all shadow-md shadow-cyan-500/20 disabled:opacity-60"
+                    >
+                      {entrandoEmId === event.downwindId ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <Waves size={15} className="stroke-[3]" />
+                      )}
+                      <span>
+                        {event.downwindStatus === 'em_andamento'
+                          ? 'Downwind AO VIVO — entrar'
+                          : 'Entrar no Downwind'}
+                      </span>
+                    </button>
+                  )}
               </div>
             </div>
           ))}
+          {erroEntrar && (
+            <div className="flex items-center gap-2 p-2.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs font-medium">
+              <AlertTriangle size={14} className="text-red-400 shrink-0" />
+              <span>{erroEntrar}</span>
+            </div>
+          )}
         </div>
       )}
 

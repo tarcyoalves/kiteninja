@@ -3,6 +3,8 @@
 import React from "react";
 import { AuthProvider } from "../context/AuthContext";
 import { KiteDataProvider } from "../context/KiteDataContext";
+import { DownwindProvider, useDownwind } from "../context/DownwindContext";
+import { DownwindAoVivoView } from "../views/DownwindAoVivoView";
 import { Header } from "../components/Header";
 import { BottomNav } from "../components/BottomNav";
 import { SidebarDrawer } from "../components/SidebarDrawer";
@@ -47,6 +49,13 @@ const MainContent: React.FC = () => {
   } = useKiteData();
 
   const { user } = useAuth();
+  const { downwindAtivo } = useDownwind();
+  // Trava real: enquanto o velejador participa de um downwind aberto/em
+  // andamento, o app substitui as abas normais pelo mapa ao vivo — decisão de
+  // produto documentada em context/DownwindContext.tsx. Só some quando o
+  // downwind é de fato encerrado/cancelado ou a própria participação termina
+  // (o servidor deixa de devolvê-lo em GET /api/downwind/ativo).
+  const emDownwind = Boolean(downwindAtivo);
   const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
   // Marca o estado do teclado no shell para o CSS zerar a folga do menu
   // (que é desmontado quando o teclado abre) e não deixar faixa vazia embaixo.
@@ -79,32 +88,39 @@ const MainContent: React.FC = () => {
         beachMode ? "text-white" : "text-slate-100"
       }`}
     >
-      {/* Header — shrink-0 no próprio componente, sempre visível */}
+      {/* Header — shrink-0 no próprio componente, sempre visível, inclusive
+          durante o takeover do downwind (é onde vive o menu do avatar/SOS). */}
       <Header />
 
-      {/* Área central do app: quando for chat ou mapa, gerencia scroll internamente */}
-      <main
-        className={`w-full max-w-lg mx-auto ${
-          activeTab === "chat" || activeTab === "mapa"
-            ? "flex-1 min-h-0 overflow-hidden flex flex-col"
-            : "app-scroll"
-        }`}
-      >
-        {activeTab === "favoritos" && (
-          <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
-        )}
-        {activeTab === "mapa" && (
-          <MapView onSelectSpot={(spot) => setSelectedSpot(spot)} />
-        )}
-        {activeTab === "destaques" && <FeedView />}
-        {activeTab === "sessoes" && <SessionsView />}
-        {activeTab === "perfil" && <PerfilView />}
-        {activeTab === "chat" && <ChatView />}
-        {activeTab === "anuncios" && <MarketplaceView />}
-        {(activeTab === "alertas" || activeTab === "mais") && (
-          <EventsAndAlertsView />
-        )}
-      </main>
+      {emDownwind ? (
+        <div className="w-full max-w-lg mx-auto flex-1 min-h-0 overflow-hidden flex flex-col">
+          <DownwindAoVivoView />
+        </div>
+      ) : (
+        /* Área central do app: quando for chat ou mapa, gerencia scroll internamente */
+        <main
+          className={`w-full max-w-lg mx-auto ${
+            activeTab === "chat" || activeTab === "mapa"
+              ? "flex-1 min-h-0 overflow-hidden flex flex-col"
+              : "app-scroll"
+          }`}
+        >
+          {activeTab === "favoritos" && (
+            <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
+          )}
+          {activeTab === "mapa" && (
+            <MapView onSelectSpot={(spot) => setSelectedSpot(spot)} />
+          )}
+          {activeTab === "destaques" && <FeedView />}
+          {activeTab === "sessoes" && <SessionsView />}
+          {activeTab === "perfil" && <PerfilView />}
+          {activeTab === "chat" && <ChatView />}
+          {activeTab === "anuncios" && <MarketplaceView />}
+          {(activeTab === "alertas" || activeTab === "mais") && (
+            <EventsAndAlertsView />
+          )}
+        </main>
+      )}
 
       {/* O gatilho de SOS agora vive dentro do menu do avatar (SidebarDrawer),
           na seção "Segurança & Emergência". O botão flutuante foi removido
@@ -210,7 +226,12 @@ const Gate: React.FC = () => {
         <ForcePasswordChangeModal />
       ) : (
         <KiteDataProvider>
-          <MainContent />
+          {/* DownwindProvider DENTRO de KiteDataProvider, nunca fora:
+              components/ModoNavegacao.tsx (Fase 7) lê useKiteData() e vai
+              precisar ler useDownwind() também. */}
+          <DownwindProvider>
+            <MainContent />
+          </DownwindProvider>
         </KiteDataProvider>
       )}
     </>

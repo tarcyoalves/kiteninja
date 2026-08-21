@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { useDownwind } from '../context/DownwindContext';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
 export const BottomNav: React.FC = () => {
@@ -25,6 +26,7 @@ export const BottomNav: React.FC = () => {
     setIsCalculatorOpen,
   } = useKiteData();
   const { user } = useAuth();
+  const { downwindAtivo } = useDownwind();
   // Com interactive-widget=resizes-content o teclado encolhe a viewport em vez
   // de sobrepô-la, então a diferença de altura fica ~0 e não serve de sinal.
   // O hook combina foco em campo editável (toque) + diferença de viewport.
@@ -54,6 +56,11 @@ export const BottomNav: React.FC = () => {
 
   // Quando o teclado virtual está aberto, o menu inferior é ocultado para não competir com a digitação
   if (isKeyboardOpen) return null;
+  // Trava do downwind ao vivo: sem o menu, as abas ficam inalcançáveis por
+  // acidente enquanto o velejador participa de uma travessia (ver
+  // context/DownwindContext.tsx). app/page.tsx já não renderiza as abas neste
+  // estado — isto é defesa em profundidade, não a única barreira.
+  if (downwindAtivo) return null;
 
   return (
     /* Barra Flutuante estilo Instagram rebaixada e elegante */
