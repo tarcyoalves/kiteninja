@@ -17,11 +17,13 @@ import {
   Info,
   ChevronRight,
   Route,
+  Trophy,
   Waves,
   X,
   Loader2,
   Trash2,
 } from 'lucide-react';
+import { DownwindResumoModal } from '../components/DownwindResumoModal';
 
 export const EventsAndAlertsView: React.FC = () => {
   const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, deleteEvent, spots, beachMode, createDownwind } =
@@ -31,6 +33,7 @@ export const EventsAndAlertsView: React.FC = () => {
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
+  const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
 
   const handleApagarEvento = async (eventId: string, titulo: string) => {
     if (!confirm(`Apagar "${titulo}"? Esta ação não pode ser desfeita.`)) return;
@@ -597,6 +600,20 @@ export const EventsAndAlertsView: React.FC = () => {
                       </span>
                     </button>
                   )}
+
+                {/* Resumo estilo Strava: só depois que o downwind terminou —
+                    é histórico, não convite para entrar em nada. */}
+                {event.type === 'Downwind' &&
+                  event.downwindId &&
+                  event.downwindStatus === 'encerrado' && (
+                    <button
+                      onClick={() => setResumoDownwindId(event.downwindId!)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all"
+                    >
+                      <Trophy size={15} className="text-amber-400" />
+                      <span>Ver Resumo</span>
+                    </button>
+                  )}
               </div>
             </div>
           ))}
@@ -623,6 +640,14 @@ export const EventsAndAlertsView: React.FC = () => {
             <span>Criar Downwind</span>
           </button>
         </div>
+      )}
+
+      {resumoDownwindId && user && (
+        <DownwindResumoModal
+          downwindId={resumoDownwindId}
+          meuUserId={user.id}
+          onFechar={() => setResumoDownwindId(null)}
+        />
       )}
     </div>
   );
