@@ -235,6 +235,30 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
 
   /**
+   * `mapRef` (acima) só fica preenchido depois que o `MapContainer` do
+   * react-leaflet termina sua própria inicialização assíncrona: o `ref`
+   * interno dele cria o mapa Leaflet e chama `setContext(...)` — um
+   * `setState` que dispara um RE-RENDER do `MapContainer`, e só NESSE
+   * re-render é que `useImperativeHandle` (por trás dos panos) copia a
+   * instância para o `forwardedRef` que recebemos aqui. Ou seja,
+   * `mapRef.current` pode continuar `null` por um instante depois da
+   * montagem, e mutar uma ref NÃO dispara re-render em nenhum ancestral —
+   * se um efeito daqui rodar exatamente nesse instante, ele nunca é
+   * re-executado só porque a ref mudou depois.
+   *
+   * `mapReady` existe para fechar essa corrida: `whenReady` é um callback
+   * do PRÓPRIO Leaflet (não depende do timing do `setContext`/`context`
+   * acima), e vira um `setState` de verdade — garante um re-render, e por
+   * consequência um novo passe dos efeitos, depois que o mapa está pronto.
+   * Sem isto, em GPS rápido (fix em cache) competindo com o carregamento
+   * pesado do chunk do Leaflet na PRIMEIRA vez que a aba Mapa abre (login
+   * recém-feito, dezenas de outras requisições do app disparando junto), a
+   * localização podia chegar ANTES do mapa estar pronto — e o efeito de
+   * centralizar abaixo então nunca tinha uma segunda chance de rodar.
+   */
+  const [mapReady, setMapReady] = useState(false);
+
+  /**
    * Zoom que o botão "Minha localização" usa para chegar perto de verdade.
    * Antes o pinça-para-zoom não vinha ao caso: o efeito abaixo fazia
    * `fitBounds([usuário, spot mais próximo])`, capado em zoom 14 — se o spot
@@ -250,17 +274,39 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   // Estado para controlar se o usuário já foi localizado (para não re-enquadrar em cada atualização)
   const [hasInitiallyLocated, setHasInitiallyLocated] = useState(false);
 
-  // Quando o usuário é localizado, centraliza nele com zoom próximo. Só na
-  // PRIMEIRA localização bem-sucedida — depois disso o velejador pode dar
-  // zoom/arrastar livremente sem o mapa "puxar" de volta a cada atualização
-  // do watchPosition.
+  /**
+   * Quando o usuário é localizado, centraliza nele com zoom próximo. Só na
+   * PRIMEIRA localização bem-sucedida — depois disso o velejador pode dar
+   * zoom/arrastar livremente sem o mapa "puxar" de volta a cada atualização
+   * do watchPosition.
+   *
+   * `hasInitiallyLocated` só pode virar `true` DENTRO deste mesmo efeito,
+   * junto do `setView` de verdade — antes disso morava num efeito SEPARADO,
+   * com a MESMA condição exceto o `mapRef.current`. Isso é exatamente a
+   * corrida que `mapReady` (acima) existe para evitar: se o GPS resolvesse
+   * antes do mapa estar pronto, aquele segundo efeito ainda assim marcava
+   * `hasInitiallyLocated = true` (não checava a ref), e como esse booleano
+   * é o que trava o efeito de centralizar para "só uma vez", a
+   * centralização nunca mais teria uma segunda chance nesta montagem — só
+   * saindo da aba Mapa e voltando (remontando o componente do zero) é que
+   * resetava o estado e permitia tentar de novo. Era exatamente o sintoma
+   * relatado: "não centraliza ao abrir o app, mas centraliza se eu sair e
+   * voltar pro Mapa".
+   */
   useEffect(() => {
-    if (locateStatus === 'success' && userPosition && mapRef.current && !hasInitiallyLocated) {
+    if (
+      mapReady &&
+      locateStatus === 'success' &&
+      userPosition &&
+      mapRef.current &&
+      !hasInitiallyLocated
+    ) {
       mapRef.current.setView([userPosition.lat, userPosition.lng], ZOOM_LOCALIZACAO, {
         animate: true,
       });
+      setHasInitiallyLocated(true);
     }
-  }, [locateStatus, userPosition, hasInitiallyLocated]);
+  }, [mapReady, locateStatus, userPosition, hasInitiallyLocated]);
 
   // Clique manual no botão depois da primeira localização: recentraliza com
   // zoom próximo usando a posição mais recente já conhecida, mesmo sem uma
@@ -274,13 +320,6 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recenterTrigger]);
-
-  // Após a primeira localização, apenas atualizar a posição do marcador (sem re-enquadrar)
-  useEffect(() => {
-    if (locateStatus === 'success' && userPosition && !hasInitiallyLocated) {
-      setHasInitiallyLocated(true);
-    }
-  }, [locateStatus, userPosition, hasInitiallyLocated]);
 
   const handleMarkerClick = useCallback((spot: Spot) => {
     onSelectSpot(spot);
@@ -406,6 +445,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           className="w-full h-full"
           ref={mapRef}
           zoomControl={false}
+          whenReady={() => setMapReady(true)}
         >
           {/*
             Tile layer dinâmico:

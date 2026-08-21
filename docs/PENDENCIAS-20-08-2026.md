@@ -348,3 +348,68 @@ precisa de nova investigação, provavelmente com acesso a um dispositivo real.
 `vitest` 581/581 (sem testes novos: a lógica adicionada é um temporizador
 de efeito colateral do navegador, não uma função pura isolável). `tsc
 --noEmit` e `next build` limpos.
+
+### Correção — a causa raiz de verdade era outra (encontrada com um dado novo)
+
+A hipótese acima (permissão de localização separada do PWA no iOS) ficou sem
+confirmação, e o dono trouxe o dado que faltava: **"quando abre o app e
+clica em mapas continua sem focar no GPS, mas se eu clicar em outra página
+e depois no mapas, atualiza e foca"** — ou seja, o MESMO código
+(`components/LeafletMap.tsx` desmonta e remonta do zero a cada troca de aba,
+`app/page.tsx` renderiza `MapView` condicionalmente) funciona na SEGUNDA
+tentativa e falha na PRIMEIRA. Isso descarta permissão (que falharia nas
+duas) e aponta para uma CORRIDA que só se manifesta quando o resto do app
+está "quente" ou "frio".
+
+Relendo `node_modules/react-leaflet/lib/MapContainer.js` linha a linha: o
+`ref` que passamos ao `<MapContainer>` **não é preenchido na montagem**. O
+`MapContainer` cria o mapa Leaflet dentro do PRÓPRIO ref-callback do `<div>`
+interno e só entrega essa instância pra fora via `useImperativeHandle`
+depois de um `setContext(...)` — um `setState` que dispara um re-render
+DELE PRÓPRIO. Ou seja, `mapRef.current` (o nosso, em `LeafletMap.tsx`) pode
+continuar `null` por um instante depois da montagem — e mutar uma ref NUNCA
+dispara re-render em nenhum componente acima dela.
+
+O bug real: havia DOIS `useEffect` separados reagindo à mesma transição
+(`locateStatus === 'success'`) — um chamava `mapRef.current.setView(...)`
+(checando a ref), outro só marcava `hasInitiallyLocated = true` (SEM checar
+a ref). Se o GPS resolvesse ANTES do `MapContainer` terminar essa
+inicialização assíncrona — típico na PRIMEIRA abertura da aba Mapa logo
+após o login, com dezenas de outras requisições do app (spots, sessões,
+eventos, auth) e o carregamento do chunk pesado do Leaflet competindo pelo
+mesmo instante — o efeito de `setView` falhava silenciosamente (ref ainda
+`null`), mas o outro efeito já travava `hasInitiallyLocated` em `true` do
+mesmo jeito. Como esse booleano é o que autoriza centralizar "só uma vez",
+a centralização NUNCA mais tinha uma segunda chance NESSA montagem — só
+desmontando e remontando o componente (sair da aba Mapa e voltar) o estado
+resetava e dava outra chance, que geralmente funcionava porque, por essa
+altura, o app já estava "aquecido" (chunk do Leaflet já em cache, boot
+inicial do app já resolvido) e o `MapContainer` inicializava mais rápido
+que o GPS.
+
+**Correção em `components/LeafletMap.tsx`:**
+- Novo estado `mapReady`, ligado à prop `whenReady` do `MapContainer` (um
+  callback do PRÓPRIO Leaflet, independente do timing de
+  `setContext`/`useImperativeHandle`) — vira um `setState` de verdade, o
+  que GARANTE um re-render (e um novo passe dos efeitos) assim que o mapa
+  termina de inicializar, não importa quando isso aconteça.
+- Os dois efeitos foram fundidos num só: `hasInitiallyLocated` agora SÓ
+  vira `true` no MESMO efeito que de fato chama `setView`, nunca antes
+  disso. `mapReady` entra na condição e no array de dependências — se o
+  GPS chegou primeiro, o efeito falha silenciosamente na hora (ref ainda
+  null) mas TENTA DE NOVO assim que `mapReady` vira `true` (e a essa
+  altura, `mapRef.current` já está garantidamente preenchido).
+
+Este é o tipo de bug que só aparece com o dado extra do usuário
+("funciona na segunda vez, não na primeira") — a mensagem original
+("não centraliza") sozinha não diferenciava isto de permissão negada ou
+de um GPS que nunca responde. O vigia de timeout da seção anterior continua
+válido como segunda camada de defesa (cobre o caso em que o GPS de fato
+nunca responde), mas não era o que estava causando ESTE sintoma.
+
+**Sem mudança de schema** — `verify-sql.ts` continua em 164 checks.
+`vitest` 581/581 (a corrida é de timing entre dois efeitos e uma
+biblioteca de terceiros — não isolável como função pura testável em Node;
+a correção foi verificada por leitura cuidadosa do código-fonte do
+react-leaflet, não por reprodução ao vivo, que este sandbox não permite).
+`tsc --noEmit` e `next build` limpos.
