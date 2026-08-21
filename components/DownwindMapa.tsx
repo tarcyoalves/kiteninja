@@ -33,7 +33,22 @@ import type { DownwindPonto } from '@/context/DownwindContext';
  */
 const DEFAULT_ZOOM = 16;
 
-function MapaController({ centro }: { centro: [number, number] | null }) {
+function MapaController({
+  centro,
+  ehPosicaoPropria,
+}: {
+  centro: [number, number] | null;
+  /**
+   * `centro` cai para o ponto A do downwind quando a posição própria do
+   * velejador ainda não chegou (GPS/beacon leva um instante). Sem distinguir
+   * os dois casos, a trava de "só centraliza uma vez" travava no ponto A na
+   * primeira renderização e NUNCA recentralizava quando a posição real
+   * chegava segundos depois — o mapa ficava preso em A, exatamente o bug
+   * relatado. Só marcamos `centralizado` quando o centro já é a posição
+   * própria de verdade.
+   */
+  ehPosicaoPropria: boolean;
+}) {
   const map = useMap();
 
   // Mesma correção de views/LeafletMap.tsx: o container mede 0 na montagem
@@ -57,11 +72,14 @@ function MapaController({ centro }: { centro: [number, number] | null }) {
   // cada poll.
   const [centralizado, setCentralizado] = useState(false);
   useEffect(() => {
-    if (centro && !centralizado) {
-      map.setView(centro, DEFAULT_ZOOM, { animate: false });
-      setCentralizado(true);
-    }
-  }, [centro, centralizado, map]);
+    if (!centro || centralizado) return;
+    map.setView(centro, DEFAULT_ZOOM, { animate: false });
+    // Só trava depois de centralizar na posição REAL do velejador — enquanto
+    // `centro` ainda é o fallback do ponto A, o efeito continua livre para
+    // rodar de novo assim que a posição própria chegar (o valor de `centro`
+    // muda, o array de dependências detecta e refaz o setView).
+    if (ehPosicaoPropria) setCentralizado(true);
+  }, [centro, ehPosicaoPropria, centralizado, map]);
 
   return null;
 }
@@ -138,14 +156,21 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
     return () => clearInterval(id);
   }, []);
 
-  const centroInicial = useMemo<[number, number] | null>(() => {
+  const minhaPosicaoPropria = useMemo<[number, number] | null>(() => {
     const eu = participantes.find((p) => p.userId === meuUserId);
     if (eu?.lat !== null && eu?.lat !== undefined && eu?.lng !== null && eu?.lng !== undefined) {
       return [eu.lat, eu.lng];
     }
+    return null;
+  }, [participantes, meuUserId]);
+
+  // Fallback pro ponto A só até a posição própria chegar — ver o comentário
+  // em MapaController sobre por que os dois casos não podem ser confundidos.
+  const centroInicial = useMemo<[number, number] | null>(() => {
+    if (minhaPosicaoPropria) return minhaPosicaoPropria;
     if (saida) return [saida.lat, saida.lng];
     return null;
-  }, [participantes, meuUserId, saida]);
+  }, [minhaPosicaoPropria, saida]);
 
   const { corpo, cauda } = useMemo(() => dividirCauda(minhaTrilha), [minhaTrilha]);
   const minhaCor = corDoUsuario(meuUserId);
@@ -157,13 +182,18 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
       zoomControl={false}
       attributionControl={false}
       className="w-full h-full"
-      style={{ background: '#090e1a' }}
+      style={{ background: '#e5e7eb' }}
     >
+      {/* Mesmo tile "oceânico" (voyager) que o mapa principal usa por padrão
+          (components/LeafletMap.tsx, mapStyle inicial 'oceanico') — o mapa do
+          downwind nasceu com o tile escuro de propósito (fundo pro rastro/
+          trilha "brilhar"), mas o pedido foi ficar igual ao mapa geral, claro,
+          para não parecer uma tela diferente do resto do app. */}
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
         attribution=""
       />
-      <MapaController centro={centroInicial} />
+      <MapaController centro={centroInicial} ehPosicaoPropria={minhaPosicaoPropria !== null} />
 
       {saida && (
         <Marker position={[saida.lat, saida.lng]} icon={criarIconePonto('#0ea5e9', 'A')} />
@@ -174,17 +204,18 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
 
       {/* Sua trilha, em duas camadas: corpo antigo fino/translúcido, cauda
           recente grossa/opaca — efeito de "rastro vivo" sem gradiente (o
-          Leaflet não desenha gradiente em traço). Casing branco por baixo
-          para destacar do fundo escuro do tile. */}
+          Leaflet não desenha gradiente em traço). Casing escuro por baixo
+          para destacar do tile claro (era branco quando o tile era escuro —
+          branco sobre claro fica invisível). */}
       {corpo.length > 1 && (
         <>
           <Polyline
             positions={corpo.map(([lat, lng]) => [lat, lng])}
-            pathOptions={{ color: '#ffffff', weight: 6, opacity: 0.2 }}
+            pathOptions={{ color: '#0f172a', weight: 6, opacity: 0.18 }}
           />
           <Polyline
             positions={corpo.map(([lat, lng]) => [lat, lng])}
-            pathOptions={{ color: minhaCor, weight: 2, opacity: 0.28 }}
+            pathOptions={{ color: minhaCor, weight: 2, opacity: 0.4 }}
           />
         </>
       )}
@@ -192,7 +223,7 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
         <>
           <Polyline
             positions={cauda.map(([lat, lng]) => [lat, lng])}
-            pathOptions={{ color: '#ffffff', weight: 8, opacity: 0.25 }}
+            pathOptions={{ color: '#0f172a', weight: 8, opacity: 0.22 }}
           />
           <Polyline
             positions={cauda.map(([lat, lng]) => [lat, lng])}
