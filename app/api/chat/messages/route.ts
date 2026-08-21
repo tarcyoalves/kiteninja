@@ -5,6 +5,7 @@ import { getSessionUser, HttpError, type SessionUser } from '@/lib/auth';
 import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, presenceSafeRoom, salaDireta, sanitizeMessageText } from '@/lib/chat';
 import { canAccessDm } from '@/lib/authz';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
+import { sendPushToUser } from '@/lib/push';
 import { buscarParticipacao } from '@/lib/downwindDb';
 import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
 
@@ -260,6 +261,30 @@ export async function POST(request: Request) {
         console.error('[chat] presença não gravada no POST', err);
       }
     });
+
+    /**
+     * Push só em DM. Chat geral e de spot não disparam: com todo mundo online
+     * na mesma sala, toda mensagem viraria notificação para todos — ruído
+     * demais (ver docs/PLANO-CHAT-DIRETO.md). Igual ao SOS, roda em after()
+     * (a mensagem já está gravada — falhar o push não pode atrasar nem
+     * derrubar o envio) e nunca propaga erro.
+     */
+    const parsedRoom = parseRoomName(room);
+    if (parsedRoom?.kind === 'dm') {
+      const destinatarioId = parsedRoom.userIdA === user.id ? parsedRoom.userIdB : parsedRoom.userIdA;
+      after(async () => {
+        try {
+          await sendPushToUser(destinatarioId, {
+            title: `KiteNinja • ${user.name}`,
+            body: clean.text,
+            tag: room,
+            url: '/?tab=chat',
+          });
+        } catch (err) {
+          console.error('[chat] push de DM não enviado', err);
+        }
+      });
+    }
 
     // Devolvemos só o que o cliente NÃO tinha (id e created_at do banco). Nome,
     // avatar e riderId do próprio autor já estão na sessão do cliente, e buscá-
