@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { mesclarTrilha, proximoCursor, ultimoTimestamp, type PontoTrilha } from './trilhaDownwind';
 
 /**
@@ -52,6 +52,18 @@ export function useDownwindPosicoes(
   const cursorRef = useRef<string | null>(null);
   const emVoo = useRef(false);
   const trilhaRef = useRef<PontoTrilha[]>([]);
+  // `buscar` é criada uma vez por `downwindId` (de propósito, ver abaixo) e
+  // capturaria `pausado` congelado no valor de quando o efeito rodou pela
+  // última vez — um clássico stale closure. BUG REAL em produção: sair do
+  // Modo Navegação (pausado: true -> false) nunca retomava o poll sozinho,
+  // porque o `setInterval`/listener de visibilidade criados aqui liam para
+  // sempre o `pausado` de quando o downwind começou. Corrigido lendo sempre
+  // `pausadoRef.current` (atualizada em todo render via useLayoutEffect,
+  // antes de qualquer timer disparar) em vez do valor fechado no closure.
+  const pausadoRef = useRef(pausado);
+  useLayoutEffect(() => {
+    pausadoRef.current = pausado;
+  });
 
   useEffect(() => {
     if (!downwindId) return;
@@ -60,7 +72,7 @@ export function useDownwindPosicoes(
     trilhaRef.current = [];
 
     const buscar = async () => {
-      if (emVoo.current || document.hidden || pausado) return;
+      if (emVoo.current || document.hidden || pausadoRef.current) return;
       emVoo.current = true;
       try {
         const url = new URL(`/api/downwind/${downwindId}/posicoes`, window.location.origin);
@@ -99,7 +111,7 @@ export function useDownwindPosicoes(
     const id = setInterval(buscar, INTERVALO_MS);
 
     const onVisibility = () => {
-      if (!document.hidden && !pausado) buscar();
+      if (!document.hidden && !pausadoRef.current) buscar();
     };
     document.addEventListener('visibilitychange', onVisibility);
 
@@ -109,8 +121,10 @@ export function useDownwindPosicoes(
       document.removeEventListener('visibilitychange', onVisibility);
     };
     // `pausado` de propósito fora das deps: mudar de pausado para ativo não
-    // deve reiniciar o polling do zero (perderia o cursor); o próximo tick ou
-    // o listener de visibilidade já cobre a retomada.
+    // deve reiniciar o polling do zero (perderia o cursor) — `buscar` e
+    // `onVisibility` leem `pausadoRef.current` (sempre atual), não a variável
+    // fechada no closure, então retomam sozinhos no próximo tick/visibilidade
+    // sem precisar recriar o efeito.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [downwindId]);
 

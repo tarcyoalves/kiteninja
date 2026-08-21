@@ -366,8 +366,15 @@ export const DownwindAoVivoView: React.FC = () => {
               onPointerUp={holdEncerrar.cancelar}
               onPointerCancel={holdEncerrar.cancelar}
               onPointerLeave={holdEncerrar.cancelar}
+              onContextMenu={(e) => e.preventDefault()}
               disabled={processando}
-              className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden"
+              // select-none (Tailwind) não cobre o menu de "Copiar/Buscar" que
+              // o iOS abre num toque-e-segure — só -webkit-touch-callout
+              // resolve isso (mesmo padrão de components/ModoNavegacao.tsx,
+              // que já usa select-none + onContextMenu, mas nunca precisou
+              // do callout porque é tela cheia sem texto por perto).
+              style={{ WebkitTouchCallout: 'none' }}
+              className="relative flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 active:scale-95 transition-all overflow-hidden select-none"
               aria-label={navegando ? 'Segurar para encerrar o velejo' : 'Segurar para sair do downwind'}
             >
               <div

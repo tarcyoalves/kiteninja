@@ -118,7 +118,7 @@ function criarIconeApoio(p: DownwindParticipanteMapa): L.DivIcon {
   const html = `
     <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
       <div style="display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:8px;background:${destaque ? '#f59e0b' : '#334155'};border:2px solid ${destaque ? '#fbbf24' : '#475569'};box-shadow:0 2px 6px rgba(0,0,0,.5);opacity:${destaque ? 1 : 0.85};">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2"><path d="M5 17h14M6 17V9l2-4h8l2 4v8M6 12h12"/><circle cx="8.5" cy="17" r="1.5" fill="white"/><circle cx="15.5" cy="17" r="1.5" fill="white"/></svg>
+        <span style="font-size:14px;line-height:1;">🚗</span>
         <span style="font-size:10px;font-weight:900;color:white;white-space:nowrap;">${destaque ? 'SEU APOIO' : nome}</span>
       </div>
     </div>
