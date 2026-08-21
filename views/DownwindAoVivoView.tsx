@@ -10,6 +10,7 @@ import { useSosHold } from '../lib/useSosHold';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
+import { ModoNavegacao } from '../components/ModoNavegacao';
 
 // Leaflet é client-only — mesmo padrão de views/MapView.tsx.
 const DownwindMapa = dynamic(
@@ -71,22 +72,40 @@ function usePressAndHold(duracaoMs: number, aoCompletar: () => void) {
 }
 
 export const DownwindAoVivoView: React.FC = () => {
-  const { downwindAtivo, encerrarMinhaParticipacao, encerrarDownwind, cancelarDownwind } =
+  const { downwindAtivo, iniciarDownwind, encerrarMinhaParticipacao, encerrarDownwind, cancelarDownwind } =
     useDownwind();
   const { myActiveSos, fetchActiveSos } = useKiteData();
   const { user } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
+  // Tela preta do Modo Navegação, sobreposta a este mapa — ver o botão
+  // "Iniciar" abaixo. Sair dela volta para ESTE componente, não para o app
+  // normal (é o pedido do dono: "ao destravar a tela, continua no mapa ao
+  // vivo").
+  const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
 
   // Só reporta/consulta posição quando o downwind de fato está em andamento
-  // (aberto ainda não tem ninguém navegando) — ver lib/downwindAcesso.ts.
+  // (aberto ainda não tem ninguém navegando) — ver lib/downwindAcesso.ts. O
+  // GET de posições também pausa com o Modo Navegação por cima: ninguém está
+  // olhando o mapa nesse estado, e manter o poll só gastaria invocação e
+  // bateria numa travessia de horas. O POST do beacon NÃO pausa por isso —
+  // é segurança, não UI.
   const emAndamento = downwindAtivo?.status === 'em_andamento';
-  useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
+  const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
   const { participantes, minhaTrilha } = useDownwindPosicoes(
     downwindAtivo?.id ?? null,
-    !emAndamento
+    !emAndamento || modoNavegacaoAtivo
   );
+
+  const iniciarTravessia = useCallback(async () => {
+    // Nunca bloqueia a entrada no Modo Navegação por erro de rede — o
+    // velejador está indo para a água. Se a transição para em_andamento
+    // falhar (ex.: já foi iniciado por outro velejador um instante antes,
+    // que é no-op e não erro real), o poll seguinte já traz o estado certo.
+    await iniciarDownwind();
+    setModoNavegacaoAtivo(true);
+  }, [iniciarDownwind]);
 
   const sos = useSosHold({
     hasActiveSos: Boolean(myActiveSos),
@@ -182,6 +201,22 @@ export const DownwindAoVivoView: React.FC = () => {
           </button>
         )}
 
+        {/* "Iniciar" só existe para quem vai velejar — apoio em terra não
+            entra na água, então a trava de tela não faz sentido para ele (ver
+            docs/PLANO-DOWNWIND-MAPA.md). Some depois de acionado: reabrir o
+            Modo Navegação é o botão de dentro dele mesmo (Travar). */}
+        {minhaParticipacao.papel === 'velejador' && !modoNavegacaoAtivo && (
+          <button
+            type="button"
+            onClick={iniciarTravessia}
+            className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 active:scale-95 transition-all shadow-md shadow-cyan-500/20"
+            aria-label="Iniciar travessia e travar a tela"
+          >
+            <Navigation size={16} className="fill-current stroke-[1.5]" />
+            <span className="text-[10px] font-black">Iniciar</span>
+          </button>
+        )}
+
         <button
           type="button"
           onPointerDown={(e) => {
@@ -245,6 +280,17 @@ export const DownwindAoVivoView: React.FC = () => {
 
       {chatAberto && (
         <DownwindChat downwindId={downwindAtivo.id} onFechar={() => setChatAberto(false)} />
+      )}
+
+      {/* Sobreposto ao mapa inteiro (fixed inset-0 dentro do próprio
+          componente). O mapa continua montado por baixo — sair daqui é
+          instantâneo, sem remontar Leaflet nem recarregar tiles. */}
+      {modoNavegacaoAtivo && (
+        <ModoNavegacao
+          rotuloSair="Voltar ao mapa"
+          onSair={() => setModoNavegacaoAtivo(false)}
+          ultimaPosicaoConfirmadaEm={beacon.ultimaPosicaoEm}
+        />
       )}
     </div>
   );

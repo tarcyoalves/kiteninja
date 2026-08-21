@@ -133,11 +133,35 @@ function AnelProgresso({ progresso, tamanho = 64 }: { progresso: number; tamanho
 }
 
 interface ModoNavegacaoProps {
-  /** Sai do modo e devolve à UI normal. Sempre disponível após desbloquear. */
+  /**
+   * Sai do modo e devolve à UI normal. Sempre disponível após desbloquear.
+   *
+   * "UI normal" depende de quem monta este componente: a partir da aba Mapa
+   * (views/MapView.tsx) é o mapa geral; a partir do mapa ao vivo do downwind
+   * (views/DownwindAoVivoView.tsx) é ESSE mapa, não as abas do app — o
+   * velejador continua "preso" na travessia (ver context/DownwindContext.tsx)
+   * até encerrar de fato, só o Modo Navegação abre e fecha por cima.
+   */
   onSair: () => void;
+  /** Rótulo do botão "Sair". Default mantém o texto original do mapa geral. */
+  rotuloSair?: string;
+  /**
+   * Instante do último POST de posição CONFIRMADO pelo servidor, quando o
+   * downwind ao vivo está alimentando o indicador (em vez da trilha da sessão
+   * local, `useTrilhaSessao`). É esse dado que quem acompanha em terra vê no
+   * mapa — por isso o indicador de sinal aqui deve refletir o mesmo instante,
+   * não um relógio local que pode estar adiantado em relação ao que o
+   * servidor de fato recebeu. Sem esta prop, comportamento inalterado (usa a
+   * trilha local, como sempre foi no mapa geral).
+   */
+  ultimaPosicaoConfirmadaEm?: Date | null;
 }
 
-export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
+export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
+  onSair,
+  rotuloSair = 'Sair',
+  ultimaPosicaoConfirmadaEm,
+}) => {
   const { ativo: wakeLockAtivo, suportado: wakeLockSuportado } = useWakeLock(true);
   const trilha = useTrilhaSessao(true);
 
@@ -192,7 +216,13 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
     return () => clearInterval(id);
   }, []);
 
-  const { estado, minutosSemReportar } = estadoSinal(trilha.ultimaPosicaoEm, agora);
+  // `ultimaPosicaoConfirmadaEm` (downwind ao vivo) tem prioridade sobre a
+  // trilha local: é o instante que o SERVIDOR confirmou, e é isso que quem
+  // acompanha em terra está vendo — ver comentário da prop acima.
+  const { estado, minutosSemReportar } = estadoSinal(
+    ultimaPosicaoConfirmadaEm !== undefined ? ultimaPosicaoConfirmadaEm : trilha.ultimaPosicaoEm,
+    agora
+  );
 
   const corSinal =
     estado === 'ok' ? 'text-emerald-400' : estado === 'atrasado' ? 'text-amber-400' : 'text-rose-400';
@@ -341,10 +371,10 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({ onSair }) => {
                 onClick={onSair}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 active:scale-95 transition-all"
-                aria-label="Sair do Modo Navegação"
+                aria-label={rotuloSair}
               >
                 <LogOut size={16} />
-                <span className="text-[10px] font-bold">Sair</span>
+                <span className="text-[10px] font-bold">{rotuloSair}</span>
               </button>
 
               <button
