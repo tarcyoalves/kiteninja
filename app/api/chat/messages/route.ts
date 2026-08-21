@@ -2,7 +2,7 @@ import { after } from 'next/server';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { getSessionUser, HttpError, type SessionUser } from '@/lib/auth';
-import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, salaDireta, sanitizeMessageText } from '@/lib/chat';
+import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, presenceSafeRoom, salaDireta, sanitizeMessageText } from '@/lib/chat';
 import { canAccessDm } from '@/lib/authz';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
 import { buscarParticipacao } from '@/lib/downwindDb';
@@ -186,7 +186,9 @@ export async function GET(request: Request) {
     // callback antes de finalizar a função.
     after(async () => {
       try {
-        await touchPresenceKeepingSpot(user.id, room);
+        // presenceSafeRoom: sala de DM nunca vai para user_presence (ver o
+        // porquê no próprio helper) — só 'geral'/'spot:'/'dw:' são públicas.
+        await touchPresenceKeepingSpot(user.id, presenceSafeRoom(room));
       } catch (err) {
         console.error('[chat] presença não gravada no GET', err);
       }
@@ -253,7 +255,7 @@ export async function POST(request: Request) {
     // serverless, o que uma Promise solta sem await não garante.
     after(async () => {
       try {
-        await touchPresenceKeepingSpot(user.id, room);
+        await touchPresenceKeepingSpot(user.id, presenceSafeRoom(room));
       } catch (err) {
         console.error('[chat] presença não gravada no POST', err);
       }

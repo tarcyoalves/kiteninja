@@ -13,6 +13,7 @@ import {
   Globe,
   Loader2,
   MapPin,
+  MessageCircle,
   MessageSquare,
   Radio,
   Send,
@@ -30,11 +31,12 @@ import {
   formatClockTime,
   formatRelativeTime,
   isPresenceOnline,
+  salaDireta,
   sanitizeMessageText,
   shouldGroupWithPrevious,
   spotRoomName,
 } from '../lib/chat';
-import { ChatMessage, OnlineRider } from '../types';
+import { ChatMessage, DmConversation, OnlineRider } from '../types';
 import { REMEDIR_APOS_MS } from '../lib/keyboardInset';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
@@ -47,7 +49,7 @@ const HEARTBEAT_MS = 25_000;
 /** Tolerância para considerar que o velejador está no fim da conversa */
 const BOTTOM_SLACK_PX = 90;
 
-type Tab = 'conversa' | 'online';
+type Tab = 'conversa' | 'online' | 'diretas';
 
 /** Atalhos rápidos de kitesurf para envio com 1 toque */
 const QUICK_KITE_SHORTCUTS = [
@@ -84,11 +86,18 @@ function formatDayDivider(isoDate: string): string {
 }
 
 export const ChatView: React.FC = () => {
-  const { spots, beachMode, setActiveTab, lastKnownPosition } = useKiteData();
+  const { spots, beachMode, setActiveTab, lastKnownPosition, dmUnreadCount } = useKiteData();
   const { user } = useAuth();
 
   const [tab, setTab] = useState<Tab>('conversa');
   const [room, setRoom] = useState<string>(GENERAL_ROOM);
+  // Nome de quem está do outro lado da DM aberta — a sala é só um id
+  // (dm:<a>:<b>), então roomLabel não teria como exibir um nome sem isto.
+  const [dmPartnerName, setDmPartnerName] = useState<string | null>(null);
+
+  const [dms, setDms] = useState<DmConversation[]>([]);
+  const [dmsLoading, setDmsLoading] = useState(false);
+  const [dmsError, setDmsError] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [online, setOnline] = useState<OnlineRider[]>([]);
@@ -251,6 +260,26 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
+  /** Carrega o inbox de conversas diretas (aba "Diretas"). */
+  const loadDms = useCallback(async () => {
+    setDmsLoading(true);
+    setDmsError(null);
+    try {
+      const res = await fetch('/api/chat/dms', { cache: 'no-store' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error ?? 'Não foi possível carregar suas conversas.');
+      setDms((body?.conversas ?? []) as DmConversation[]);
+    } catch (err) {
+      setDmsError(err instanceof Error ? err.message : 'Falha de conexão.');
+    } finally {
+      setDmsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'diretas') loadDms();
+  }, [tab, loadDms]);
+
   // Ref em vez de dependência direta: sendHeartbeat entra no array de deps do
   // efeito de polling (abaixo) e trocar sua identidade a cada tique de GPS
   // reiniciaria o interval sem necessidade. O ref sempre lê a posição mais
@@ -353,8 +382,17 @@ export const ChatView: React.FC = () => {
     sendHeartbeat().then(loadOnline);
   }, [atSpotId, sendHeartbeat, loadOnline]);
 
-  const handleSend = async (customText?: string) => {
+  /**
+   * `targetRoom` existe por causa de um race de batching do React: abrir uma
+   * DM nova chama `setRoom(sala)` e manda a mensagem de saudação no MESMO
+   * clique — sem este parâmetro, `handleSend` leria `room` do closure desta
+   * render, que ainda é a sala ANTERIOR (o setState só vale a partir do
+   * próximo render). Passando a sala explicitamente, o POST vai para o lugar
+   * certo mesmo antes do re-render acontecer.
+   */
+  const handleSend = async (customText?: string, targetRoom?: string) => {
     const textToSend = customText ?? draft;
+    const target = targetRoom ?? room;
     const clean = sanitizeMessageText(textToSend);
     if (!clean.ok) {
       setSendError(clean.error);
@@ -372,7 +410,7 @@ export const ChatView: React.FC = () => {
       const res = await fetch('/api/chat/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room, text: clean.text }),
+        body: JSON.stringify({ room: target, text: clean.text }),
       });
       const body = await res.json().catch(() => null);
 
@@ -430,9 +468,37 @@ export const ChatView: React.FC = () => {
 
   const roomLabel = useMemo(() => {
     if (room === GENERAL_ROOM) return 'Geral';
+    if (room.startsWith('dm:')) return dmPartnerName ?? 'Conversa direta';
     const id = room.startsWith('spot:') ? room.slice(5) : room;
     return spots.find((s) => s.id === id)?.name ?? id;
-  }, [room, spots]);
+  }, [room, spots, dmPartnerName]);
+
+  /** Abre (ou reabre) uma conversa direta com `otherUserId`, sem enviar nada. */
+  const openDmConversation = useCallback(
+    (otherUserId: string, otherUserName: string) => {
+      if (!user) return;
+      const sala = salaDireta(user.id, otherUserId);
+      if (!sala) return;
+      setDmPartnerName(otherUserName);
+      setRoom(sala);
+      setTab('conversa');
+    },
+    [user]
+  );
+
+  /** "Acenar" na aba Online: abre a DM de verdade e manda a saudação nela. */
+  const handleWave = useCallback(
+    (otherUserId: string, otherUserName: string) => {
+      if (!user) return;
+      const sala = salaDireta(user.id, otherUserId);
+      if (!sala) return;
+      setDmPartnerName(otherUserName);
+      setRoom(sala);
+      setTab('conversa');
+      handleSend(`🤙 Salve ${otherUserName}! Bons ventos!`, sala);
+    },
+    [user, handleSend]
+  );
 
   const onlineCount = useMemo(
     () => online.filter((o) => isPresenceOnline(o.lastSeenAt, nowTick)).length,
@@ -478,7 +544,7 @@ export const ChatView: React.FC = () => {
             }`}
           >
             <MessageSquare size={15} className="shrink-0" />
-            <span>Chat ({roomLabel})</span>
+            <span className="truncate">Chat ({roomLabel})</span>
           </button>
           <button
             type="button"
@@ -503,6 +569,29 @@ export const ChatView: React.FC = () => {
               </span>
             )}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'diretas'}
+            onClick={() => setTab('diretas')}
+            className={`flex-1 h-10 px-3 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all ${
+              tab === 'diretas'
+                ? 'bg-fuchsia-500 text-slate-950 shadow-md shadow-fuchsia-500/25 scale-[1.01]'
+                : 'bg-[#1E293B] text-slate-300 border border-slate-700/80 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            <MessageCircle size={15} className="shrink-0" />
+            <span>Diretas</span>
+            {dmUnreadCount > 0 && (
+              <span
+                className={`ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  tab === 'diretas' ? 'bg-slate-950/25 text-slate-950' : 'bg-fuchsia-500 text-slate-950 animate-pulse'
+                }`}
+              >
+                {dmUnreadCount}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Carrossel de Pílulas Rápidas de Salas */}
@@ -514,7 +603,10 @@ export const ChatView: React.FC = () => {
                 <button
                   key={qr.id}
                   type="button"
-                  onClick={() => setRoom(qr.id)}
+                  onClick={() => {
+                    setDmPartnerName(null);
+                    setRoom(qr.id);
+                  }}
                   className={`shrink-0 px-3 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.2 transition-all ${
                     isSelected
                       ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 shadow-xs'
@@ -833,7 +925,7 @@ export const ChatView: React.FC = () => {
             )}
           </div>
         </>
-      ) : (
+      ) : tab === 'online' ? (
         /* Aba Online: Quem está na água */
         <OnlinePanel
           online={online}
@@ -843,10 +935,18 @@ export const ChatView: React.FC = () => {
           onChangeSpot={setAtSpotId}
           spots={spots.map((s) => ({ id: s.id, name: s.name, location: s.location }))}
           onRetry={loadOnline}
-          onWave={(userName) => {
-            setTab('conversa');
-            handleSend(`🤙 Salve ${userName}! Bons ventos!`);
-          }}
+          onWave={handleWave}
+        />
+      ) : (
+        /* Aba Diretas: inbox de conversas 1:1 */
+        <DmInboxPanel
+          conversas={dms}
+          loading={dmsLoading}
+          error={dmsError}
+          cardBg={cardBg}
+          now={nowTick}
+          onRetry={loadDms}
+          onOpen={openDmConversation}
         />
       )}
     </div>
@@ -873,7 +973,7 @@ interface OnlinePanelProps {
   onChangeSpot: (id: string) => void;
   spots: { id: string; name: string; location: string }[];
   onRetry: () => void;
-  onWave: (userName: string) => void;
+  onWave: (userId: string, userName: string) => void;
 }
 
 /** Aba "Online — quem está com o app aberto agora" */
@@ -998,7 +1098,7 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
                 </span>
                 <button
                   type="button"
-                  onClick={() => onWave(o.userName)}
+                  onClick={() => onWave(o.userId, o.userName)}
                   className="px-2.5 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-bold active:scale-95 transition-all"
                   title={`Mandar um salve para ${o.userName}`}
                 >
@@ -1006,6 +1106,106 @@ const OnlinePanel: React.FC<OnlinePanelProps> = ({
                 </button>
               </div>
             </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+interface DmInboxPanelProps {
+  conversas: DmConversation[];
+  loading: boolean;
+  error: string | null;
+  cardBg: string;
+  now: Date;
+  onRetry: () => void;
+  onOpen: (userId: string, userName: string) => void;
+}
+
+/** Aba "Diretas" — inbox de conversas 1:1, uma linha por pessoa. */
+const DmInboxPanel: React.FC<DmInboxPanelProps> = ({
+  conversas,
+  loading,
+  error,
+  cardBg,
+  now,
+  onRetry,
+  onOpen,
+}) => {
+  return (
+    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 pb-above-nav space-y-2">
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-12 text-slate-400 text-xs font-bold">
+          <Loader2 size={18} className="animate-spin text-fuchsia-400" />
+          <span>Carregando suas conversas...</span>
+        </div>
+      )}
+
+      {!loading && error && (
+        <div className="mt-6 p-5 rounded-2xl border border-rose-500/40 bg-rose-500/10 text-center">
+          <AlertTriangle size={26} className="mx-auto text-rose-400" />
+          <p className="mt-2.5 font-black text-slate-100 text-sm">Sem conexão</p>
+          <p className="mt-1 text-xs text-slate-300">{error}</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-3.5 px-5 h-10 rounded-xl bg-fuchsia-500 text-slate-950 font-black text-xs active:scale-95 transition-transform"
+          >
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
+      {!loading && !error && conversas.length === 0 && (
+        <div className={`mt-8 p-6 rounded-2xl border text-center ${cardBg}`}>
+          <div className="w-12 h-12 mx-auto rounded-full bg-fuchsia-500/10 border border-fuchsia-400/30 flex items-center justify-center text-fuchsia-400">
+            <MessageCircle size={24} />
+          </div>
+          <p className="mt-3 font-black text-slate-100 text-sm">Nenhuma conversa direta ainda</p>
+          <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
+            Mande um "Acenar 🤙" para alguém na aba Online para começar uma conversa privada.
+          </p>
+        </div>
+      )}
+
+      {!loading && !error && conversas.length > 0 && (
+        <div className="space-y-2">
+          {conversas.map((c) => (
+            <button
+              key={c.userId}
+              type="button"
+              onClick={() => onOpen(c.userId, c.userName)}
+              className={`w-full text-left p-3 rounded-2xl border flex items-center gap-3 transition-all hover:border-slate-600 ${cardBg}`}
+            >
+              <div className="w-11 h-11 shrink-0 rounded-full bg-slate-800 ring-2 ring-fuchsia-400/60 overflow-hidden flex items-center justify-center shadow-xs">
+                {c.userAvatar ? (
+                  <img
+                    src={c.userAvatar}
+                    alt={c.userName}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                ) : (
+                  <User size={20} className="text-slate-300" />
+                )}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-sm text-white truncate">{c.userName}</span>
+                  {c.countryFlag && <span className="text-sm shrink-0">{c.countryFlag}</span>}
+                </div>
+                <p className="text-[12px] text-slate-400 truncate">
+                  {c.lastMessage.fromMe ? 'Você: ' : ''}
+                  {c.lastMessage.text}
+                </p>
+              </div>
+
+              <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                {formatRelativeTime(c.lastMessage.createdAt, now)}
+              </span>
+            </button>
           ))}
         </div>
       )}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage } from '../types';
+import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
@@ -71,6 +71,13 @@ interface KiteDataContextType {
   latestIncomingMessage: ChatMessage | null;
   setLatestIncomingMessage: (msg: ChatMessage | null) => void;
   clearUnreadChat: () => void;
+
+  // Não lidas de conversa direta (DM) — contadas à parte do chat geral, porque
+  // uma DM merece notificação mesmo com o usuário já dentro da aba "chat"
+  // (ele pode estar no geral ou noutra DM, não necessariamente naquela).
+  dmUnreadCount: number;
+  latestIncomingDm: { fromUserId: string; fromUserName: string; text: string; avatarUrl?: string } | null;
+  clearDmUnread: () => void;
 
   // SOS Emergency System
   myActiveSos: SosAlertData | null;
@@ -240,12 +247,27 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLatestIncomingMessage(null);
   }, []);
 
-  // Quando o usuário entra na aba chat, zera o contador de não lidas
+  // Não lidas de DM — contador e "linha d'água" (por conversa) separados do
+  // chat geral acima: ver comentário na interface sobre por quê.
+  const [dmUnreadCount, setDmUnreadCount] = useState(0);
+  const [latestIncomingDm, setLatestIncomingDm] = useState<
+    { fromUserId: string; fromUserName: string; text: string; avatarUrl?: string } | null
+  >(null);
+  const dmLastSeenRef = useRef<Map<string, string>>(new Map());
+  const dmBaselineDoneRef = useRef(false);
+
+  const clearDmUnread = useCallback(() => {
+    setDmUnreadCount(0);
+    setLatestIncomingDm(null);
+  }, []);
+
+  // Quando o usuário entra na aba chat, zera os dois contadores de não lidas
   useEffect(() => {
     if (activeTab === 'chat') {
       clearUnreadChat();
+      clearDmUnread();
     }
-  }, [activeTab, clearUnreadChat]);
+  }, [activeTab, clearUnreadChat, clearDmUnread]);
 
   /*
    * Espelha o modo praia no <html> para que `--app-bg` (globals.css) valha para
@@ -329,6 +351,87 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
 
     timeoutId = setTimeout(checkBackgroundMessages, 6000);
+
+    return () => {
+      cancelado = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated, activeTab]);
+
+  /**
+   * Background watcher para conversas diretas (DM). Diferente do geral acima,
+   * não existe um único `since`: cada conversa (`userId` do outro lado) tem
+   * sua própria "linha d'água" em `dmLastSeenRef`, porque `/api/chat/dms`
+   * devolve só a ÚLTIMA mensagem de cada sala (inbox), não um feed incremental.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelado = false;
+
+    const checkBackgroundDms = async () => {
+      if (document.hidden) {
+        timeoutId = setTimeout(checkBackgroundDms, 15000);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/chat/dms', { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json().catch(() => null);
+          const conversas = (body?.conversas ?? []) as DmConversation[];
+
+          if (!dmBaselineDoneRef.current) {
+            // Primeira leitura desde que o app abriu: só grava a linha d'água
+            // de cada conversa, sem notificar — senão toda DM antiga vira
+            // "mensagem nova" no instante em que o app carrega.
+            for (const c of conversas) dmLastSeenRef.current.set(c.userId, c.lastMessage.createdAt);
+            dmBaselineDoneRef.current = true;
+          } else {
+            for (const c of conversas) {
+              if (c.lastMessage.fromMe) continue;
+              const visto = dmLastSeenRef.current.get(c.userId);
+              if (visto && c.lastMessage.createdAt <= visto) continue;
+
+              dmLastSeenRef.current.set(c.userId, c.lastMessage.createdAt);
+              if (activeTab === 'chat') continue;
+
+              setDmUnreadCount((n) => n + 1);
+              setLatestIncomingDm({
+                fromUserId: c.userId,
+                fromUserName: c.userName,
+                text: c.lastMessage.text,
+                avatarUrl: c.userAvatar,
+              });
+
+              if (
+                typeof window !== 'undefined' &&
+                'Notification' in window &&
+                Notification.permission === 'granted'
+              ) {
+                try {
+                  new Notification(`KiteNinja • ${c.userName}`, {
+                    body: c.lastMessage.text,
+                    icon: c.userAvatar || '/brand/logo.png',
+                  });
+                } catch {
+                  // Fallback silencioso
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignora oscilações de rede
+      }
+
+      if (!cancelado) {
+        timeoutId = setTimeout(checkBackgroundDms, 10000);
+      }
+    };
+
+    timeoutId = setTimeout(checkBackgroundDms, 6000);
 
     return () => {
       cancelado = true;
@@ -751,6 +854,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         latestIncomingMessage,
         setLatestIncomingMessage,
         clearUnreadChat,
+        dmUnreadCount,
+        latestIncomingDm,
+        clearDmUnread,
         myActiveSos,
         incomingSosAlert,
         allActiveSosList,

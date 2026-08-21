@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readOptionalJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
-import { PRESENCE_WINDOW_MS, isValidRoomName, presenceCutoff } from '@/lib/chat';
+import { PRESENCE_WINDOW_MS, isValidRoomName, presenceCutoff, presenceSafeRoom } from '@/lib/chat';
 import { touchPresence } from '@/lib/presence';
 import { num } from '@/lib/validation';
 
@@ -47,7 +47,9 @@ export async function POST(request: Request) {
     const lat = num(payload, 'lat', { optional: true, min: -90, max: 90 });
     const lng = num(payload, 'lng', { optional: true, min: -180, max: 180 });
 
-    await touchPresence(user.id, room, atSpotId, lat, lng);
+    // Sala de DM nunca é gravada aqui: ver presenceSafeRoom sobre o vazamento
+    // de metadado que isso causaria na lista "Online", visível a todo mundo.
+    await touchPresence(user.id, presenceSafeRoom(room), atSpotId, lat, lng);
 
     return { ok: true, windowMs: PRESENCE_WINDOW_MS };
   });

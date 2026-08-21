@@ -100,6 +100,25 @@ export function isValidRoomName(raw: unknown): boolean {
   return parseRoomName(raw) !== null;
 }
 
+/**
+ * Sala segura para gravar em `user_presence.room` (a lista "Online" — ver
+ * GET /api/chat/presence, que devolve `room` de TODO MUNDO para QUALQUER
+ * usuário autenticado, sem checar se o requisitante participa daquela sala).
+ *
+ * Para 'geral'/'spot:'/'dw:' isso é só "em que conversa pública esse velejador
+ * está" — inofensivo. Para 'dm:' seria um vazamento: o nome da sala carrega os
+ * dois UUIDs da conversa, então gravá-lo ali revelaria PARA QUALQUER PESSOA
+ * com quem alguém está trocando mensagem privada, mesmo sem acesso ao
+ * conteúdo (que `canAccessDm` já protege). Por isso toda sala `dm:*` vira
+ * `null` aqui — como se a pessoa não estivesse em sala nenhuma.
+ */
+export function presenceSafeRoom(room: string | null | undefined): string | null {
+  if (!room) return null;
+  const parsed = parseRoomName(room);
+  if (parsed?.kind === 'dm') return null;
+  return room;
+}
+
 export function spotRoomName(spotId: string): string {
   return `spot:${spotId}`;
 }

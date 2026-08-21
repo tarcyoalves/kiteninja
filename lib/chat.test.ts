@@ -18,6 +18,7 @@ import {
   isValidRoomName,
   parseRoomName,
   presenceCutoff,
+  presenceSafeRoom,
   salaDireta,
   sanitizeMessageText,
   shouldGroupWithPrevious,
@@ -137,6 +138,25 @@ describe('DM (conversa direta)', () => {
     for (const raw of invalidas) {
       expect(parseRoomName(raw), `deveria rejeitar: ${JSON.stringify(raw)}`).toBeNull();
     }
+  });
+
+  it('presenceSafeRoom nunca deixa uma sala dm: chegar em user_presence.room', () => {
+    // GET /api/chat/presence devolve `room` de todo mundo para qualquer
+    // usuário autenticado — gravar a sala de DM ali vazaria com quem alguém
+    // está conversando, mesmo sem dar acesso ao conteúdo da conversa.
+    expect(presenceSafeRoom(salaDireta(idA, idB))).toBeNull();
+    expect(presenceSafeRoom(`dm:${idA}:${idB}`)).toBeNull();
+  });
+
+  it('presenceSafeRoom preserva salas públicas (geral, spot, downwind) inalteradas', () => {
+    expect(presenceSafeRoom(GENERAL_ROOM)).toBe(GENERAL_ROOM);
+    expect(presenceSafeRoom('spot:ponta-do-mel')).toBe('spot:ponta-do-mel');
+    expect(presenceSafeRoom(`dw:${idA}`)).toBe(`dw:${idA}`);
+  });
+
+  it('presenceSafeRoom aceita null/undefined sem quebrar', () => {
+    expect(presenceSafeRoom(null)).toBeNull();
+    expect(presenceSafeRoom(undefined)).toBeNull();
   });
 });
 

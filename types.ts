@@ -337,3 +337,17 @@ export interface OnlineRider {
   atSpotName?: string;
   lastSeenAt: string;
 }
+
+/** Uma conversa direta (DM), como a API de inbox (`/api/chat/dms`) devolve. */
+export interface DmConversation {
+  userId: string;
+  userName: string;
+  userAvatar?: string;
+  userRiderId: string;
+  countryFlag?: string;
+  lastMessage: {
+    text: string;
+    createdAt: string;
+    fromMe: boolean;
+  };
+}
