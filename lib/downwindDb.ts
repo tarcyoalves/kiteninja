@@ -2,8 +2,14 @@ import 'server-only';
 
 import { sql } from './db';
 import { hashToken } from './auth';
+import { haversineKm } from './geo';
+import { amostrarTrilha } from './trilhaDownwind';
+import type { PontoTrilha } from './trilhaDownwind';
 import type { MinhaParticipacao } from './downwindAcesso';
 import type { DownwindStatus } from './downwind';
+
+/** Pontos do resumo gravado no encerramento — ver lib/schema.sql. */
+const LIMITE_TRILHA_RESUMO = 200;
 
 /**
  * Consultas de downwind compartilhadas entre rotas.
@@ -161,4 +167,103 @@ export async function listarParticipantes(downwindId: string) {
       estado: r.estado as MinhaParticipacao['estado'],
     };
   });
+}
+
+/**
+ * Grava distancia_km/velocidade_max_nos/trilha_reduzida de quem ainda não tem
+ * resumo, a partir dos pontos brutos, e então apaga a trilha bruta de
+ * downwinds antigos.
+ *
+ * Movida para cá (era privada em app/api/downwind/[id]/status/route.ts) para
+ * ser reaproveitada pelo fechamento automático em
+ * app/api/downwind/[id]/participantes/[userId]/route.ts — um downwind pode
+ * ficar sem ninguém na água (todos encerrados/desistiram) sem que ninguém
+ * chame o POST .../status explicitamente, e nesse caso o encerramento precisa
+ * do MESMO resumo+purga, não de uma segunda cópia divergente.
+ *
+ * TUDO EM try/catch: falha aqui nunca pode impedir o encerramento de um
+ * downwind — mesmo raciocínio do touchPresence em app/api/sos/active/route.ts.
+ * Um downwind que não conseguiu encerrar por causa de uma limpeza de trilha é
+ * pior que uma limpeza que não rodou desta vez.
+ */
+export async function resumirEPurgar(downwindId: string) {
+  try {
+    const participantes = await sql`
+      SELECT user_id FROM downwind_participantes
+      WHERE downwind_id = ${downwindId} AND distancia_km IS NULL
+    `;
+
+    for (const row of participantes) {
+      const userId = String((row as Record<string, unknown>).user_id);
+      const pontos = await sql`
+        SELECT lat, lng, registrado_em FROM downwind_posicoes
+        WHERE downwind_id = ${downwindId} AND user_id = ${userId}
+        ORDER BY registrado_em ASC
+      `;
+      if (pontos.length === 0) continue;
+
+      let distanciaKm = 0;
+      let velocidadeMaxNos = 0;
+      const brutos: PontoTrilha[] = pontos.map((p) => {
+        const r = p as Record<string, unknown>;
+        return [Number(r.lat), Number(r.lng), Date.parse(String(r.registrado_em))] as PontoTrilha;
+      });
+
+      for (let i = 1; i < brutos.length; i++) {
+        const [latA, lngA, tsA] = brutos[i - 1];
+        const [latB, lngB, tsB] = brutos[i];
+        const dKm = haversineKm({ lat: latA, lng: lngA }, { lat: latB, lng: lngB });
+        distanciaKm += dKm;
+        const dHoras = (tsB - tsA) / 3_600_000;
+        if (dHoras > 0) {
+          const nos = (dKm / 1.852) / dHoras;
+          // Teto físico de plausibilidade (mesmo usado em trilhaSessao):
+          // salto de GPS não vira "recorde de velocidade" no resumo.
+          if (nos <= 90) velocidadeMaxNos = Math.max(velocidadeMaxNos, nos);
+        }
+      }
+
+      const reduzida = amostrarTrilha(brutos, LIMITE_TRILHA_RESUMO);
+
+      await sql`
+        UPDATE downwind_participantes
+        SET distancia_km = ${Number(distanciaKm.toFixed(2))},
+            velocidade_max_nos = ${Number(velocidadeMaxNos.toFixed(2))},
+            trilha_reduzida = ${JSON.stringify(reduzida)}::jsonb
+        WHERE downwind_id = ${downwindId} AND user_id = ${userId}
+      `;
+    }
+  } catch (err) {
+    console.error('[downwind] falha ao gravar resumo da travessia', err);
+  }
+
+  try {
+    // Sem cron no plano gratuito da Vercel: a limpeza é preguiçosa, disparada
+    // por quem encerra um downwind — mesmo padrão da escalada de raio do SOS
+    // (app/api/sos/active/route.ts).
+    await sql`
+      DELETE FROM downwind_posicoes p USING downwinds d
+       WHERE d.id = p.downwind_id
+         AND d.status IN ('encerrado', 'cancelado')
+         AND d.encerrado_em < NOW() - INTERVAL '7 days'
+    `;
+  } catch (err) {
+    console.error('[downwind] falha na purga preguiçosa de trilha', err);
+  }
+
+  try {
+    // Mesma lógica preguiçosa para as contas-convidadas do link de 12h (ver
+    // lib/schema.sql, `users.downwind_guest_of`): elas nunca deveriam
+    // sobreviver além da janela de acesso, e o encerramento de UM downwind
+    // qualquer é um bom gatilho de baixa frequência para varrer as de
+    // qualquer downwind — 2 dias de folga sobre as 12h de validade real.
+    // CASCADE em downwind_guest_of já limpa participação/posições/sessão
+    // junto (ver a mesma tabela).
+    await sql`
+      DELETE FROM users
+      WHERE downwind_guest_of IS NOT NULL AND created_at < NOW() - INTERVAL '2 days'
+    `;
+  } catch (err) {
+    console.error('[downwind] falha na purga preguiçosa de contas-convidadas', err);
+  }
 }

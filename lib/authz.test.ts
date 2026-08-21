@@ -153,6 +153,8 @@ describe('autorização das rotas de API', () => {
       'apaga UM evento (WHERE id = ${id}), não dado de usuário; mesma autorização acima',
     'downwind/convite/[token]/entrar/route.ts::UPDATE downwind_convites':
       'incrementa usos de UM convite (WHERE id = ${convite.id}), já validado (não revogado, não expirado, dentro do limite) por buscarConviteValido logo acima na mesma rota',
+    'downwind/[id]/participantes/[userId]/route.ts::UPDATE downwinds':
+      'auto-encerramento: quando alguém sai da água (encerrado/desistiu) e isso esvazia o quórum de velejadores, muda o status de UM downwind (WHERE id = ${id} AND status = \'em_andamento\'), não dado de usuário; usa a MESMA podeEncerrarDownwind (lib/downwind.ts) que autoriza o encerramento manual em status/route.ts — sem isto o downwind ficava travado em em_andamento pra sempre quando o único velejador encerrava a própria participação',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -202,12 +204,21 @@ describe('autorização das rotas de API', () => {
        * dentro do limite de usos) algumas linhas acima — mesma família de
        * "alvo que a própria requisição provou ser o certo" dos outros casos
        * desta lista.
+       *
+       * downwind/[id]/participantes/[userId]/route.ts (auto-encerramento):
+       * o `${id}` do UPDATE downwinds é o MESMO downwind cuja participação
+       * a rota acabou de mudar, autorizado por podeMudarEstadoDeParticipante
+       * mais acima; e a mutação em si só dispara quando podeEncerrarDownwind
+       * (regra pura de quórum, não papel) confirma que ninguém mais está na
+       * água — não é checagem de admin porque a decisão não é "quem pode
+       * mexer", é "o downwind já pode fechar sozinho".
        */
       if (
         rel === 'auth/change-password/route.ts' ||
         rel === 'invites/accept/route.ts' ||
         rel === 'events/route.ts' ||
         rel === 'downwind/[id]/status/route.ts' ||
+        rel === 'downwind/[id]/participantes/[userId]/route.ts' ||
         rel === 'downwind/convite/[token]/entrar/route.ts' ||
         rel.startsWith('sos/')
       ) {

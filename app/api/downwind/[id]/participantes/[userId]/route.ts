@@ -9,7 +9,8 @@ import {
   podeDefinirApoio,
   podeMudarEstadoDeParticipante,
 } from '@/lib/downwindAcesso';
-import { buscarParticipacao, ehUuid } from '@/lib/downwindDb';
+import { buscarParticipacao, ehUuid, listarParticipantes, resumirEPurgar } from '@/lib/downwindDb';
+import { podeEncerrarDownwind } from '@/lib/downwind';
 
 export const dynamic = 'force-dynamic';
 
@@ -145,6 +146,46 @@ export async function PATCH(request: Request, ctx: Params) {
         SET apoio_user_id = ${novoApoioUserId}
         WHERE downwind_id = ${id} AND user_id = ${alvoUserId}
       `;
+    }
+
+    // BUG REAL, achado em produção: encerrar/desistir aqui só move o
+    // PARTICIPANTE — nada nesta rota olhava de volta para o `downwinds.status`.
+    // Um downwind com um único velejador (o caso mais comum: dono testando,
+    // ou grupo pequeno) ficava travado para sempre em 'em_andamento' assim
+    // que essa pessoa encerrava a própria participação: `GET
+    // /api/downwind/ativo` já não devolvia mais o downwind pra ela (o filtro
+    // ali exige `estado IN ('confirmado','navegando')`), então o clique pra
+    // "entrar" parava de levar a lugar nenhum — e o downwind não podia ser
+    // apagado porque seu evento vinculado bloqueia exclusão com downwind
+    // 'em_andamento'. Ninguém tinha como fechar o ciclo.
+    //
+    // Reaproveita a MESMA `podeEncerrarDownwind` (lib/downwind.ts) que
+    // decide se o encerramento manual via POST .../status é permitido — não
+    // uma segunda regra divergente. Só dispara quando este pedido moveu
+    // ALGUÉM para fora da água (`novoEstado` é 'encerrado'/'desistiu'):
+    // mudar só o apoio (`novoApoioUserId`) nunca deveria fechar o downwind.
+    if (novoEstado === 'encerrado' || novoEstado === 'desistiu') {
+      const [participantesAtuais, statusAtual] = await Promise.all([
+        listarParticipantes(id),
+        sql`SELECT status FROM downwinds WHERE id = ${id}`,
+      ]);
+      const emAndamento =
+        statusAtual.length > 0 &&
+        String((statusAtual[0] as Record<string, unknown>).status) === 'em_andamento';
+
+      if (emAndamento && podeEncerrarDownwind(participantesAtuais)) {
+        // `RETURNING id` só pra saber se ESTA chamada foi quem fechou —
+        // `WHERE status = 'em_andamento'` já é a proteção contra duas
+        // requisições concorrentes fecharem/resumirem em dobro (mesmo padrão
+        // de app/api/downwind/[id]/status/route.ts).
+        const fechado = await sql`
+          UPDATE downwinds
+          SET status = 'encerrado', encerrado_em = COALESCE(encerrado_em, NOW())
+          WHERE id = ${id} AND status = 'em_andamento'
+          RETURNING id
+        `;
+        if (fechado.length > 0) await resumirEPurgar(id);
+      }
     }
 
     return { ok: true };
