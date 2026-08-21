@@ -24,7 +24,14 @@ import type { DownwindPonto } from '@/context/DownwindContext';
  * `window`.
  */
 
-const DEFAULT_ZOOM = 12;
+/**
+ * Zoom inicial do mapa ao vivo. Era 12 (visão regional, litoral inteiro) —
+ * pedido do dono foi entrar já perto do próprio ponto, não de longe. 16 é o
+ * mesmo zoom que o botão "Minha localização" do mapa geral usa
+ * (components/LeafletMap.tsx, ZOOM_LOCALIZACAO) para a mesma sensação de
+ * "perto de verdade" nas duas telas.
+ */
+const DEFAULT_ZOOM = 16;
 
 function MapaController({ centro }: { centro: [number, number] | null }) {
   const map = useMap();
