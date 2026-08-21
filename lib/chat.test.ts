@@ -18,6 +18,7 @@ import {
   isValidRoomName,
   parseRoomName,
   presenceCutoff,
+  salaDireta,
   sanitizeMessageText,
   shouldGroupWithPrevious,
   spotRoomName,
@@ -80,6 +81,62 @@ describe('nome de sala', () => {
   it('aceita id de spot no limite de 64 caracteres', () => {
     const id = 'a'.repeat(64);
     expect(parseRoomName(`spot:${id}`)).toEqual({ kind: 'spot', spotId: id });
+  });
+});
+
+describe('DM (conversa direta)', () => {
+  const idA = '11111111-1111-1111-1111-111111111111';
+  const idB = '22222222-2222-2222-2222-222222222222';
+
+  it('salaDireta produz a mesma sala não importa a ordem dos argumentos', () => {
+    expect(salaDireta(idA, idB)).toBe(`dm:${idA}:${idB}`);
+    expect(salaDireta(idB, idA)).toBe(`dm:${idA}:${idB}`);
+  });
+
+  it('salaDireta rejeita DM consigo mesmo', () => {
+    expect(salaDireta(idA, idA)).toBeNull();
+    // Mesma checagem precisa valer com caixa diferente — é o mesmo usuário.
+    expect(salaDireta(idA, idA.toUpperCase())).toBeNull();
+  });
+
+  it('salaDireta normaliza para minúsculas', () => {
+    expect(salaDireta(idA.toUpperCase(), idB)).toBe(`dm:${idA}:${idB}`);
+  });
+
+  it('parseRoomName aceita dm:<menor>:<maior> na ordem canônica', () => {
+    expect(parseRoomName(`dm:${idA}:${idB}`)).toEqual({ kind: 'dm', userIdA: idA, userIdB: idB });
+    expect(isValidRoomName(`dm:${idA}:${idB}`)).toBe(true);
+  });
+
+  it('parseRoomName E salaDireta são inversos (roundtrip)', () => {
+    const sala = salaDireta(idA, idB);
+    expect(sala).not.toBeNull();
+    expect(parseRoomName(sala)).toEqual({ kind: 'dm', userIdA: idA, userIdB: idB });
+  });
+
+  it('parseRoomName rejeita a ordem trocada — não normaliza, trata como sala inválida', () => {
+    // Ver o comentário de DM_ROOM_RE em lib/chat.ts: aceitar as duas ordens
+    // deixaria a mesma conversa gravada sob duas strings de room diferentes.
+    expect(parseRoomName(`dm:${idB}:${idA}`)).toBeNull();
+  });
+
+  it('parseRoomName rejeita DM consigo mesmo mesmo que o formato bata', () => {
+    expect(parseRoomName(`dm:${idA}:${idA}`)).toBeNull();
+  });
+
+  it('parseRoomName rejeita formato malformado', () => {
+    const invalidas = [
+      'dm:',
+      'dm:sozinho',
+      `dm:${idA}`,
+      `dm:${idA}:${idB}:extra`,
+      `dm:${idA}:naoehuuid`,
+      `DM:${idA}:${idB}`, // prefixo maiúsculo não é reconhecido, igual a GERAL/Geral
+      `dm:${idA} :${idB}`, // espaço
+    ];
+    for (const raw of invalidas) {
+      expect(parseRoomName(raw), `deveria rejeitar: ${JSON.stringify(raw)}`).toBeNull();
+    }
   });
 });
 

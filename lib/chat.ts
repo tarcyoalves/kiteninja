@@ -51,10 +51,26 @@ const SPOT_ROOM_RE = /^spot:([A-Za-z0-9_-]{1,64})$/;
  */
 const DOWNWIND_ROOM_RE = /^dw:([0-9a-fA-F-]{36})$/;
 
+/**
+ * DM 1:1: `dm:<uuid menor>:<uuid maior>`, sempre nesta ordem — ver
+ * `salaDireta`. Igual ao aviso de `dw:` acima, o nome é visível no cliente
+ * (userId de quem manda mensagem já viaja em `toMessage()`); quem autoriza de
+ * verdade é a rota, confirmando que o solicitante é um dos dois UUIDs.
+ *
+ * A ordem canônica NÃO é normalizada aqui de propósito: `dm:B:A` (fora de
+ * ordem) é rejeitada como sala INVÁLIDA, não reescrita para `dm:A:B`. Aceitar
+ * as duas grafias deixaria `chat_messages.room` (TEXT livre, sem UNIQUE) com
+ * duas strings diferentes para a "mesma" conversa — metade das mensagens
+ * cairia numa, metade na outra, sem ninguém perceber a conversa dividida. Só
+ * quem produz o nome com `salaDireta` (sempre ordenado) nasce válido.
+ */
+const DM_ROOM_RE = /^dm:([0-9a-fA-F-]{36}):([0-9a-fA-F-]{36})$/;
+
 export type ChatRoom =
   | { kind: 'geral' }
   | { kind: 'spot'; spotId: string }
-  | { kind: 'downwind'; downwindId: string };
+  | { kind: 'downwind'; downwindId: string }
+  | { kind: 'dm'; userIdA: string; userIdB: string };
 
 /** Interpreta o nome da sala. Devolve null para qualquer coisa fora do formato. */
 export function parseRoomName(raw: unknown): ChatRoom | null {
@@ -63,6 +79,17 @@ export function parseRoomName(raw: unknown): ChatRoom | null {
 
   const downwind = DOWNWIND_ROOM_RE.exec(raw);
   if (downwind) return { kind: 'downwind', downwindId: downwind[1].toLowerCase() };
+
+  const dm = DM_ROOM_RE.exec(raw);
+  if (dm) {
+    const userIdA = dm[1].toLowerCase();
+    const userIdB = dm[2].toLowerCase();
+    // Mesmo id dos dois lados (DM consigo mesmo) e ordem fora do canônico são
+    // as duas formas de sala "tecnicamente no formato, mas inválida" — ver
+    // comentário de DM_ROOM_RE.
+    if (userIdA >= userIdB) return null;
+    return { kind: 'dm', userIdA, userIdB };
+  }
 
   const match = SPOT_ROOM_RE.exec(raw);
   if (!match) return null;
@@ -85,6 +112,20 @@ export function spotRoomName(spotId: string): string {
  */
 export function downwindRoomName(downwindId: string): string {
   return `dw:${downwindId.toLowerCase()}`;
+}
+
+/**
+ * Nome da sala de uma conversa direta entre dois usuários. Sempre ordena os
+ * dois IDs (menor primeiro) para `salaDireta(A, B)` e `salaDireta(B, A)`
+ * produzirem a MESMA string — sem isso, "abrir a DM" a partir de cada lado da
+ * conversa criaria duas salas diferentes. `null` para o caso degenerado de um
+ * usuário tentando abrir DM consigo mesmo, que não é uma conversa.
+ */
+export function salaDireta(userIdA: string, userIdB: string): string | null {
+  const a = userIdA.toLowerCase();
+  const b = userIdB.toLowerCase();
+  if (a === b) return null;
+  return a < b ? `dm:${a}:${b}` : `dm:${b}:${a}`;
 }
 
 export type SanitizedText = { ok: true; text: string } | { ok: false; error: string };

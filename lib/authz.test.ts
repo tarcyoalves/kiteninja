@@ -243,6 +243,7 @@ describe('autorização das rotas de API', () => {
 });
 
 import {
+  canAccessDm,
   canCreateOfficialEvent,
   canDeleteComment,
   canDeletePost,
@@ -292,6 +293,17 @@ describe('matriz RBAC (lib/authz.ts)', () => {
     expect(canOrganizeDownwind({ id: 'x', role: 'rider', pode_organizar_downwind: true })).toBe(true);
     expect(canOrganizeDownwind({ id: 'x', role: 'rider', pode_organizar_downwind: false })).toBe(false);
     expect(canOrganizeDownwind({ id: 'x', role: 'rider' })).toBe(false);
+  });
+
+  it('canAccessDm autoriza os dois participantes, nas duas posições', () => {
+    expect(canAccessDm('u-a', 'u-a', 'u-b')).toBe(true);
+    expect(canAccessDm('u-b', 'u-a', 'u-b')).toBe(true);
+  });
+
+  it('canAccessDm nega terceiro usuário — teste de negação exigido por docs/PLANO-CHAT-DIRETO.md', () => {
+    expect(canAccessDm('u-terceiro', 'u-a', 'u-b')).toBe(false);
+    // Nem admin/moderador entra aqui de graça: DM é conteúdo privado dos dois
+    // participantes, não recurso de moderação (ver comentário na função).
   });
 
   it('canDeletePost autoriza o autor do post e moderadores/admins, mas não terceiros', () => {

@@ -80,3 +80,14 @@ export function canOrganizeDownwind(user: UserAuthContext): boolean {
   }
   return user.pode_organizar_downwind === true;
 }
+
+/**
+ * Verifica se o usuário pode ler/escrever numa sala de DM (`dm:<a>:<b>`).
+ * Só os dois participantes — DIFERENTE de canResolveSos/canManageListing
+ * acima, moderação NÃO ganha acesso automático aqui: uma conversa privada
+ * entre dois velejadores não é recurso de moderação, é conteúdo privado. Ver
+ * app/api/chat/messages/route.ts.
+ */
+export function canAccessDm(userId: string, participanteA: string, participanteB: string): boolean {
+  return userId === participanteA || userId === participanteB;
+}

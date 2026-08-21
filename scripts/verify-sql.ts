@@ -458,6 +458,55 @@ async function main() {
     [ev.rows[0].id, riderA]
   );
 
+  console.log('\nChat / DM:');
+  // Ordem canônica decidida em runtime (os UUIDs de teste são gerados pelo
+  // gen_random_uuid() do próprio seed, não dá pra saber a ordem de antemão) —
+  // mesma regra de lib/chat.ts: salaDireta ordena, a rota grava só nessa forma.
+  const [dmMenor, dmMaior] = [riderA, riderB].sort();
+  const dmRoom = `dm:${dmMenor}:${dmMaior}`;
+
+  await expectOk(
+    db,
+    'DM: primeira mensagem grava na sala canônica dm:<menor>:<maior>',
+    `INSERT INTO chat_messages (user_id, room, text) VALUES ($1, $2, 'oi, bora velejar?')`,
+    [riderA, dmRoom]
+  );
+  await expectOk(
+    db,
+    'DM: resposta do outro lado na MESMA sala (não cria uma segunda)',
+    `INSERT INTO chat_messages (user_id, room, text) VALUES ($1, $2, 'bora sim!')`,
+    [riderB, dmRoom]
+  );
+
+  const inboxDeA = await expectOk(
+    db,
+    'inbox de DM: DISTINCT ON (room) + ORDER BY room, created_at DESC traz a última mensagem por sala',
+    `SELECT DISTINCT ON (room) room, user_id AS last_sender_id, text, created_at
+     FROM chat_messages
+     WHERE room LIKE 'dm:%' AND (room LIKE $1 OR room LIKE $2)
+     ORDER BY room, created_at DESC`,
+    [`dm:${riderA}:%`, `dm:%:${riderA}`]
+  );
+  check(
+    'inbox de A tem 1 conversa, com a mensagem mais recente (não a primeira)',
+    inboxDeA.length === 1 && String(inboxDeA[0].text) === 'bora sim!'
+  );
+
+  const outroIdDaConversa = String(inboxDeA[0].room)
+    .split(':')
+    .slice(1)
+    .find((id) => id !== riderA);
+  const usuariosDaConversa = await expectOk(
+    db,
+    'inbox de DM: resolve o outro participante via = ANY(array) — mesmo parâmetro que a rota envia',
+    `SELECT id, name FROM users WHERE id = ANY($1)`,
+    [[outroIdDaConversa]]
+  );
+  check(
+    '= ANY(array) resolveu exatamente o outro participante (riderB)',
+    usuariosDaConversa.length === 1 && String(usuariosDaConversa[0].id) === riderB
+  );
+
   console.log('\nFeed:');
   await expectOk(
     db,

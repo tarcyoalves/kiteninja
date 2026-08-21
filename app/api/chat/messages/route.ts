@@ -2,7 +2,8 @@ import { after } from 'next/server';
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { getSessionUser, HttpError, type SessionUser } from '@/lib/auth';
-import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, sanitizeMessageText } from '@/lib/chat';
+import { CHAT_TEXT_MAX, downwindRoomName, parseRoomName, salaDireta, sanitizeMessageText } from '@/lib/chat';
+import { canAccessDm } from '@/lib/authz';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
 import { buscarParticipacao } from '@/lib/downwindDb';
 import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
@@ -57,21 +58,28 @@ function toMessage(row: unknown) {
  * sala válida no formato mas invisível na UI (nenhum seletor aponta para ela),
  * e as mensagens somem sem erro aparente.
  *
- * A sala de downwind (`dw:<uuid>`) é a única PRIVADA do sistema, e por isso a
- * única que exige autorização aqui: o nome dela é visível no cliente e trivial
- * de montar a partir de um id de downwind, então quem não participa daquela
- * travessia não pode ler nem escrever. Responde 404 (nunca 403) pelo mesmo
- * motivo do mapa — um 403 confirmaria que aquele downwind existe.
+ * A sala de downwind (`dw:<uuid>`) e a de DM (`dm:<uuid>:<uuid>`) são as
+ * únicas PRIVADAS do sistema, e por isso as únicas que exigem autorização
+ * aqui: os dois nomes são visíveis no cliente e triviais de montar a partir
+ * de ids que já circulam (userId de quem manda mensagem viaja em
+ * `toMessage()`), então quem não participa não pode ler nem escrever.
+ *
+ * Downwind responde 404 (nunca 403): confirmar que aquele downwind existe já
+ * vazaria que um grupo está navegando ali. DM responde 403: ao contrário de
+ * um downwind, o "fato" de que duas contas PODERIAM conversar não é segredo
+ * nenhum — é verdade pra qualquer par de usuários do app, sempre. O que é
+ * protegido é só o conteúdo, então negar sem fingir "não existe" está bem.
  *
  * CONVIDADO DO LINK DE 12H (`user.guestDownwindId` preenchido) só alcança a
- * sala `dw:<seu próprio downwind>` — nunca 'geral' nem 'spot:*', que são fora
- * do escopo "mapa e chat da travessia" prometido a ele. Aqui é 403, não 404:
- * salas geral/spot sempre existem, não há existência nenhuma a esconder.
+ * sala `dw:<seu próprio downwind>` — nunca 'geral', 'spot:*' nem 'dm:*', que
+ * são fora do escopo "mapa e chat da travessia" prometido a ele. Aqui é 403,
+ * não 404: salas geral/spot sempre existem, não há existência nenhuma a
+ * esconder.
  */
 async function requireExistingRoom(raw: unknown, user: SessionUser): Promise<string> {
   const parsed = parseRoomName(raw);
   if (!parsed) {
-    throw new HttpError(400, "Sala inválida. Use 'geral', 'spot:<id>' ou 'dw:<id>'.");
+    throw new HttpError(400, "Sala inválida. Use 'geral', 'spot:<id>', 'dw:<id>' ou 'dm:<idA>:<idB>'.");
   }
 
   if (user.guestDownwindId && (parsed.kind !== 'downwind' || parsed.downwindId !== user.guestDownwindId)) {
@@ -86,6 +94,21 @@ async function requireExistingRoom(raw: unknown, user: SessionUser): Promise<str
       throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
     }
     return downwindRoomName(parsed.downwindId);
+  }
+
+  if (parsed.kind === 'dm') {
+    if (!canAccessDm(user.id, parsed.userIdA, parsed.userIdB)) {
+      throw new HttpError(403, 'Você não participa desta conversa.');
+    }
+    // Reconstrói via salaDireta (não usa `raw` direto) para qualquer conta
+    // que tenha chegado aqui com os UUIDs em caixa mista virar exatamente a
+    // mesma string gravada no banco — mesmo raciocínio de downwindRoomName
+    // normalizar para minúsculas.
+    const sala = salaDireta(parsed.userIdA, parsed.userIdB);
+    // Inalcançável na prática: parseRoomName já rejeita userIdA === userIdB,
+    // que é o único jeito de salaDireta devolver null aqui.
+    if (!sala) throw new HttpError(400, 'Sala de DM inválida.');
+    return sala;
   }
 
   const rows = await sql`SELECT id FROM spots WHERE id = ${parsed.spotId} LIMIT 1`;
