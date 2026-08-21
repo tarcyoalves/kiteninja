@@ -111,6 +111,7 @@ interface DownwindMapaProps {
   chegada: DownwindPonto | null;
   participantes: DownwindParticipanteMapa[];
   minhaTrilha: PontoTrilha[];
+  onSelecionarParticipante?: (userId: string) => void;
 }
 
 export const DownwindMapa: React.FC<DownwindMapaProps> = ({
@@ -119,6 +120,7 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
   chegada,
   participantes,
   minhaTrilha,
+  onSelecionarParticipante,
 }) => {
   // Relógio próprio para o anel de sinal continuar correndo entre um poll e
   // outro, em vez de ficar congelado no valor do último fetch — mesmo padrão
@@ -204,6 +206,11 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
                 : criarIconeVelejador(p, agora, p.userId === meuUserId)
             }
             zIndexOffset={p.userId === meuUserId ? 2200 : p.ehMeuApoio ? 2400 : 1000}
+            eventHandlers={
+              onSelecionarParticipante
+                ? { click: () => onSelecionarParticipante(p.userId) }
+                : undefined
+            }
           />
         ))}
     </MapContainer>

@@ -11,6 +11,8 @@ import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
 import { ModoNavegacao } from '../components/ModoNavegacao';
+import { DownwindFaixaInfo } from '../components/DownwindFaixaInfo';
+import { DownwindParticipanteSheet } from '../components/DownwindParticipanteSheet';
 
 // Leaflet é client-only — mesmo padrão de views/MapView.tsx.
 const DownwindMapa = dynamic(
@@ -72,8 +74,15 @@ function usePressAndHold(duracaoMs: number, aoCompletar: () => void) {
 }
 
 export const DownwindAoVivoView: React.FC = () => {
-  const { downwindAtivo, iniciarDownwind, encerrarMinhaParticipacao, encerrarDownwind, cancelarDownwind } =
-    useDownwind();
+  const {
+    downwindAtivo,
+    iniciarDownwind,
+    encerrarMinhaParticipacao,
+    encerrarDownwind,
+    cancelarDownwind,
+    definirApoio,
+  } = useDownwind();
+  const [participanteSelecionado, setParticipanteSelecionado] = useState<string | null>(null);
   const { myActiveSos, fetchActiveSos } = useKiteData();
   const { user } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
@@ -165,13 +174,41 @@ export const DownwindAoVivoView: React.FC = () => {
             </p>
           </div>
         ) : user ? (
-          <DownwindMapa
-            meuUserId={user.id}
-            saida={downwindAtivo.saida}
-            chegada={downwindAtivo.chegada}
-            participantes={participantes}
-            minhaTrilha={minhaTrilha}
-          />
+          <>
+            <DownwindMapa
+              meuUserId={user.id}
+              saida={downwindAtivo.saida}
+              chegada={downwindAtivo.chegada}
+              participantes={participantes}
+              minhaTrilha={minhaTrilha}
+              onSelecionarParticipante={setParticipanteSelecionado}
+            />
+            <DownwindFaixaInfo
+              meuUserId={user.id}
+              saida={downwindAtivo.saida}
+              chegada={downwindAtivo.chegada}
+              participantes={participantes}
+            />
+            {participanteSelecionado &&
+              (() => {
+                const alvo = participantes.find((p) => p.userId === participanteSelecionado);
+                const eu = participantes.find((p) => p.userId === user.id);
+                if (!alvo) return null;
+                return (
+                  <DownwindParticipanteSheet
+                    participante={alvo}
+                    meuUserId={user.id}
+                    minhaPosicao={eu?.lat !== null && eu?.lat !== undefined && eu?.lng !== null && eu?.lng !== undefined ? { lat: eu.lat, lng: eu.lng } : null}
+                    onFechar={() => setParticipanteSelecionado(null)}
+                    onDefinirComoMeuApoio={async () => {
+                      const res = await definirApoio(user.id, alvo.userId);
+                      if (res.ok) setParticipanteSelecionado(null);
+                      else setErro(res.error ?? 'Falha ao definir apoio.');
+                    }}
+                  />
+                );
+              })()}
+          </>
         ) : null}
       </div>
 

@@ -65,6 +65,9 @@ interface DownwindContextType {
   ) => Promise<{ ok: boolean; error?: string }>;
   encerrarDownwind: () => Promise<{ ok: boolean; error?: string }>;
   cancelarDownwind: () => Promise<{ ok: boolean; error?: string }>;
+  /** Define (ou remove, com `null`) o carro de apoio de um velejador — o
+   * próprio velejador escolhe o seu, e o organizador designa por todos. */
+  definirApoio: (alvoUserId: string, apoioUserId: string | null) => Promise<{ ok: boolean; error?: string }>;
   recarregar: () => Promise<void>;
 }
 
@@ -251,6 +254,23 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [downwindAtivo, recarregar]);
 
+  const definirApoio = useCallback(
+    async (alvoUserId: string, apoioUserId: string | null) => {
+      if (!downwindAtivo) return { ok: false, error: 'Nenhum downwind ativo.' };
+      try {
+        await api(`/api/downwind/${downwindAtivo.id}/participantes/${alvoUserId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ apoioUserId }),
+        });
+        await recarregar();
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : 'Falha ao definir apoio.' };
+      }
+    },
+    [downwindAtivo, recarregar]
+  );
+
   const cancelarDownwind = useCallback(async () => {
     if (!downwindAtivo) return { ok: false, error: 'Nenhum downwind ativo.' };
     try {
@@ -275,6 +295,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         encerrarMinhaParticipacao,
         encerrarDownwind,
         cancelarDownwind,
+        definirApoio,
         recarregar,
       }}
     >
