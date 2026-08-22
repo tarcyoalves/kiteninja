@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { bool, num, oneOf, str } from '@/lib/validation';
+import { validarTrilhaReduzida } from '@/lib/trilhaSessao';
 import type { Discipline } from '@/types';
 
 const DISCIPLINES = [
@@ -58,6 +59,9 @@ export async function GET() {
         s.photo_url,
         s.is_public,
         s.created_at,
+        s.trilha_reduzida,
+        s.lat_inicial,
+        s.lng_inicial,
         COALESCE((
           SELECT COUNT(*)::int FROM post_likes pl
           JOIN posts p ON p.id = pl.post_id
@@ -103,6 +107,13 @@ export async function GET() {
           likesCount: Number(r.likes_count ?? 0),
           commentsCount: Number(r.comments_count ?? 0),
           createdAt: String(r.created_at),
+          // JSONB já chega desserializado (array) do driver — Array.isArray
+          // é só a guarda contra um valor NULL da coluna virar `null` solto
+          // em vez de "campo ausente" no JSON de resposta. lat_inicial/
+          // lng_inicial não são devolvidos aqui: existem para a Fase 3 (feed)
+          // enquadrar o mapa sem ler o JSONB inteiro, e essa rota ainda não
+          // tem consumidor para eles.
+          trilhaReduzida: Array.isArray(r.trilha_reduzida) ? r.trilha_reduzida : undefined,
         };
       });
 
@@ -141,19 +152,34 @@ export async function POST(request: Request) {
     const photoUrl = str(body, 'photoUrl', { optional: true, max: 1_500_000 });
     const isPublic = bool(body, 'isPublic', true);
 
+    // Trilha é dado medido pelo GPS, não digitado — nunca confiamos na forma
+    // que o cliente mandou (ver comentário de validarTrilhaReduzida). Forma
+    // inválida vira `null`: perder a linha no mapa é aceitável, derrubar a
+    // requisição inteira e perder o registro do velejo não.
+    const trilhaReduzida = validarTrilhaReduzida(
+      (body as Record<string, unknown>)?.trilhaReduzida
+    );
+    // lat/lng do primeiro ponto da trilha JÁ REDUZIDA (não da bruta): é o que
+    // vai ser desenhado, então é o enquadramento coerente com o que o feed
+    // vai mostrar. `null` quando não há trilha válida — sem ponto, sem como
+    // enquadrar nada.
+    const latInicial = trilhaReduzida ? trilhaReduzida[0][0] : null;
+    const lngInicial = trilhaReduzida ? trilhaReduzida[0][1] : null;
+
     const inserted = await sql`
       INSERT INTO sessions_log (
         user_id, spot_id, spot_name, spot_location, date, start_time,
         duration_minutes, discipline, kite_size_m2, board_model,
         avg_wind_knots, max_gust_knots, wind_direction, tide_condition,
         water_condition, rating, distance_km, max_speed_knots, highest_jump_m,
-        notes, photo_url, is_public
+        notes, photo_url, is_public, trilha_reduzida, lat_inicial, lng_inicial
       ) VALUES (
         ${user.id}, ${spotId || null}, ${spotName}, ${spotLocation}, ${date}, ${startTime},
         ${durationMinutes}, ${discipline}, ${kiteSizeM2}, ${boardModel || null},
         ${avgWindKnots}, ${maxGustKnots || null}, ${windDirection || null}, ${tideCondition || null},
         ${waterCondition || null}, ${rating}, ${distanceKm || null}, ${maxSpeedKnots || null},
-        ${highestJumpM || null}, ${notes || null}, ${photoUrl || null}, ${isPublic}
+        ${highestJumpM || null}, ${notes || null}, ${photoUrl || null}, ${isPublic},
+        ${trilhaReduzida ? JSON.stringify(trilhaReduzida) : null}::jsonb, ${latInicial}, ${lngInicial}
       )
       RETURNING *
     `;
@@ -199,6 +225,7 @@ export async function POST(request: Request) {
       photoUrl: photoUrl ?? undefined,
       isPublic,
       createdAt: new Date().toISOString(),
+      trilhaReduzida: trilhaReduzida ?? undefined,
     };
   });
 }

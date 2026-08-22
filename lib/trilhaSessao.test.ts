@@ -6,7 +6,9 @@ import {
   marcarIndisponivel,
   paraPrefillLogbook,
   processarAmostra,
+  TETO_PONTOS_BRUTOS,
   valePenaRegistrarSessao,
+  validarTrilhaReduzida,
 } from './trilhaSessao';
 
 /**
@@ -242,6 +244,74 @@ describe('processarAmostra', () => {
   });
 });
 
+/**
+ * `pontos` é a geometria da trilha — o que faltava para o feed (Fase 3 do
+ * plano de rede social) ter algo para desenhar. Os testes seguem o mesmo
+ * critério de aceitação de `processarAmostra`: uma amostra só vira ponto
+ * quando também é aceita para o resto do estado (acurácia ok, sem salto
+ * impossível) — nunca um segundo filtro divergente.
+ */
+describe('pontos (geometria da trilha)', () => {
+  it('amostra aceita entra em pontos', () => {
+    const estado = processarAmostra(ESTADO_INICIAL_TRILHA, amostra({}));
+    expect(estado.pontos).toEqual([[LAT_BASE, LNG_BASE, T0]]);
+  });
+
+  it('amostra com acurácia ruim (acima do teto) NÃO entra em pontos', () => {
+    const base = processarAmostra(ESTADO_INICIAL_TRILHA, amostra({}));
+    const comAcuraciaRuim = processarAmostra(
+      base,
+      amostra({ lng: deslocarLng(100), accuracy: 80, timestampMs: T0 + 2_000 })
+    );
+    expect(comAcuraciaRuim.pontos).toEqual(base.pontos);
+    expect(comAcuraciaRuim.pontos).toHaveLength(1);
+  });
+
+  it('amostra com salto impossível NÃO entra em pontos', () => {
+    const base = processarAmostra(ESTADO_INICIAL_TRILHA, amostra({}));
+    const comSalto = processarAmostra(
+      base,
+      amostra({ lng: deslocarLng(2000), timestampMs: T0 + 1_000 })
+    );
+    expect(comSalto.pontos).toEqual(base.pontos);
+    expect(comSalto.pontos).toHaveLength(1);
+  });
+
+  it('amostra parada (abaixo do limiar de deslocamento) ainda assim entra em pontos', () => {
+    // A geometria real de alguém parado é "estar parado" — só a distância
+    // acumulada (odômetro) é que fica pendente abaixo do limiar, não a trilha.
+    let estado: EstadoTrilha = processarAmostra(ESTADO_INICIAL_TRILHA, amostra({}));
+    estado = processarAmostra(estado, amostra({ lng: deslocarLng(3), timestampMs: T0 + 2_000 }));
+    expect(estado.distanciaKm).toBe(0);
+    expect(estado.pontos).toHaveLength(2);
+  });
+
+  it('amostra fora de ordem NÃO entra em pontos', () => {
+    const base = processarAmostra(ESTADO_INICIAL_TRILHA, amostra({}));
+    const foraDeOrdem = processarAmostra(
+      base,
+      amostra({ lng: deslocarLng(100), timestampMs: T0 })
+    );
+    expect(foraDeOrdem.pontos).toEqual(base.pontos);
+  });
+
+  it('cruzar TETO_PONTOS_BRUTOS reamostra pela metade em vez de crescer sem limite', () => {
+    let estado: EstadoTrilha = ESTADO_INICIAL_TRILHA;
+    let t = T0;
+    // Uma amostra a mais que o teto — todas aceitas (paradas mesmo, o que não
+    // importa aqui: só a contagem de pontos está sob teste).
+    for (let i = 0; i <= TETO_PONTOS_BRUTOS; i++) {
+      estado = processarAmostra(estado, amostra({ timestampMs: t }));
+      t += 1_000;
+    }
+    // Nunca ultrapassa o teto — reamostrou em vez de crescer.
+    expect(estado.pontos.length).toBeLessThanOrEqual(TETO_PONTOS_BRUTOS);
+    // Preserva o ponto mais recente (o último timestamp gerado no laço).
+    const ultimoTsGerado = t - 1_000;
+    expect(estado.pontos[estado.pontos.length - 1][2]).toBe(ultimoTsGerado);
+  });
+});
+
 describe('marcarIndisponivel', () => {
   it('marca indisponivel sem apagar distância já acumulada', () => {
     let estado: EstadoTrilha = ESTADO_INICIAL_TRILHA;
@@ -324,5 +394,95 @@ describe('paraPrefillLogbook', () => {
     );
     expect(prefill.date).toBe('2026-01-05');
     expect(prefill.startTime).toBe('08:05');
+  });
+
+  it('sem trilha (chamador antigo, ou sessão sem nenhum ponto aceito) devolve trilhaReduzida vazia', () => {
+    const prefill = paraPrefillLogbook(
+      { distanciaKm: 10, velocidadeMaxNos: 20, iniciadoEm: new Date('2026-01-05T08:05:00') },
+      new Date('2026-01-05T09:00:00')
+    );
+    expect(prefill.trilhaReduzida).toEqual([]);
+  });
+
+  it('reduz a trilha a no máximo 200 pontos, sempre preservando o mais recente', () => {
+    const trilhaLonga: [number, number, number][] = Array.from({ length: 500 }, (_, i) => [
+      LAT_BASE,
+      deslocarLng(i * 20),
+      T0 + i * 5_000,
+    ]);
+    const prefill = paraPrefillLogbook(
+      {
+        distanciaKm: 10,
+        velocidadeMaxNos: 20,
+        iniciadoEm: new Date('2026-01-05T08:05:00'),
+        trilha: trilhaLonga,
+      },
+      new Date('2026-01-05T09:00:00')
+    );
+    expect(prefill.trilhaReduzida.length).toBeLessThanOrEqual(200);
+    expect(prefill.trilhaReduzida[prefill.trilhaReduzida.length - 1]).toEqual(
+      trilhaLonga[trilhaLonga.length - 1]
+    );
+  });
+});
+
+/**
+ * Validação de servidor de POST /api/sessions — a trilha vem do cliente, e o
+ * servidor não pode confiar que ela chegou no formato esperado (ver
+ * comentário de `validarTrilhaReduzida`). Forma inválida vira `null`, nunca
+ * lança: a rota grava `null` e segue gravando o resto da sessão.
+ */
+describe('validarTrilhaReduzida', () => {
+  it('trilha válida passa e vem de volta reamostrada (idempotente quando já ≤ limite)', () => {
+    const trilha: [number, number, number][] = [
+      [-4.95, -36.88, T0],
+      [-4.96, -36.89, T0 + 60_000],
+    ];
+    expect(validarTrilhaReduzida(trilha)).toEqual(trilha);
+  });
+
+  it('não é array -> null', () => {
+    expect(validarTrilhaReduzida('não é array')).toBeNull();
+    expect(validarTrilhaReduzida({ lat: 1, lng: 2 })).toBeNull();
+    expect(validarTrilhaReduzida(null)).toBeNull();
+    expect(validarTrilhaReduzida(undefined)).toBeNull();
+  });
+
+  it('array vazio -> null (nada para desenhar)', () => {
+    expect(validarTrilhaReduzida([])).toBeNull();
+  });
+
+  it('item que não é array de 3 números -> trilha inteira null', () => {
+    expect(validarTrilhaReduzida([[-4.95, -36.88, T0], [-4.96, -36.89]])).toBeNull();
+    expect(validarTrilhaReduzida([[-4.95, -36.88, T0, 999]])).toBeNull();
+    expect(validarTrilhaReduzida([['-4.95', -36.88, T0]])).toBeNull();
+  });
+
+  it('lat fora de [-90,90] -> trilha inteira null', () => {
+    expect(validarTrilhaReduzida([[91, -36.88, T0]])).toBeNull();
+    expect(validarTrilhaReduzida([[-91, -36.88, T0]])).toBeNull();
+  });
+
+  it('lng fora de [-180,180] -> trilha inteira null', () => {
+    expect(validarTrilhaReduzida([[-4.95, 181, T0]])).toBeNull();
+    expect(validarTrilhaReduzida([[-4.95, -181, T0]])).toBeNull();
+  });
+
+  it('timestamp não finito (NaN/Infinity) -> trilha inteira null', () => {
+    expect(validarTrilhaReduzida([[-4.95, -36.88, NaN]])).toBeNull();
+    expect(validarTrilhaReduzida([[-4.95, -36.88, Infinity]])).toBeNull();
+  });
+
+  it('trilha maior que o limite é reamostrada no servidor, nunca gravada inteira', () => {
+    const trilha: [number, number, number][] = Array.from({ length: 500 }, (_, i) => [
+      -4.95,
+      -36.88 - i * 0.001,
+      T0 + i * 60_000,
+    ]);
+    const validada = validarTrilhaReduzida(trilha);
+    expect(validada).not.toBeNull();
+    expect(validada!.length).toBeLessThanOrEqual(200);
+    // Preserva o ponto mais recente, mesmo critério de amostrarTrilha.
+    expect(validada![validada!.length - 1]).toEqual(trilha[trilha.length - 1]);
   });
 });

@@ -48,6 +48,12 @@ export const SessionLoggerModal: React.FC = () => {
   // (mapa normal), não de digitação manual — controla só o banner informativo
   // abaixo, nunca a validação nem o envio.
   const [prefilledFromGps, setPrefilledFromGps] = useState(false);
+  // Trilha reduzida do prefill de GPS (ver lib/trilhaSessao.ts,
+  // PrefillLogbook.trilhaReduzida). Só guardada em estado para reenviar no
+  // submit — NUNCA vira um campo do formulário: é dado medido pelo GPS, não
+  // digitado pelo velejador, e não haveria como editar uma trilha num input
+  // de texto de qualquer forma.
+  const [trilhaReduzida, setTrilhaReduzida] = useState<Array<[number, number, number]>>([]);
 
   /**
    * Aplica o rascunho de `lib/trilhaSessao.ts` (via context) quando o modal
@@ -68,13 +74,20 @@ export const SessionLoggerModal: React.FC = () => {
     setDate(loggerPrefill.date);
     setStartTime(loggerPrefill.startTime);
     setPrefilledFromGps(true);
+    setTrilhaReduzida(loggerPrefill.trilhaReduzida);
     limparLoggerPrefill();
   }, [isLoggerOpen, loggerPrefill, limparLoggerPrefill]);
 
   // Some o banner de "veio do GPS" ao fechar, para uma abertura manual
   // seguinte (sem prefill nenhum) não carregar o aviso de uma sessão antiga.
+  // Zera a trilha guardada pelo mesmo motivo: sem isto, uma abertura manual
+  // seguinte (botão "+ Velejo") reenviaria a trilha de uma sessão antiga
+  // junto de dados digitados à mão, que não tem relação nenhuma com ela.
   useEffect(() => {
-    if (!isLoggerOpen) setPrefilledFromGps(false);
+    if (!isLoggerOpen) {
+      setPrefilledFromGps(false);
+      setTrilhaReduzida([]);
+    }
   }, [isLoggerOpen]);
 
   if (!isLoggerOpen) return null;
@@ -111,6 +124,7 @@ export const SessionLoggerModal: React.FC = () => {
       notes: notes || undefined,
       photoUrl: photoUrl || undefined,
       isPublic,
+      trilhaReduzida: trilhaReduzida.length > 0 ? trilhaReduzida : undefined,
     });
 
     setIsLoggerOpen(false);

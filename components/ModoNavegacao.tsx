@@ -8,6 +8,7 @@ import { useTrilhaSessao } from '../lib/useTrilhaSessao';
 import { useSosHold } from '../lib/useSosHold';
 import { useKiteData } from '../context/KiteDataContext';
 import { DownwindChat } from './DownwindChat';
+import type { PontoTrilha } from '../lib/trilhaDownwind';
 
 /**
  * Tela preta de navegação — mantém o app em primeiro plano com Wake Lock
@@ -157,6 +158,14 @@ export interface ResumoNavegacao {
   distanciaKm: number;
   velocidadeMaxNos: number;
   iniciadoEm: Date;
+  /**
+   * Geometria da trilha medida nesta sessão (pontos aceitos por
+   * `processarAmostra`, ver `lib/trilhaSessao.ts`). Segue direto de
+   * `useTrilhaSessao().pontos` — este componente não filtra nem reduz nada,
+   * só repassa; a redução para ~200 pontos acontece depois, em
+   * `paraPrefillLogbook`.
+   */
+  trilha: PontoTrilha[];
 }
 
 interface ModoNavegacaoProps {
@@ -428,6 +437,7 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
                     distanciaKm: trilha.distanciaKm,
                     velocidadeMaxNos: trilha.velocidadeMaxNos,
                     iniciadoEm,
+                    trilha: trilha.pontos,
                   })
                 }
                 onPointerDown={(e) => e.stopPropagation()}

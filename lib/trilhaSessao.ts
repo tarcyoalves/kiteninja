@@ -19,8 +19,23 @@
  */
 
 import { haversineKm, LatLng } from './geo';
+import { amostrarTrilha, PontoTrilha } from './trilhaDownwind';
 
 const NOS_POR_MPS = 1.94384;
+
+/**
+ * Teto de pontos brutos acumulados na trilha da sessão, antes de reamostrar.
+ *
+ * Sem teto, uma travessia de 3h com `watchPosition` a ~1Hz chegaria a ~11 mil
+ * pontos na memória de um celular — e isso é só a trilha bruta desta sessão,
+ * competindo por RAM com o resto do app (mapa, animação de vento, chat) na
+ * mesma aba. Ao cruzar o teto, `processarAmostra` reamostra a trilha pela
+ * metade (mantém 1 a cada 2 pontos) em vez de continuar crescendo — mesmo
+ * princípio de `passoAmostragem`/`amostrarTrilha` em `lib/trilhaDownwind.ts`,
+ * só que aplicado incrementalmente aqui, porque esta trilha não tem um
+ * tamanho final conhecido de antemão (a sessão pode durar minutos ou horas).
+ */
+export const TETO_PONTOS_BRUTOS = 5000;
 
 // ---------------------------------------------------------------------------
 // Limiares dos filtros. Cada um existe para descartar uma categoria
@@ -112,6 +127,20 @@ export interface EstadoTrilha {
    * `processarAmostra`.
    */
   ultimaReferencia: { pos: LatLng; timestampMs: number } | null;
+  /**
+   * Geometria da trilha: todo ponto ACEITO (mesmo critério de
+   * `ultimaReferencia` — passou acurácia e não foi salto impossível), na
+   * ordem em que chegou. É o que falta hoje para o feed (Fase 3 do plano de
+   * rede social) ter uma trilha para desenhar: sem isto, cada amostra era
+   * consumida por `processarAmostra` e descartada, e só a distância/
+   * velocidade agregadas sobreviviam. Reutiliza `PontoTrilha` de
+   * `lib/trilhaDownwind.ts` (tupla `[lat, lng, tsMs]`) de propósito — o
+   * downwind em grupo já resolveu "como representar e reduzir uma trilha", e
+   * duplicar esse tipo aqui só criaria duas fontes de verdade para geometria
+   * de mapa que precisam alimentar exatamente o mesmo componente de desenho
+   * mais adiante. Sujeito ao teto de `TETO_PONTOS_BRUTOS` — ver lá.
+   */
+  pontos: PontoTrilha[];
 }
 
 export const ESTADO_INICIAL_TRILHA: EstadoTrilha = {
@@ -121,7 +150,30 @@ export const ESTADO_INICIAL_TRILHA: EstadoTrilha = {
   ultimaPosicaoEm: null,
   indisponivel: false,
   ultimaReferencia: null,
+  pontos: [],
 };
+
+/**
+ * Acrescenta um ponto aceito à trilha, aplicando o teto de memória.
+ *
+ * Ao cruzar `TETO_PONTOS_BRUTOS`, reamostra pela metade (mantém 1 a cada 2)
+ * em vez de deixar o array crescer sem fim — ver o porquê no comentário de
+ * `TETO_PONTOS_BRUTOS`. Sempre preserva o ponto mais recente (o que acabou de
+ * ser adicionado): descartá-lo faria a trilha "parar" um pouco antes da
+ * posição atual do velejador, mesmo com o GPS reportando normalmente — mesma
+ * preocupação (e mesma solução) de `amostrarTrilha` em `lib/trilhaDownwind.ts`.
+ */
+function adicionarPonto(pontos: PontoTrilha[], novo: PontoTrilha): PontoTrilha[] {
+  const comNovo = [...pontos, novo];
+  if (comNovo.length <= TETO_PONTOS_BRUTOS) return comNovo;
+
+  const reamostrado = comNovo.filter((_, i) => i % 2 === 0);
+  const ultimo = comNovo[comNovo.length - 1];
+  if (reamostrado[reamostrado.length - 1]?.[2] !== ultimo[2]) {
+    reamostrado.push(ultimo);
+  }
+  return reamostrado;
+}
 
 function mpsParaNos(mps: number): number {
   return mps * NOS_POR_MPS;
@@ -177,7 +229,9 @@ export function processarAmostra(estado: EstadoTrilha, amostra: AmostraGps): Est
 
   if (estado.ultimaReferencia === null) {
     // Primeira posição confiável da sessão: vira a referência, mas ainda não
-    // há "anterior" para medir distância ou derivar velocidade.
+    // há "anterior" para medir distância ou derivar velocidade. Já entra na
+    // trilha (passou no único filtro que existe para ela nesta altura: a
+    // acurácia) — ver `pontos` em EstadoTrilha.
     const velocidade = velocidadeDireta(amostra.speedMps);
     return {
       ...estado,
@@ -189,6 +243,7 @@ export function processarAmostra(estado: EstadoTrilha, amostra: AmostraGps): Est
       ultimaPosicaoEm: dataAmostra,
       indisponivel: false,
       ultimaReferencia: { pos: posAtual, timestampMs: amostra.timestampMs },
+      pontos: adicionarPonto(estado.pontos, [amostra.lat, amostra.lng, amostra.timestampMs]),
     };
   }
 
@@ -248,6 +303,14 @@ export function processarAmostra(estado: EstadoTrilha, amostra: AmostraGps): Est
   // não tem relação nenhuma com o limiar de deslocamento — se ela parasse
   // de avançar aqui, o Modo Navegação mostraria "sem sinal" com o GPS
   // funcionando perfeitamente.
+  //
+  // `pontos`, igual a `ultimaPosicaoEm`, também não tem relação com o limiar
+  // de deslocamento: a trilha registra a posição real do velejador amostra a
+  // amostra (inclusive as que ficam paradas por baixo do limiar, que É a
+  // geometria real de alguém parado n'água) — só distância acumulada e
+  // referência de cálculo é que ficam pendentes. Reduzir a resolução da
+  // trilha por causa do limiar de distância seria confundir "não vale a pena
+  // somar ao odômetro" com "não aconteceu".
   return {
     distanciaKm: estado.distanciaKm + (distanciaAceita ? distanciaM / 1000 : 0),
     velocidadeNos: velocidade,
@@ -257,6 +320,7 @@ export function processarAmostra(estado: EstadoTrilha, amostra: AmostraGps): Est
     ultimaReferencia: distanciaAceita
       ? { pos: posAtual, timestampMs: amostra.timestampMs }
       : estado.ultimaReferencia,
+    pontos: adicionarPonto(estado.pontos, [amostra.lat, amostra.lng, amostra.timestampMs]),
   };
 }
 
@@ -319,18 +383,35 @@ export interface PrefillLogbook {
   date: string;
   /** formato HH:MM, mesmo formato do `<input type="time">` do logger. */
   startTime: string;
+  /**
+   * Trilha já reduzida a no máximo 200 pontos (`amostrarTrilha`, mesma função
+   * do downwind em grupo — não reimplementamos redução aqui). Não é campo
+   * editável no formulário: é dado medido pelo GPS, não digitado pelo
+   * velejador, então `SessionLoggerModal` só precisa guardar e reenviar, nunca
+   * expor um input para isto — ver comentário lá.
+   */
+  trilhaReduzida: PontoTrilha[];
 }
 
 /**
  * Converte o resumo bruto de uma sessão do Modo Navegação (distância,
- * velocidade máxima, instante de início) num `PrefillLogbook`.
+ * velocidade máxima, instante de início, trilha) num `PrefillLogbook`.
  *
  * `agora` é recebido por parâmetro (em vez de `new Date()` direto) para a
  * função continuar pura e testável sem mockar relógio — mesmo padrão do
  * resto deste arquivo, que nunca toca `navigator`/`Date.now()` internamente.
+ *
+ * `trilha` é opcional (default `[]`) só para não quebrar quem já chamava esta
+ * função antes da trilha existir — todo chamador real (`views/MapView.tsx`)
+ * sempre tem uma `ResumoNavegacao.trilha` para passar.
  */
 export function paraPrefillLogbook(
-  resumo: { distanciaKm: number; velocidadeMaxNos: number; iniciadoEm: Date },
+  resumo: {
+    distanciaKm: number;
+    velocidadeMaxNos: number;
+    iniciadoEm: Date;
+    trilha?: PontoTrilha[];
+  },
   agora: Date
 ): PrefillLogbook {
   // Mínimo de 1 min: uma sessão de poucos segundos ainda é uma sessão real
@@ -357,5 +438,56 @@ export function paraPrefillLogbook(
     durationMinutes,
     date,
     startTime,
+    trilhaReduzida: amostrarTrilha(resumo.trilha ?? [], 200),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Validação de servidor: o cliente já reduz a trilha antes de enviar (ver
+// `paraPrefillLogbook` acima), mas `POST /api/sessions` não pode confiar
+// nisso — nunca validar de novo no servidor é como um cliente adulterado (ou
+// um bug futuro no app) conseguiria inflar o JSONB gravado ou gravar lixo.
+// ---------------------------------------------------------------------------
+
+/**
+ * Teto de itens do array BRUTO aceito por `validarTrilhaReduzida`, antes de
+ * qualquer validação ponto a ponto — um corte barato para nunca iterar um
+ * array absurdamente grande vindo de um corpo de requisição adulterado. É
+ * bem mais generoso que `limite` (a trilha reduzida de fato, 200 pontos):
+ * existe só para rejeitar rápido um payload de má-fé, não para validar o
+ * caso normal.
+ */
+const TETO_ITENS_TRILHA_BRUTA = 20_000;
+
+/**
+ * Valida a forma de `trilhaReduzida` recebida em `POST /api/sessions` antes
+ * de gravar: precisa ser array de arrays de exatamente 3 números finitos,
+ * com lat em [-90,90] e lng em [-180,180]. Qualquer item fora da forma
+ * invalida a trilha INTEIRA (retorna `null`) em vez de filtrar item a item —
+ * dado geométrico malformado é sinal de bug ou payload adulterado, não algo
+ * para tentar aproveitar parcialmente.
+ *
+ * Nunca lança: quem chama decide o que fazer com `null` (a rota grava `null`
+ * na coluna e segue — perder a linha no mapa é aceitável, perder o registro
+ * do velejo por causa da trilha não é).
+ *
+ * Reamostra para `limite` pontos com `amostrarTrilha` quando vier maior — o
+ * cliente já reduz para ~200 antes de enviar, mas o servidor reduz de novo
+ * porque, como dito acima, não há como confiar que o cliente de fato o fez.
+ */
+export function validarTrilhaReduzida(raw: unknown, limite = 200): PontoTrilha[] | null {
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > TETO_ITENS_TRILHA_BRUTA) return null;
+
+  const pontos: PontoTrilha[] = [];
+  for (const item of raw) {
+    if (!Array.isArray(item) || item.length !== 3) return null;
+    const [lat, lng, tsMs] = item;
+    const latValida = typeof lat === 'number' && Number.isFinite(lat) && lat >= -90 && lat <= 90;
+    const lngValida = typeof lng === 'number' && Number.isFinite(lng) && lng >= -180 && lng <= 180;
+    const tsValido = typeof tsMs === 'number' && Number.isFinite(tsMs);
+    if (!latValida || !lngValida || !tsValido) return null;
+    pontos.push([lat, lng, tsMs]);
+  }
+
+  return amostrarTrilha(pontos, limite);
 }

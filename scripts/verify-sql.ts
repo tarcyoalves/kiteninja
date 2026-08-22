@@ -382,6 +382,63 @@ async function main() {
   );
   check('B NÃO edita sessão de A', crossPatch.rows.length === 0);
 
+  console.log('\nTrilha na sessão solo (Fase 1 do plano de rede social):');
+  // Mesmo formato de downwind_participantes.trilha_reduzida (ver comentário
+  // no schema): JSONB [[lat, lng, tsMs], ...], gravado já reduzido pela rota
+  // (POST /api/sessions valida com lib/trilhaSessao.ts, validarTrilhaReduzida,
+  // antes de chegar aqui). Este check prova só que a COLUNA aceita e devolve
+  // o formato certo, não a validação em si (essa é testada em
+  // lib/trilhaSessao.test.ts, função pura, sem precisar de banco).
+  const trilhaSessaoTeste = [
+    [-4.9572, -36.8833, 1_700_000_000_000],
+    [-4.9601, -36.8890, 1_700_000_060_000],
+  ];
+  const sessComTrilha = await expectOk(
+    db,
+    'grava trilha_reduzida (JSONB) e lat/lng_inicial numa sessão',
+    `INSERT INTO sessions_log (
+       user_id, spot_name, spot_location, date, start_time, duration_minutes,
+       discipline, kite_size_m2, avg_wind_knots, rating,
+       trilha_reduzida, lat_inicial, lng_inicial
+     ) VALUES ($1, 'Ponta do Mel', 'RN', CURRENT_DATE, '10:00', 90,
+       'Kitesurf Twintip', 9, 18, 5, $2::jsonb, $3, $4)
+     RETURNING id, trilha_reduzida, lat_inicial, lng_inicial`,
+    [riderA, JSON.stringify(trilhaSessaoTeste), trilhaSessaoTeste[0][0], trilhaSessaoTeste[0][1]]
+  );
+  check(
+    'trilha_reduzida volta do banco como array JSONB com os pontos gravados',
+    Array.isArray(sessComTrilha[0]?.trilha_reduzida) &&
+      (sessComTrilha[0].trilha_reduzida as unknown[]).length === 2
+  );
+  check(
+    // NUMERIC(9,6): 6 casas decimais — a mesma precisão de downwind_posicoes
+    // (lat/lng), suficiente para localizar dentro de ~0.1m. Prova que gravar
+    // e ler de volta não perde a casa decimal mais significativa para o
+    // enquadramento do mapa (a 6ª casa já é ruído de GPS, não precisa de
+    // exatidão binária ali).
+    'lat_inicial/lng_inicial aceitam a precisão de 6 casas decimais sem arredondar a mais',
+    Number(sessComTrilha[0]?.lat_inicial) === -4.9572 &&
+      Number(sessComTrilha[0]?.lng_inicial) === -36.8833
+  );
+
+  const sessSemTrilha = await expectOk(
+    db,
+    'trilha_reduzida/lat_inicial/lng_inicial são opcionais (NULL) — sessão sem GPS continua gravando',
+    `INSERT INTO sessions_log (
+       user_id, spot_name, spot_location, date, start_time, duration_minutes,
+       discipline, kite_size_m2, avg_wind_knots, rating
+     ) VALUES ($1, 'Ponta do Mel', 'RN', CURRENT_DATE, '10:00', 90,
+       'Kitesurf Twintip', 9, 18, 5)
+     RETURNING trilha_reduzida, lat_inicial, lng_inicial`,
+    [riderA]
+  );
+  check(
+    'sessão sem trilha grava NULL nas 3 colunas, não uma linha rejeitada',
+    sessSemTrilha[0]?.trilha_reduzida === null &&
+      sessSemTrilha[0]?.lat_inicial === null &&
+      sessSemTrilha[0]?.lng_inicial === null
+  );
+
   console.log('\nToggles (chave composta, sem coluna id):');
   const post = await db.query<{ id: string }>(
     `INSERT INTO posts (user_id, title, content) VALUES ($1, 'T', 'C') RETURNING id`,

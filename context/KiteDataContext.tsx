@@ -631,6 +631,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         notes: sessionData.notes,
         photoUrl: sessionData.photoUrl,
         isPublic: sessionData.isPublic,
+        trilhaReduzida: sessionData.trilhaReduzida,
       }),
     })
       .then((created) => {

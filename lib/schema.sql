@@ -144,6 +144,20 @@ CREATE TABLE IF NOT EXISTS sessions_log (
 
 CREATE INDEX IF NOT EXISTS idx_sessions_user_date ON sessions_log (user_id, date DESC);
 
+-- Trilha da sessão solo (Modo Navegação) — mesmo formato e mesma redução de
+-- downwind_participantes.trilha_reduzida (ver comentário lá): JSONB com no
+-- máximo ~200 pontos [[lat, lng, tsMs], ...], reduzido por amostrarTrilha()
+-- antes de gravar. Sem isso o feed social (fase futura) não teria geometria
+-- para desenhar no card da sessão.
+--
+-- lat_inicial/lng_inicial existem para o feed conseguir enquadrar o mapa (ou
+-- decidir o zoom/centro de um mini-mapa) sem precisar ler e desserializar o
+-- JSONB inteiro só para achar o primeiro ponto — útil sobretudo numa lista
+-- com várias sessões renderizando ao mesmo tempo.
+ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS trilha_reduzida JSONB;
+ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS lat_inicial NUMERIC(9,6);
+ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS lng_inicial NUMERIC(9,6);
+
 -- -------------------------------------------------------- feed da comunidade
 CREATE TABLE IF NOT EXISTS posts (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

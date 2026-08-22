@@ -7,6 +7,7 @@ import {
   marcarIndisponivel,
   processarAmostra,
 } from './trilhaSessao';
+import type { PontoTrilha } from './trilhaDownwind';
 
 /**
  * Casca fina sobre `watchPosition`: toda decisão (aceitar/rejeitar amostra,
@@ -36,11 +37,18 @@ export interface TrilhaSessao {
   ultimaPosicaoEm: Date | null;
   /** true se o GPS não está disponível ou a permissão foi negada. */
   indisponivel: boolean;
+  /**
+   * Geometria da trilha (pontos aceitos, na ordem em que chegaram) — ver
+   * `EstadoTrilha.pontos` em `lib/trilhaSessao.ts`. É o que `ModoNavegacao`
+   * repassa em `ResumoNavegacao.trilha` ao sair, para o registro no logbook
+   * (`paraPrefillLogbook`) ter uma geometria para reduzir e enviar.
+   */
+  pontos: PontoTrilha[];
 }
 
 function paraTrilhaSessao(estado: EstadoTrilha): TrilhaSessao {
-  const { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel } = estado;
-  return { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel };
+  const { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel, pontos } = estado;
+  return { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel, pontos };
 }
 
 export function useTrilhaSessao(ativo: boolean): TrilhaSessao {

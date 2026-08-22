@@ -168,6 +168,14 @@ export interface SessionLog {
   likesCount: number;
   commentsCount: number;
   createdAt: string;
+  /**
+   * Trilha GPS reduzida (`[lat, lng, tsMs]`, no máximo ~200 pontos) medida
+   * pelo Modo Navegação — mesmo formato de `downwind_participantes.
+   * trilha_reduzida`. `undefined`/ausente numa sessão digitada manualmente
+   * ou sem trilha válida; nunca um campo editável no formulário, é dado
+   * medido, não digitado (ver `lib/trilhaSessao.ts`, `PrefillLogbook`).
+   */
+  trilhaReduzida?: Array<[number, number, number]>;
 }
 
 export interface CommunityPost {
