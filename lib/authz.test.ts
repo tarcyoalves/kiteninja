@@ -108,9 +108,16 @@ describe('autorização das rotas de API', () => {
 
   it('nenhuma rota expõe e-mail de terceiros em listagem pública do app', () => {
     // O feed e os comentários mostram nome e rider_id; e-mail é dado de contato
-    // e não deve circular entre velejadores.
+    // e não deve circular entre velejadores. riders/search/route.ts entra na
+    // mesma disciplina (seção 4.5 do plano de rede social): uma busca aberta
+    // de velejadores é exatamente onde esse vazamento aconteceria.
     const falhas: string[] = [];
-    for (const rel of ['posts/route.ts', 'posts/[id]/comments/route.ts', 'alerts/route.ts']) {
+    for (const rel of [
+      'posts/route.ts',
+      'posts/[id]/comments/route.ts',
+      'alerts/route.ts',
+      'riders/search/route.ts',
+    ]) {
       const r = rotas.find((x) => x.rel === rel);
       if (!r) continue;
       if (/u\.email|users\.email/.test(r.src)) falhas.push(rel);
@@ -155,6 +162,8 @@ describe('autorização das rotas de API', () => {
       'incrementa usos de UM convite (WHERE id = ${convite.id}), já validado (não revogado, não expirado, dentro do limite) por buscarConviteValido logo acima na mesma rota',
     'downwind/[id]/participantes/[userId]/route.ts::UPDATE downwinds':
       'auto-encerramento: quando alguém sai da água (encerrado/desistiu) e isso esvazia o quórum de velejadores, muda o status de UM downwind (WHERE id = ${id} AND status = \'em_andamento\'), não dado de usuário; usa a MESMA podeEncerrarDownwind (lib/downwind.ts) que autoriza o encerramento manual em status/route.ts — sem isto o downwind ficava travado em em_andamento pra sempre quando o único velejador encerrava a própria participação',
+    'riders/[id]/follow/route.ts::DELETE FROM user_follows':
+      'deixar de seguir filtra por follower_id = user.id, não por user_id — mas follower_id É o dono da linha nesta tabela (user_follows não tem coluna user_id nem id: a PK é (follower_id, following_id)). WHERE follower_id = ${user.id} garante que só a própria relação "eu sigo" pode ser apagada, nunca a de outro velejador.',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -223,6 +232,19 @@ describe('autorização das rotas de API', () => {
         rel.startsWith('sos/')
       ) {
         expect(/WHERE\s+id\s*=\s*\$\{/.test(r.src)).toBe(true);
+        continue;
+      }
+
+      /*
+       * riders/[id]/follow/route.ts (deixar de seguir): mesma família de
+       * "alvo que a própria requisição provou ser o certo" dos casos acima,
+       * só que a coluna que identifica a linha se chama follower_id nesta
+       * tabela (user_follows não tem coluna `id`; a PK é composta). WHERE
+       * follower_id = ${user.id} É "a própria conta autenticada" — o mesmo
+       * papel que ${user.id} cumpre em auth/change-password/route.ts.
+       */
+      if (rel === 'riders/[id]/follow/route.ts') {
+        expect(/WHERE\s+follower_id\s*=\s*\$\{user\.id\}/.test(r.src)).toBe(true);
         continue;
       }
 

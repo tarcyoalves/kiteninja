@@ -49,6 +49,13 @@ CREATE INDEX IF NOT EXISTS idx_users_role ON users (role);
 CREATE INDEX IF NOT EXISTS idx_users_active ON users (is_active);
 CREATE INDEX IF NOT EXISTS idx_users_last_seen ON users (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_users_last_login ON users (last_login_at DESC);
+-- GET /api/riders/search filtra por LOWER(name) ILIKE '%termo%'. Um substring
+-- no meio do texto não usa este índice como igualdade pura, mas com poucos
+-- milhares de riders o planner do Postgres ainda prefere varrer o índice
+-- (mais compacto que a tabela inteira, que carrega bio/quiver/e-mail) a
+-- varrer a tabela — o ganho cresce junto com a base, que é exatamente quando
+-- table scan linha a linha começa a doer.
+CREATE INDEX IF NOT EXISTS idx_users_busca_nome ON users (LOWER(name));
 
 -- ------------------------------------------------------- convites (1 uso só)
 -- O admin gera um link único. `token_hash` guarda SHA-256 do token: se o banco
@@ -194,6 +201,33 @@ CREATE TABLE IF NOT EXISTS post_comments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_comments_post ON post_comments (post_id, created_at);
+
+-- --------------------------------------------------------------- grafo social
+-- Seguir assimétrico (Strava/Surfr), não amizade com pedido/aceite — ver
+-- seção 4.1 do plano (docs/PLANO-REDE-SOCIAL.md). "Amigo" não existe como
+-- linha aqui: é o que a UI mostra quando as duas linhas (A segue B, B segue
+-- A) existem ao mesmo tempo — lib/social.ts, relacaoComRider().
+CREATE TABLE IF NOT EXISTS user_follows (
+  follower_id  UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- PK composta (não um `id` avulso): a existência da linha JÁ É o estado do
+  -- follow, mesmo desenho de post_likes/listing_favorites acima. Consequência
+  -- direta: seguir alguém que já se segue é violação de chave primária no
+  -- banco, não uma regra que a UI precisa lembrar de checar — o mesmo INSERT
+  -- que criaria o duplicado é rejeitado antes de existir.
+  PRIMARY KEY (follower_id, following_id),
+  -- Barreira no banco contra auto-follow, além da checagem em lib/social.ts
+  -- (podeSeguir) — duas camadas, mesmo princípio de `salaDireta` rejeitar
+  -- auto-DM em lib/chat.ts: a rota erra bonito com 400, e o banco garante que
+  -- nenhum outro caminho de escrita (script, migração futura, bug) consiga
+  -- criar a linha mesmo assim.
+  CHECK (follower_id <> following_id)
+);
+
+-- "Quem me segue": todo perfil e toda notificação de novo seguidor consulta
+-- por following_id (a PK já cobre "quem eu sigo", que entra por follower_id).
+CREATE INDEX IF NOT EXISTS idx_follows_following ON user_follows (following_id);
 
 -- ------------------------------------------------------ segurança e eventos
 CREATE TABLE IF NOT EXISTS safety_alerts (

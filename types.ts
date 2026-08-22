@@ -359,3 +359,22 @@ export interface DmConversation {
     fromMe: boolean;
   };
 }
+
+/**
+ * Relação entre quem busca e o rider encontrado — mesmos 4 valores de
+ * `RelacaoRider` em lib/social.ts (não importado aqui porque types.ts não
+ * depende de código de servidor; a UI só precisa da união de strings).
+ */
+export type RelacaoRider = 'amigos' | 'seguindo' | 'segue_voce' | 'nenhuma';
+
+/** Um resultado de `GET /api/riders/search` — nunca inclui e-mail. */
+export interface RiderSearchResult {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  riderId: string;
+  countryFlag: string;
+  riderLevel: RiderLevel;
+  homeSpot?: string;
+  relacao: RelacaoRider;
+}

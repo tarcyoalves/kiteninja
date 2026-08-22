@@ -439,6 +439,124 @@ async function main() {
       sessSemTrilha[0]?.lng_inicial === null
   );
 
+  console.log('\nGrafo social (Fase 2 do plano de rede social):');
+
+  // CHECK (follower_id <> following_id): auto-follow é barrado no banco, não
+  // só na rota (lib/social.ts, podeSeguir) — mesma dupla camada do CHECK que
+  // impede auto-DM em lib/chat.ts (salaDireta).
+  await expectFail(
+    db,
+    'CHECK barra auto-follow (follower_id = following_id)',
+    `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $1)`,
+    [riderA]
+  );
+
+  const followAB = await expectOk(
+    db,
+    'A segue B',
+    `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2) RETURNING follower_id`,
+    [riderA, riderB]
+  );
+  check('INSERT de A seguindo B retorna 1 linha', followAB.length === 1);
+
+  // PK composta (follower_id, following_id): seguir duas vezes é violação de
+  // chave primária no banco, não uma checagem que a UI precisa lembrar — a
+  // rota real usa ON CONFLICT DO NOTHING (ver app/api/riders/[id]/follow),
+  // mas aqui o INSERT cru sem ON CONFLICT prova que a constraint existe.
+  await expectFail(
+    db,
+    'PK composta barra seguir a mesma pessoa duas vezes',
+    `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)`,
+    [riderA, riderB]
+  );
+
+  // B também segue A: seguimento mútuo é o que lib/social.ts
+  // (relacaoComRider) chama de "amigos" na UI — derivado destas duas linhas,
+  // nunca uma tabela própria.
+  await db.query(`INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)`, [
+    riderB,
+    riderA,
+  ]);
+
+  const quemEuSigo = await expectOk(
+    db,
+    '"quem eu sigo" (consulta que a Fase 3 do feed vai reaproveitar): SELECT por follower_id',
+    `SELECT following_id FROM user_follows WHERE follower_id = $1`,
+    [riderA]
+  );
+  check(
+    'A segue exatamente B',
+    quemEuSigo.length === 1 && quemEuSigo[0]?.following_id === riderB
+  );
+
+  const quemMeSegue = await expectOk(
+    db,
+    '"quem me segue" via idx_follows_following: SELECT por following_id',
+    `SELECT follower_id FROM user_follows WHERE following_id = $1`,
+    [riderA]
+  );
+  check(
+    'B segue A de volta (seguimento mútuo)',
+    quemMeSegue.length === 1 && quemMeSegue[0]?.follower_id === riderB
+  );
+
+  // --------------------------------------------------- busca de velejadores
+  const riderC = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id, is_active)
+       VALUES ('carla@t.local', '$2b$12$x', 'Carla Kitesurf', '2003', TRUE) RETURNING id`
+    )
+  ).rows[0].id;
+
+  const riderInativo = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id, is_active)
+       VALUES ('inativo@t.local', '$2b$12$x', 'Carlos Inativo', '2099', FALSE) RETURNING id`
+    )
+  ).rows[0].id;
+
+  // Mesma forma de app/api/riders/search/route.ts: is_active, exclui a
+  // própria conta, ILIKE em name OU rider_id.
+  const buscaPorNome = await expectOk(
+    db,
+    'busca por nome parcial (ILIKE) acha o velejador certo',
+    `SELECT id FROM users
+     WHERE is_active = TRUE AND id <> $1
+       AND (name ILIKE $2 OR rider_id ILIKE $2)
+     ORDER BY name ASC LIMIT 20`,
+    [riderA, '%carla%']
+  );
+  check('busca por nome acha Carla', buscaPorNome.some((r) => r.id === riderC));
+  check(
+    'busca NÃO traz conta inativa (is_active = FALSE)',
+    !buscaPorNome.some((r) => r.id === riderInativo)
+  );
+
+  const buscaPorRiderId = await expectOk(
+    db,
+    'busca por rider_id parcial (ILIKE) acha o velejador certo',
+    `SELECT id FROM users
+     WHERE is_active = TRUE AND id <> $1
+       AND (name ILIKE $2 OR rider_id ILIKE $2)
+     ORDER BY name ASC LIMIT 20`,
+    [riderA, '%200%']
+  );
+  check(
+    'busca por rider_id (2003) acha Carla mesmo sem casar o nome',
+    buscaPorRiderId.some((r) => r.id === riderC)
+  );
+
+  const buscaAutoexclusao = await expectOk(
+    db,
+    'busca exclui a própria conta mesmo quando o termo casa com o próprio nome',
+    `SELECT id FROM users
+     WHERE is_active = TRUE AND id <> $1
+       AND (name ILIKE $2 OR rider_id ILIKE $2)
+     ORDER BY name ASC LIMIT 20`,
+    [riderA, '%rider a%']
+  );
+  check('busca nunca retorna o próprio buscador', !buscaAutoexclusao.some((r) => r.id === riderA));
+
   console.log('\nToggles (chave composta, sem coluna id):');
   const post = await db.query<{ id: string }>(
     `INSERT INTO posts (user_id, title, content) VALUES ($1, 'T', 'C') RETURNING id`,
@@ -1441,6 +1559,18 @@ async function main() {
 
   const orphanSos = await db.query(`SELECT id FROM sos_alerts WHERE user_id = $1`, [riderA]);
   check('sos_alerts morre com o autor', orphanSos.rows.length === 0);
+
+  // riderA seguia B e era seguido por B (seção "Grafo social" acima) — as
+  // duas linhas referenciam riderA, uma por follower_id, outra por
+  // following_id, e as duas colunas têm ON DELETE CASCADE.
+  const orphanFollows = await db.query(
+    `SELECT follower_id, following_id FROM user_follows WHERE follower_id = $1 OR following_id = $1`,
+    [riderA]
+  );
+  check(
+    'user_follows não deixa rastro do usuário apagado (nem como seguidor, nem como seguido)',
+    orphanFollows.rows.length === 0
+  );
 
   const orphanPush = await db.query(`SELECT id FROM push_subscriptions WHERE user_id = $1`, [riderA]);
   check('push_subscriptions morrem com o usuário', orphanPush.rows.length === 0);
