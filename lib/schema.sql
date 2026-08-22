@@ -165,6 +165,46 @@ ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS trilha_reduzida JSONB;
 ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS lat_inicial NUMERIC(9,6);
 ALTER TABLE sessions_log ADD COLUMN IF NOT EXISTS lng_inicial NUMERIC(9,6);
 
+-- Curtir/comentar a SESSÃO diretamente (Fase 3 do plano de rede social,
+-- seção 4.2) — mesmo desenho de post_likes/post_comments abaixo, só que
+-- pendurado em sessions_log em vez de posts. Antes desta tabela, "curtir um
+-- velejo" só funcionava indiretamente (via post_likes JOIN posts, e só se o
+-- autor também tivesse criado um post sobre a sessão) — na prática o contador
+-- do feed era sempre 0. GET /api/feed passa a ler daqui, não da consulta velha.
+CREATE TABLE IF NOT EXISTS session_likes (
+  session_id UUID NOT NULL REFERENCES sessions_log(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- PK composta, sem coluna `id` avulsa — mesmo motivo de user_follows e
+  -- post_likes: a EXISTÊNCIA da linha já é o estado "curtiu". Consequência
+  -- direta (e o ponto principal desta constraint): curtir a mesma sessão duas
+  -- vezes é violação de chave primária no banco, não uma checagem que a UI
+  -- precisa lembrar de fazer — a rota usa ON CONFLICT DO NOTHING por cima,
+  -- mas mesmo um INSERT cru (bug de cliente, replay de rede) nunca duplica.
+  PRIMARY KEY (session_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS session_comments (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions_log(id) ON DELETE CASCADE,
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text       TEXT NOT NULL CHECK (char_length(text) BETWEEN 1 AND 1000),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_comments ON session_comments (session_id, created_at);
+
+-- Consulta do feed (GET /api/feed, Fase 3): keyset por created_at DESC,
+-- SEMPRE filtrando por is_public = TRUE para toda sessão que não é a minha
+-- (lib/social.ts, podeVerSessao) — a própria sessão privada do usuário nunca
+-- passa por este índice porque cai no outro ramo do OR (ver a rota), então um
+-- índice PARCIAL "WHERE is_public" cobre exatamente o ramo caro da consulta:
+-- sessões de quem eu sigo. Sem o parcial, o Postgres teria que varrer e
+-- ordenar TODA sessions_log (inclusive as privadas de todo mundo, que nunca
+-- aparecem no feed de ninguém) só para achar as 15 públicas mais recentes.
+-- Mesmo princípio de idx_sos_active/idx_downwinds_ativos acima.
+CREATE INDEX IF NOT EXISTS idx_sessions_feed ON sessions_log (created_at DESC) WHERE is_public;
+
 -- -------------------------------------------------------- feed da comunidade
 CREATE TABLE IF NOT EXISTS posts (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),

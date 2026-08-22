@@ -178,6 +178,51 @@ export interface SessionLog {
   trilhaReduzida?: Array<[number, number, number]>;
 }
 
+/**
+ * Um item de `GET /api/feed` (Fase 3 do plano de rede social): a sessão de
+ * velejo de alguém que eu sigo (ou minha própria), já com autor, curtidas e
+ * contagem de comentários embutidos — a rota devolve tudo numa única
+ * consulta (ver comentário lá) para o card não fazer N+1 por sessão.
+ *
+ * Não é o mesmo tipo de `SessionLog` (o logbook pessoal, `GET /api/sessions`)
+ * de propósito: o feed nunca precisa de `notes`/`photoUrl` do dono e sempre
+ * precisa de autor+curtidas, que o logbook nunca precisa (é sempre "eu").
+ * Duplicar os poucos campos em comum é mais barato que um tipo genérico que
+ * dois consumidores tão diferentes teriam que forçar a caber.
+ */
+export interface SessionFeedItem {
+  id: string;
+  spotName: string;
+  spotLocation: string;
+  createdAt: string;
+  durationMinutes: number;
+  discipline: Discipline;
+  boardModel?: string;
+  avgWindKnots: number;
+  maxGustKnots?: number;
+  distanceKm?: number;
+  maxSpeedKnots?: number;
+  /** Manual, do logbook — NUNCA calculado do GPS (ver seção 5 do plano: altura
+   * de salto por GPS de celular é ruído, não dado). Ausente = não preenchido. */
+  highestJumpM?: number;
+  /** Mesmo formato de SessionLog.trilhaReduzida — ausente em sessão digitada
+   * à mão, sem GPS. O card nunca desenha mapa/números de trilha nesse caso. */
+  trilhaReduzida?: Array<[number, number, number]>;
+  authorId: string;
+  authorName: string;
+  authorAvatarUrl?: string;
+  authorRiderId: string;
+  authorCountryFlag: string;
+  /** Quantas curtidas a sessão tem agora (já contando a minha, se eu curti). */
+  curtidas: number;
+  /** Se EU curti esta sessão — a rota já resolve isso pelo cookie de sessão,
+   * então o card nunca precisa perguntar de novo. */
+  euCurti: boolean;
+  /** Só a contagem nesta fase — ler/escrever comentário é a Fase 4 (tela de
+   * detalhe da sessão), de propósito (ver docs/PLANO-REDE-SOCIAL.md). */
+  comentarios: number;
+}
+
 export interface CommunityPost {
   id: string;
   authorName: string;

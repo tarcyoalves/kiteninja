@@ -557,6 +557,273 @@ async function main() {
   );
   check('busca nunca retorna o próprio buscador', !buscaAutoexclusao.some((r) => r.id === riderA));
 
+  console.log('\nCurtir sessão diretamente (Fase 3 do plano de rede social):');
+
+  // sessAId (criada na seção "Isolamento entre velejadores" acima) é pública
+  // e pertence a riderA. B curte diretamente — sem post intermediário, ao
+  // contrário do likesCount antigo (post_likes JOIN posts) que o plano
+  // descarta por nunca funcionar na prática.
+  await expectOk(
+    db,
+    'B curte a sessão pública de A diretamente (session_likes, sem post no meio)',
+    `INSERT INTO session_likes (session_id, user_id) VALUES ($1, $2)`,
+    [sessAId, riderB]
+  );
+
+  // PK composta (session_id, user_id): curtir de novo é violação de chave
+  // primária no banco, não uma checagem que a UI precisa lembrar — a rota
+  // real usa ON CONFLICT DO NOTHING (ver app/api/sessions/[id]/like), mas
+  // aqui o INSERT cru sem ON CONFLICT prova que a constraint existe.
+  await expectFail(
+    db,
+    'PK composta de session_likes barra curtir a mesma sessão duas vezes',
+    `INSERT INTO session_likes (session_id, user_id) VALUES ($1, $2)`,
+    [sessAId, riderB]
+  );
+
+  const curtidasDeA = await db.query<{ cnt: number }>(
+    `SELECT COUNT(*)::int AS cnt FROM session_likes WHERE session_id = $1`,
+    [sessAId]
+  );
+  check(
+    'sessão de A tem exatamente 1 curtida (a duplicata foi rejeitada, não somada)',
+    Number(curtidasDeA.rows[0].cnt) === 1
+  );
+
+  console.log('\nFeed de velejos com paginação keyset (Fase 3 do plano de rede social):');
+
+  // Datas fixas (não NOW() com offset): o teste de keyset precisa de uma
+  // ordem determinística entre estas 4 sessões, sem depender de quão rápido
+  // o resto do script rodou antes de chegar aqui.
+  const T0 = '2024-01-01T00:00:00Z'; // sessAId é atualizada para esta data
+  const T1 = '2024-01-01T00:01:00Z'; // sessão pública de B (mais nova que A)
+  const T2 = '2024-01-01T00:02:00Z'; // sessão PRIVADA de B — nunca deve aparecer no feed de A
+  const T3 = '2024-01-01T00:03:00Z'; // 2ª sessão pública de B (a mais nova visível)
+  const T4 = '2024-01-01T00:04:00Z'; // sessão pública de C — C não é seguido por A
+
+  // riderA já tem OUTRAS sessões além de sessAId (as da seção "Trilha na
+  // sessão solo" acima, já totalmente verificadas ali) — se sobrassem aqui,
+  // apareceriam nas duas páginas deste teste só por serem "minhas", com
+  // datas que não dão pra prever de antemão (created_at = NOW() real).
+  // Removidas para este teste ter exatamente as sessões que ele controla.
+  await db.query(`DELETE FROM sessions_log WHERE user_id = $1 AND id <> $2`, [riderA, sessAId]);
+  await db.query(`UPDATE sessions_log SET created_at = $2 WHERE id = $1`, [sessAId, T0]);
+
+  const sessBPublica1 = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating, is_public, created_at)
+       VALUES ($1, 'Cumbuco', 'CE', CURRENT_DATE, '11:00', 60, 'Kitesurf Twintip', 12, 20, 5, TRUE, $2)
+       RETURNING id`,
+      [riderB, T1]
+    )
+  ).rows[0].id;
+
+  const sessBPrivada = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating, is_public, created_at)
+       VALUES ($1, 'Cumbuco', 'CE', CURRENT_DATE, '12:00', 60, 'Kitesurf Twintip', 12, 20, 5, FALSE, $2)
+       RETURNING id`,
+      [riderB, T2]
+    )
+  ).rows[0].id;
+
+  // TESTE DE NEGAÇÃO exigido pela seção 4.2/critérios de aceite do plano:
+  // app/api/sessions/[id]/like/route.ts (exigirSessaoVisivel) busca
+  // `user_id, is_public` da sessão e aplica a MESMA decisão de
+  // `lib/social.ts` (`podeVerSessao`) antes de deixar o INSERT em
+  // session_likes acontecer. Réplica aqui da busca + decisão, provando que
+  // C (que nem segue B) não pode curtir a sessão PRIVADA de B mesmo sabendo
+  // o id dela de antemão — sem isto, um UUID adivinhado bastaria para curtir
+  // (e, pela mesma rota, confirmar a existência de) uma sessão privada.
+  const alvoParaCurtida = (
+    await db.query<{ user_id: string; is_public: boolean }>(
+      `SELECT user_id, is_public FROM sessions_log WHERE id = $1 LIMIT 1`,
+      [sessBPrivada]
+    )
+  ).rows[0];
+  const podeCVerSessaoPrivadaDeB =
+    alvoParaCurtida.user_id === riderC || alvoParaCurtida.is_public;
+  check(
+    'C NÃO pode curtir a sessão privada de B mesmo conhecendo o id (nega antes do INSERT em session_likes)',
+    !podeCVerSessaoPrivadaDeB
+  );
+  const podeBVerAPropriaSessaoPrivada =
+    alvoParaCurtida.user_id === riderB || alvoParaCurtida.is_public;
+  check(
+    'B (o dono) continua podendo curtir a própria sessão privada — a negação é só para TERCEIROS',
+    podeBVerAPropriaSessaoPrivada
+  );
+
+  const sessBPublica2 = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating, is_public, created_at)
+       VALUES ($1, 'Cumbuco', 'CE', CURRENT_DATE, '13:00', 60, 'Kitesurf Twintip', 12, 20, 5, TRUE, $2)
+       RETURNING id`,
+      [riderB, T3]
+    )
+  ).rows[0].id;
+
+  const sessCPublica = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating, is_public, created_at)
+       VALUES ($1, 'Taíba', 'CE', CURRENT_DATE, '14:00', 60, 'Kitesurf Twintip', 12, 20, 5, TRUE, $2)
+       RETURNING id`,
+      [riderC, T4]
+    )
+  ).rows[0].id;
+
+  // Réplica exata da condição de app/api/feed/route.ts: minha sessão sempre
+  // entra; a de quem eu sigo só entra pública — a MESMA forma de
+  // lib/social.ts (podeVerSessao), não uma condição solta reinventada aqui.
+  const consultaFeed = `
+    SELECT s.id, s.created_at
+    FROM sessions_log s
+    WHERE (
+      s.user_id = $1
+      OR (
+        s.is_public = TRUE
+        AND EXISTS (SELECT 1 FROM user_follows f WHERE f.follower_id = $1 AND f.following_id = s.user_id)
+      )
+    )
+    AND ($2::timestamptz IS NULL OR s.created_at < $2::timestamptz)
+    ORDER BY s.created_at DESC
+    LIMIT $3
+  `;
+
+  const paginaUm = await expectOk(
+    db,
+    'feed de A (página 1, sem cursor): busca PAGE_SIZE+1 para saber se há próxima página',
+    consultaFeed,
+    [riderA, null, 3]
+  );
+  check(
+    'página 1 traz as 3 mais novas visíveis, na ordem certa (mais nova primeiro)',
+    paginaUm.map((r) => String(r.id)).join(',') ===
+      [sessBPublica2, sessBPublica1, sessAId].join(',')
+  );
+  check(
+    'sessão PRIVADA de B (terceiro) NÃO aparece no feed de A, mesmo A seguindo B',
+    !paginaUm.some((r) => String(r.id) === sessBPrivada)
+  );
+  check(
+    'sessão pública de C NÃO aparece no feed de A — A não segue C (feed não é "toda sessão pública do app")',
+    !paginaUm.some((r) => String(r.id) === sessCPublica)
+  );
+
+  // A rota real pede PAGE_SIZE+1 e devolve só os PAGE_SIZE primeiros como
+  // página; aqui simulamos isso com PAGE_SIZE=2 para testar o cursor.
+  const pagina1Recortada = paginaUm.slice(0, 2);
+  // `new Date(...).toISOString()`, não `String(...)`: o driver devolve
+  // `created_at` como objeto `Date` (não string), e `String(Date)` produz o
+  // formato de calendário do JS ("Sat Aug 22 2026...") — inválido para
+  // `::timestamptz`. `new Date(...)` aceita tanto `Date` quanto string ISO
+  // sem diferença, então funciona igual à rota real (que recebe a string ISO
+  // já formatada pelo `?cursor=` da URL).
+  const cursorPagina2 = new Date(
+    pagina1Recortada[pagina1Recortada.length - 1].created_at as string | Date
+  ).toISOString();
+
+  const paginaDois = await expectOk(
+    db,
+    'feed de A (página 2, com o cursor da página 1): respeita created_at < cursor',
+    consultaFeed,
+    [riderA, cursorPagina2, 3]
+  );
+  check(
+    'página 2 traz só o que sobrou (sessAId), sem repetir o que a página 1 já devolveu',
+    paginaDois.length === 1 && String(paginaDois[0].id) === sessAId
+  );
+
+  console.log('\nCascata de curtidas/comentários de sessão (Fase 3):');
+
+  await db.query(
+    `INSERT INTO session_comments (session_id, user_id, text) VALUES ($1, $2, 'baita sessão, parabéns!')`,
+    [sessAId, riderB]
+  );
+
+  // Sessão descartável só para testar a cascata de APAGAR A SESSÃO (não
+  // queremos apagar sessAId agora — ela ainda serve a outros checks acima).
+  const sessDescartavelId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating)
+       VALUES ($1, 'X', 'Y', CURRENT_DATE, '10:00', 60, 'Kitesurf Twintip', 9, 18, 5) RETURNING id`,
+      [riderA]
+    )
+  ).rows[0].id;
+  await db.query(`INSERT INTO session_likes (session_id, user_id) VALUES ($1, $2)`, [
+    sessDescartavelId,
+    riderB,
+  ]);
+  await db.query(
+    `INSERT INTO session_comments (session_id, user_id, text) VALUES ($1, $2, 'boa!')`,
+    [sessDescartavelId, riderB]
+  );
+
+  await db.query(`DELETE FROM sessions_log WHERE id = $1`, [sessDescartavelId]);
+
+  const likesOrfaosDeSessao = await db.query(
+    `SELECT session_id FROM session_likes WHERE session_id = $1`,
+    [sessDescartavelId]
+  );
+  check('curtidas morrem junto com a sessão apagada (ON DELETE CASCADE por session_id)', likesOrfaosDeSessao.rows.length === 0);
+
+  const commentsOrfaosDeSessao = await db.query(
+    `SELECT session_id FROM session_comments WHERE session_id = $1`,
+    [sessDescartavelId]
+  );
+  check(
+    'comentários morrem junto com a sessão apagada (ON DELETE CASCADE por session_id)',
+    commentsOrfaosDeSessao.rows.length === 0
+  );
+
+  // Caminho de cascata DIFERENTE: não é a sessão que morre, é quem curtiu.
+  // Usuário descartável só para isolar este teste sem mexer em riderA/B/C.
+  const riderDescartavel = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('descartavel@t.local', '$2b$12$x', 'Rider Descartável', '9999') RETURNING id`
+    )
+  ).rows[0].id;
+
+  await db.query(`INSERT INTO session_likes (session_id, user_id) VALUES ($1, $2)`, [
+    sessBPublica1,
+    riderDescartavel,
+  ]);
+  await db.query(
+    `INSERT INTO session_comments (session_id, user_id, text) VALUES ($1, $2, 'irado!')`,
+    [sessBPublica1, riderDescartavel]
+  );
+
+  await db.query(`DELETE FROM users WHERE id = $1`, [riderDescartavel]);
+
+  const likesDoUsuarioApagado = await db.query(
+    `SELECT user_id FROM session_likes WHERE user_id = $1`,
+    [riderDescartavel]
+  );
+  check(
+    'curtidas de um usuário apagado somem (ON DELETE CASCADE por user_id), sem apagar a sessão curtida',
+    likesDoUsuarioApagado.rows.length === 0
+  );
+
+  const commentsDoUsuarioApagado = await db.query(
+    `SELECT user_id FROM session_comments WHERE user_id = $1`,
+    [riderDescartavel]
+  );
+  check('comentários de um usuário apagado somem junto', commentsDoUsuarioApagado.rows.length === 0);
+
+  const sessBPublica1AindaExiste = await db.query(`SELECT id FROM sessions_log WHERE id = $1`, [
+    sessBPublica1,
+  ]);
+  check(
+    'a sessão curtida/comentada continua existindo — só a curtida/comentário do usuário apagado sumiu',
+    sessBPublica1AindaExiste.rows.length === 1
+  );
+
   console.log('\nToggles (chave composta, sem coluna id):');
   const post = await db.query<{ id: string }>(
     `INSERT INTO posts (user_id, title, content) VALUES ($1, 'T', 'C') RETURNING id`,
