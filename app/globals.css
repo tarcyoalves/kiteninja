@@ -330,3 +330,25 @@ html[data-modo='praia'] {
   margin-left: 0 !important;
   margin-top: 0 !important;
 }
+
+/* Card do feed de velejos (Fase 3 do plano de rede social, seção 3
+   "Fluidez"): content-visibility:auto deixa o navegador pular o layout/pintura
+   de todo card fora da tela, o mesmo princípio de content-visibility da regra
+   `rendering-content-visibility` (skill vercel-react-best-practices) — com
+   dezenas de cards na lista, só os poucos visíveis custam layout de verdade.
+   `contain-intrinsic-size` evita o salto de scroll que aconteceria sem uma
+   altura reservada: é uma estimativa (card com mapa + faixa de números +
+   rodapé), não precisa ser exata, só evitar reservar 0px. */
+.feed-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 420px;
+}
+
+/* Fade-in do Leaflet real por cima da miniatura SVG (components/CardSessaoFeed.tsx).
+   A miniatura já preenche o mesmo fundo escuro (#090e1a) por baixo, então este
+   fade nunca passa por um instante de branco — só troca "traço simples" por
+   "satélite de verdade" suavemente. */
+@keyframes fadeInMapa {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
