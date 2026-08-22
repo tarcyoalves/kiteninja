@@ -13,9 +13,10 @@ import { formatDistance } from '@/lib/geoFormat';
 import { WindParticleLayer } from './WindParticleLayer';
 import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
+import { MAP_TILES, type MapStyle } from '@/lib/mapTiles';
 
 export type MapLayer = 'vento' | 'rajadas' | 'ondas';
-export type MapStyle = 'oceanico' | 'satelite' | 'escuro';
+export type { MapStyle };
 
 /** Dados de SOS ativo para renderização no mapa */
 export interface ActiveSosMapData {
@@ -325,8 +326,10 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
     onSelectSpot(spot);
   }, [onSelectSpot]);
 
-  // Estilo do mapa: oceânico claro por padrão (Voyager), com opção de satélite e noturno
-  const [mapStyle, setMapStyle] = useState<MapStyle>('oceanico');
+  // Estilo do mapa: satélite por padrão — é o "mapa realista" pedido para a
+  // futura timeline social (docs/PLANO-REDE-SOCIAL.md, Fase 0), com oceânico
+  // claro (Voyager) e noturno como alternativas.
+  const [mapStyle, setMapStyle] = useState<MapStyle>('satelite');
 
   // Detectar preferência de movimento reduzido para desativar animações
   const [reduceMotion, setReduceMotion] = useState(false);
@@ -390,14 +393,12 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               setMapStyle((prev) => (prev === 'oceanico' ? 'satelite' : prev === 'satelite' ? 'escuro' : 'oceanico'));
             }}
             className="p-2.5 rounded-2xl bg-[#0F172A]/90 backdrop-blur-md border border-slate-700/80 text-cyan-300 pointer-events-auto hover:bg-slate-800 active:scale-95 shadow-xl transition-all flex items-center gap-1 text-xs font-bold"
-            title={`Alternar estilo do mapa (Atual: ${
-              mapStyle === 'oceanico' ? 'Oceânico Claro' : mapStyle === 'satelite' ? 'Satélite' : 'Noturno'
-            })`}
+            title={`Alternar estilo do mapa (Atual: ${MAP_TILES[mapStyle].rotulo})`}
             aria-label="Alternar estilo do mapa"
           >
             <Layers size={17} />
             <span className="hidden sm:inline text-[11px] font-bold text-slate-200">
-              {mapStyle === 'oceanico' ? 'Claro' : mapStyle === 'satelite' ? 'Satélite' : 'Escuro'}
+              {MAP_TILES[mapStyle].rotulo}
             </span>
           </button>
 
@@ -447,22 +448,12 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           zoomControl={false}
           whenReady={() => setMapReady(true)}
         >
-          {/*
-            Tile layer dinâmico:
-            - oceanico: CartoDB Voyager (mapa claro, com oceano azul, praias e relevo perfeitos)
-            - satelite: Esri World Imagery (satélite em alta definição)
-            - escuro: CartoDB Dark Matter
-          */}
+          {/* Tile layer dinâmico — URL, atribuição e rótulo vêm todos de
+              lib/mapTiles.ts (fonte única, ver comentário lá). */}
           <TileLayer
             key={mapStyle}
-            attribution=""
-            url={
-              mapStyle === 'oceanico'
-                ? 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-                : mapStyle === 'satelite'
-                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-            }
+            attribution={MAP_TILES[mapStyle].attribution}
+            url={MAP_TILES[mapStyle].url}
             noWrap={false}
           />
 

@@ -10,6 +10,7 @@ import { estadoSinal } from '@/lib/downwind';
 import { corDoUsuario, COR_SINAL } from '@/lib/downwindCores';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
 import { dividirCauda, type PontoTrilha } from '@/lib/trilhaDownwind';
+import { MAP_TILES } from '@/lib/mapTiles';
 import type { DownwindParticipanteMapa } from '@/lib/useDownwindPosicoes';
 import type { DownwindPonto } from '@/context/DownwindContext';
 
@@ -251,19 +252,21 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
       center={centroInicial ?? [-4.5, -37.5]}
       zoom={DEFAULT_ZOOM}
       zoomControl={false}
-      attributionControl={false}
       className="w-full h-full"
       style={{ background: '#e5e7eb' }}
     >
-      {/* Mesmo tile "oceânico" (voyager) que o mapa principal usa por padrão
-          (components/LeafletMap.tsx, mapStyle inicial 'oceanico') — o mapa do
-          downwind nasceu com o tile escuro de propósito (fundo pro rastro/
-          trilha "brilhar"), mas o pedido foi ficar igual ao mapa geral, claro,
-          para não parecer uma tela diferente do resto do app. */}
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-        attribution=""
-      />
+      {/* Tile "oceânico" (voyager), fixo — de lib/mapTiles.ts (fonte única,
+          ver comentário lá). O mapa do downwind nasceu com o tile escuro de
+          propósito (fundo pro rastro/trilha "brilhar"), mas o pedido foi
+          ficar igual ao estilo claro do mapa geral, para não parecer uma tela
+          diferente do resto do app — isso não mudou com a Fase 0 do plano de
+          rede social (docs/PLANO-REDE-SOCIAL.md), que troca o PADRÃO do mapa
+          geral para satélite mas não pediu o mesmo aqui: este mapa não tem
+          seletor de estilo, e claro/voyager é o que dá mais contraste para o
+          rastro e os pinos de participantes por cima.
+          `attributionControl` sem `false`: CartoDB exige atribuição visível,
+          e o controle padrão do Leaflet a desenha discretamente no canto. */}
+      <TileLayer url={MAP_TILES.oceanico.url} attribution={MAP_TILES.oceanico.attribution} />
       <MapaController centro={centroInicial} ehPosicaoPropria={minhaPosicaoPropria !== null} />
 
       {saida && (

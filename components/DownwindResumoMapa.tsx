@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { MAP_TILES } from '@/lib/mapTiles';
 
 /**
  * Mini-mapa do resumo pós-downwind: a trilha de UM participante selecionado
@@ -71,13 +72,16 @@ export const DownwindResumoMapa: React.FC<DownwindResumoMapaProps> = ({
       center={centroFallback}
       zoom={13}
       zoomControl={false}
-      attributionControl={false}
       dragging={true}
       scrollWheelZoom={false}
       className="w-full h-full"
       style={{ background: '#090e1a' }}
     >
-      <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution="" />
+      {/* Satélite por padrão — é o "estilo realista" pedido em
+          docs/PLANO-REDE-SOCIAL.md (Fase 0). `attributionControl` fica no
+          padrão do Leaflet (ligado): Esri exige atribuição visível, e sem o
+          controle o `attribution` abaixo não apareceria em lugar nenhum. */}
+      <TileLayer url={MAP_TILES.satelite.url} attribution={MAP_TILES.satelite.attribution} />
       <EnquadrarBounds pontos={todosPontos} />
 
       {saida && <Marker position={[saida.lat, saida.lng]} icon={criarIconePonto('#0ea5e9', 'A')} />}
@@ -85,7 +89,16 @@ export const DownwindResumoMapa: React.FC<DownwindResumoMapaProps> = ({
 
       {pontosTrilha.length > 1 && (
         <>
-          <Polyline positions={pontosTrilha} pathOptions={{ color: '#ffffff', weight: 6, opacity: 0.25 }} />
+          {/* Casing em DUAS cores (preto por fora, branco por dentro), não uma
+              só: o corpo do dark_all anterior era uniformemente escuro, então
+              um halo branco sozinho já garantia contraste. Satélite real varia
+              muito de brilho no mesmo mapa (oceano escuro, areia clara, mata
+              verde) — um halo de uma cor só falha contra metade dos casos. As
+              duas camadas juntas criam uma borda clara-e-escura que se destaca
+              tanto sobre pixel claro quanto escuro, qualquer que seja o trecho
+              do satélite por baixo. */}
+          <Polyline positions={pontosTrilha} pathOptions={{ color: '#000000', weight: 8, opacity: 0.35 }} />
+          <Polyline positions={pontosTrilha} pathOptions={{ color: '#ffffff', weight: 5, opacity: 0.55 }} />
           <Polyline positions={pontosTrilha} pathOptions={{ color: cor, weight: 3, opacity: 0.95 }} />
         </>
       )}
