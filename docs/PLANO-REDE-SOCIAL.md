@@ -1,7 +1,8 @@
 # Plano — KiteNinja como rede social de velejo
 
-Status: **Fases 0 e 1 implementadas** (21/08/2026, commits `f7f6a3d` e
-`856f929`); Fases 2 a 5 pendentes. Escrito em 21/08/2026 a partir de um
+Status: **Fases 0 a 3 implementadas** (21-22/08/2026 — `f7f6a3d`, `856f929`,
+`a74d774`, `be50b25`, `355ce05`). Fases 4 e 5 pendentes, **e trocadas de
+ordem** — ver "Reordenação" no fim da seção 7. Escrito em 21/08/2026 a partir de um
 pedido do dono, com prints do app **Surfr** como referência visual:
 
 > "Pensando no futuro do app para abrirmos para o público geral vamos adotar
@@ -295,6 +296,28 @@ tela de detalhe (mapa full-bleed + folha + estatísticas), botão Seguir.
 
 **Fase 5 — Descobrir pessoas.** Aba People no Discover, sugestões por spot em
 comum, contadores de seguidores.
+
+### Reordenação decidida depois da Fase 3 (22/08/2026)
+
+As Fases 4 e 5 **trocam de ordem**. Motivo, encontrado ao revisar a Fase 3
+pronta: a Fase 2 entregou busca e "seguir" **só como API, sem nenhuma tela**.
+O resultado é que o feed novo abre vazio e o próprio estado vazio manda
+"Siga outros velejadores para ver os velejos deles aqui" — uma instrução que
+o usuário **não tem como cumprir**, porque não existe tela de busca em lugar
+nenhum. Enquanto isso não fechar, o feed inteiro (Fase 3) é código morto na
+prática, por mais correto que esteja.
+
+Detalhe da sessão (mapa full-bleed + abas), que era a Fase 4, é polimento de
+algo que já se vê no card. Fechar o ciclo **achar → seguir → ver o velejo**
+é o que faz a funcionalidade existir. Então:
+
+- **Fase 4 (nova) — Descobrir e seguir.** Tela/folha de busca de velejadores
+  (consumindo o `GET /api/riders/search` que já existe), botão Seguir com
+  estado otimista, e perfil público do velejador com os velejos visíveis
+  dele. O estado vazio do feed passa a levar direto para a busca.
+- **Fase 5 (nova) — Detalhe da sessão + comentários.** Tela de detalhe
+  (mapa full-bleed + folha + estatísticas) e a UI de ler/escrever comentário,
+  que a Fase 3 deixou só como contagem.
 
 ## 8. Critérios de aceite
 
