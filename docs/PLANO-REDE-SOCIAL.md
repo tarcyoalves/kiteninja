@@ -1,6 +1,7 @@
 # Plano — KiteNinja como rede social de velejo
 
-Status: **plano, nada implementado.** Escrito em 21/08/2026 a partir de um
+Status: **Fases 0 e 1 implementadas** (21/08/2026, commits `f7f6a3d` e
+`856f929`); Fases 2 a 5 pendentes. Escrito em 21/08/2026 a partir de um
 pedido do dono, com prints do app **Surfr** como referência visual:
 
 > "Pensando no futuro do app para abrirmos para o público geral vamos adotar
