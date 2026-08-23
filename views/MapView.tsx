@@ -6,7 +6,7 @@ import { useKiteData } from '../context/KiteDataContext';
 import { Spot } from '../types';
 import { Loader2, Navigation } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
-import { MapLayer, UserPosition } from '@/components/LeafletMap';
+import { UserPosition } from '@/components/LeafletMap';
 import { ModoNavegacao, ResumoNavegacao } from '@/components/ModoNavegacao';
 import { paraPrefillLogbook, valePenaRegistrarSessao } from '@/lib/trilhaSessao';
 
@@ -48,7 +48,6 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     abrirLoggerComResumo,
   } = useKiteData();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
-  const [activeLayer, setActiveLayer] = useState<MapLayer>('vento');
   const [locateStatus, setLocateStatus] = useState<
     'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout'
   >('idle');
@@ -82,10 +81,6 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     },
     [abrirLoggerComResumo]
   );
-
-  const handleLayerChange = useCallback((layer: MapLayer) => {
-    setActiveLayer(layer);
-  }, []);
 
   const handleSelectSpot = useCallback((spot: Spot) => {
     setSelectedMapSpot(spot);
@@ -300,8 +295,6 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
           spots={spots}
           selectedSpot={selectedMapSpot}
           onSelectSpot={handleSelectSpot}
-          activeLayer={activeLayer}
-          onLayerChange={handleLayerChange}
           onLocateUser={handleLocateButtonClick}
           recenterTrigger={recenterTick}
           locateStatus={locateStatus}
@@ -313,7 +306,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
 
       {/* Entrada do Modo Navegação (referência: botão de PLAY do Wind Maps).
           Fica no meio da lateral direita de propósito: o topo já é ocupado
-          pelos controles de camada/estilo/localização do LeafletMap (mais o
+          pelos controles de estilo/localização do LeafletMap (mais o
           aviso de GPS, quando aparece), e o rodapé é ocupado pelo menu
           flutuante (altura real em --nav-h). Um ponto fixo na metade
           vertical da tela nunca cai dentro de nenhuma dessas duas faixas,

@@ -11,11 +11,10 @@ import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
 import { WindParticleLayer } from './WindParticleLayer';
-import { Wind, Waves, Zap, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
+import { Wind, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
 import { MAP_TILES, type MapStyle } from '@/lib/mapTiles';
 
-export type MapLayer = 'vento' | 'rajadas' | 'ondas';
 export type { MapStyle };
 
 /** Dados de SOS ativo para renderização no mapa */
@@ -50,8 +49,6 @@ interface LeafletMapProps {
   spots: Spot[];
   selectedSpot: Spot | null;
   onSelectSpot: (spot: Spot) => void;
-  activeLayer: MapLayer;
-  onLayerChange: (layer: MapLayer) => void;
   onLocateUser: () => void;
   locateStatus: 'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout';
   nearestSpotInfo: { spot: Spot; distanceKm: number } | null;
@@ -129,26 +126,9 @@ function MapController({
 }
 
 /** Criar DivIcon com o pin colorido */
-function createSpotIcon(spot: Spot, layer: MapLayer): L.DivIcon {
+function createSpotIcon(spot: Spot): L.DivIcon {
   const { bg, border } = getWindColorClass(spot.currentKnots);
-
-  let value: string;
-  let icon: React.ReactNode;
-
-  switch (layer) {
-    case 'rajadas':
-      value = `${spot.maxKnots}`;
-      icon = <Zap size={10} className="text-white/90" />;
-      break;
-    case 'ondas':
-      // Sem dado de onda o pino mostra "–" em vez de 0.0, que seria mar liso.
-      value = spot.waveHeightM === null ? '–' : `${spot.waveHeightM.toFixed(1)}`;
-      icon = <Waves size={10} className="text-white/90" />;
-      break;
-    default:
-      value = `${spot.currentKnots}`;
-      icon = <Wind size={10} className="text-white/90" />;
-  }
+  const value = `${spot.currentKnots}`;
 
   const html = `
     <div class="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-black shadow-xl border-2 ${bg} ${border} text-white whitespace-nowrap backdrop-blur-xs">
@@ -237,8 +217,6 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   spots,
   selectedSpot,
   onSelectSpot,
-  activeLayer,
-  onLayerChange,
   onLocateUser,
   locateStatus,
   nearestSpotInfo,
@@ -364,57 +342,15 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Layer Selector Controls + Locate Status Message: um wrapper só, em
-          fluxo normal (flex-col), em vez de dois blocos `absolute`
-          independentes com `top` fixo em pixel. Antes o aviso verde usava
-          `top-20` chutando a altura da fileira de cima — em telas estreitas
-          essa fileira quebra em duas linhas (flex-wrap) e passa dos ~80px
-          previstos, o aviso ficava por cima dos ícones. Empilhando os dois
-          em fluxo normal, o aviso sempre nasce logo abaixo da fileira,
-          quebrada em uma ou duas linhas, sem depender de nenhum número
-          mágico. */}
+      {/* Ícones de topo + Locate Status Message: um wrapper só, em fluxo
+          normal (flex-col), em vez de dois blocos `absolute` independentes
+          com `top` fixo em pixel. Antes o aviso verde usava `top-20`
+          chutando a altura da fileira de cima, e quebrava se essa altura
+          mudasse por qualquer motivo. Empilhando os dois em fluxo normal, o
+          aviso sempre nasce logo abaixo da fileira, sem depender de nenhum
+          número mágico. */}
       <div className="absolute top-3 left-3 right-3 z-map-ui flex flex-col gap-2 pointer-events-none">
-        <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
-        <div className="flex items-center gap-1.5 bg-[#0F172A]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700/80 pointer-events-auto shadow-2xl text-xs font-black text-white">
-          <button
-            onClick={() => onLayerChange('vento')}
-            aria-pressed={activeLayer === 'vento'}
-            className={`px-3 py-1 rounded-xl transition-all flex items-center gap-1.5 ${
-              activeLayer === 'vento'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Wind size={13} />
-            <span>Vento</span>
-          </button>
-          <button
-            onClick={() => onLayerChange('rajadas')}
-            aria-pressed={activeLayer === 'rajadas'}
-            className={`px-3 py-1 rounded-xl transition-all flex items-center gap-1.5 ${
-              activeLayer === 'rajadas'
-                ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Zap size={13} />
-            <span>Rajadas</span>
-          </button>
-          <button
-            onClick={() => onLayerChange('ondas')}
-            aria-pressed={activeLayer === 'ondas'}
-            className={`px-3 py-1 rounded-xl transition-all flex items-center gap-1.5 ${
-              activeLayer === 'ondas'
-                ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
-                : 'text-slate-400 hover:text-white'
-            }`}
-          >
-            <Waves size={13} />
-            <span>Ondas</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2">
           {/* Alterna estilo do mapa (Oceânico Claro / Satélite / Noturno) */}
           <button
             onClick={() => {
@@ -466,7 +402,6 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               <LocateFixed size={18} className="stroke-[2.5]" />
             )}
           </button>
-        </div>
         </div>
 
         {/* Locate Status Message — em fluxo normal logo abaixo da fileira
@@ -562,19 +497,15 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
           <MapController center={mapCenter} zoom={mapZoom} />
 
-          {/* Partículas seguindo a direção real de cada spot (Open-Meteo).
-              Só na camada de vento/rajadas: sobre "ondas" competiria com a
-              informação que o usuário escolheu ver. */}
-          {activeLayer !== 'ondas' && (
-            <WindParticleLayer spots={spots} paused={!windAnim} />
-          )}
+          {/* Partículas seguindo a direção real de cada spot (Open-Meteo). */}
+          <WindParticleLayer spots={spots} paused={!windAnim} />
 
           {/* Spot Markers */}
           {spots.map((spot) => (
             <Marker
               key={spot.id}
               position={[spot.lat, spot.lng]}
-              icon={createSpotIcon(spot, activeLayer)}
+              icon={createSpotIcon(spot)}
               eventHandlers={{
                 click: () => handleMarkerClick(spot),
               }}
@@ -655,7 +586,7 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
       {/* Legend */}
       <div className="absolute bottom-28 left-3 z-map-ui bg-[#0F172A]/90 backdrop-blur-md p-2.5 rounded-2xl border border-slate-700/80 text-[10px] text-white space-y-1 shadow-xl hidden sm:block">
         <span className="font-black block text-slate-400 uppercase text-[9px] tracking-wider">
-          {activeLayer === 'vento' ? 'Vento (nós)' : activeLayer === 'rajadas' ? 'Rajada (nós)' : 'Ondas (m)'}
+          Vento (nós)
         </span>
         <div className="flex items-center gap-1.5">
           <span className="w-2.5 h-2.5 rounded-full bg-sky-500 shadow-xs shadow-sky-500" />
