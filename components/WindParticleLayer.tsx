@@ -213,12 +213,34 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     }
     reprojetarRef.current = reprojetar;
 
-    function aoMoverOuZoom() {
-      projetarSpots();
+    /**
+     * O canvas é um `<div>` solto, irmão do mapa, `position:absolute` sobre
+     * o container — de propósito (`pointer-events:none`, ver acima), mas por
+     * não ser filho do pane que o Leaflet arrasta via CSS transform durante
+     * o gesto de pan, ele NÃO se move junto com os tiles enquanto o dedo
+     * arrasta. O rastro já desenhado (a técnica de "destination-out" para o
+     * efeito de trilha esmaecendo) fica preso na geografia do frame
+     * anterior, e as partículas novas são projetadas na geografia do frame
+     * atual — os dois num MESMO canvas, gerando risco visual (as "linhas de
+     * bug" relatadas) enquanto o mapa se move.
+     *
+     * Por cima disso, `aoMoverOuZoom` reprojetava TODOS os spots a cada
+     * evento `move`, que dispara a cada tick do gesto de arrastar (não só
+     * no fim) — em cima da própria animação já rodando a até 60fps, essa
+     * dupla carga é o "pesado ao movimentar o mapa" relatado.
+     *
+     * Correção: pausa a animação (que já limpa o canvas, `parar()`) assim
+     * que o gesto começa, e só reprojeta e retoma quando ele termina.
+     * Durante o arrasto o mapa fica só com os tiles/marcadores do próprio
+     * Leaflet (que se movem corretamente), sem a camada de vento por cima —
+     * e sem rastro desalinhado nem custo de reprojeção contínua.
+     */
+    function aoIniciarMovimento() {
+      parar();
     }
 
     function aoTerminarMoverOuZoom() {
-      projetarSpots();
+      reprojetar();
     }
 
     function aoTrocarVisibilidade() {
@@ -226,8 +248,8 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
       else if (!paused) iniciar();
     }
 
-    map.on('move', aoMoverOuZoom);
-    map.on('zoom', aoMoverOuZoom);
+    map.on('movestart', aoIniciarMovimento);
+    map.on('zoomstart', aoIniciarMovimento);
     map.on('moveend', aoTerminarMoverOuZoom);
     map.on('zoomend', aoTerminarMoverOuZoom);
     map.on('resize', () => {
@@ -259,8 +281,8 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
     return () => {
       reprojetarRef.current = null;
       parar();
-      map.off('move', aoMoverOuZoom);
-      map.off('zoom', aoMoverOuZoom);
+      map.off('movestart', aoIniciarMovimento);
+      map.off('zoomstart', aoIniciarMovimento);
       map.off('moveend', aoTerminarMoverOuZoom);
       map.off('zoomend', aoTerminarMoverOuZoom);
       document.removeEventListener('visibilitychange', aoTrocarVisibilidade);
