@@ -167,6 +167,18 @@ export function escolherVideoParaExibicao(
 }
 
 /**
+ * Extensão de arquivo a partir do content-type. Compartilhada entre cliente e
+ * servidor: desde que o upload passou a ir direto do navegador para o Blob
+ * (ver app/api/admin/intro-video/route.ts), é o CLIENTE quem monta o
+ * `pathname` do arquivo — a rota só confere que ele começa com `intro/`.
+ */
+export function extensaoDeVideo(mime: string): string {
+  if (mime === 'video/webm') return 'webm';
+  if (mime === 'video/quicktime') return 'mov';
+  return 'mp4';
+}
+
+/**
  * Confere se o trecho é utilizável. Compartilhada entre a rota e o painel para
  * que a mensagem de erro seja a mesma nos dois lados.
  */

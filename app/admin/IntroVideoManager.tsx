@@ -18,9 +18,11 @@ import {
   Link as LinkIcon,
   Scissors,
 } from 'lucide-react';
+import { upload } from '@vercel/blob/client';
 import { VideoTrimmer, type TrechoVideo, formatarSegundos } from '../../components/VideoTrimmer';
 import {
   erroDoTrecho,
+  extensaoDeVideo,
   MAX_BYTES_VIDEO,
   MAX_TRECHO_SEG,
   TIPOS_VIDEO_ACEITOS,
@@ -176,7 +178,35 @@ export const IntroVideoManager: React.FC = () => {
     });
   }
 
-  // Upload com progresso
+  /**
+   * Registra a URL final do vídeo na playlist (caminho JSON, pequeno). Serve
+   * tanto para uma URL externa colada pelo admin quanto para a URL que o
+   * Blob devolveu depois do upload direto do navegador — ver o comentário
+   * grande em app/api/admin/intro-video/route.ts sobre por que o registro é
+   * um passo separado do upload em si.
+   */
+  async function registrarNaPlaylist(payload: {
+    url: string;
+    inicioSeg: number;
+    fimSeg: number;
+    titulo: string;
+    duracaoSeg?: number;
+    posterDataUrl?: string;
+    nomeArquivo?: string;
+  }): Promise<void> {
+    const res = await fetch('/api/admin/intro-video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, ativo: true }),
+    });
+    const data = (await res.json()) as { error?: string };
+    if (!res.ok) throw new Error(data.error || 'Falha ao cadastrar vídeo.');
+  }
+
+  // Upload com progresso: o arquivo vai DIRETO do navegador para o Vercel
+  // Blob (a Vercel limita o corpo de uma requisição de função serverless a
+  // 4,5MB — um vídeo de poucos segundos já ultrapassa isso, então ele nunca
+  // pode passar pela nossa API). Só a URL final, pequena, vai para a rota.
   async function enviarArquivo() {
     if (!arquivo || !urlLocal) return;
 
@@ -195,39 +225,22 @@ export const IntroVideoManager: React.FC = () => {
       const poster = await capturarPoster(urlLocal, trechoNovo.inicioSeg);
       const duracao = await duracaoDoArquivo(urlLocal);
 
-      const form = new FormData();
-      form.append('file', arquivo);
-      form.append('inicioSeg', String(trechoNovo.inicioSeg));
-      form.append('fimSeg', String(trechoNovo.fimSeg));
-      form.append('titulo', tituloVideo.trim() || arquivo.name);
-      if (duracao > 0) form.append('duracaoSeg', String(duracao));
-      if (poster) form.append('posterDataUrl', poster);
+      const ext = extensaoDeVideo(arquivo.type);
+      const resultado = await upload(`intro/abertura-${Date.now()}.${ext}`, arquivo, {
+        access: 'public',
+        contentType: arquivo.type,
+        handleUploadUrl: '/api/admin/intro-video',
+        onUploadProgress: (ev) => setProgresso(Math.round(ev.percentage)),
+      });
 
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', '/api/admin/intro-video');
-
-        xhr.upload.onprogress = (ev) => {
-          if (ev.lengthComputable) {
-            setProgresso(Math.round((ev.loaded / ev.total) * 100));
-          }
-        };
-
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve();
-          } else {
-            try {
-              const body = JSON.parse(xhr.responseText) as { error?: string };
-              reject(new Error(body.error || `Erro ${xhr.status} no envio`));
-            } catch {
-              reject(new Error(`Erro ${xhr.status} no envio`));
-            }
-          }
-        };
-
-        xhr.onerror = () => reject(new Error('Erro de conexão no envio'));
-        xhr.send(form);
+      await registrarNaPlaylist({
+        url: resultado.url,
+        inicioSeg: trechoNovo.inicioSeg,
+        fimSeg: trechoNovo.fimSeg,
+        titulo: tituloVideo.trim() || arquivo.name,
+        duracaoSeg: duracao > 0 ? duracao : undefined,
+        posterDataUrl: poster,
+        nomeArquivo: arquivo.name,
       });
 
       setAviso('Vídeo adicionado à playlist com sucesso!');
@@ -238,7 +251,17 @@ export const IntroVideoManager: React.FC = () => {
       if (inputRef.current) inputRef.current.value = '';
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha no envio.');
+      const msg = e instanceof Error ? e.message : 'Falha no envio.';
+      // upload() do @vercel/blob/client não repassa o corpo JSON de erro da
+      // nossa rota quando a emissão do token falha — só um erro genérico.
+      // Isso acontece sobretudo quando falta BLOB_READ_WRITE_TOKEN (a rota
+      // devolve 503 com mensagem clara, mas essa mensagem não chega até
+      // aqui), então damos uma pista melhor que "Failed to..." cru.
+      setErro(
+        /retrieve the client token/i.test(msg)
+          ? 'Falha ao autorizar o envio. Confira se sua sessão de admin ainda está ativa e se o armazenamento de vídeo (Vercel Blob) está configurado no ambiente.'
+          : msg
+      );
     } finally {
       setEnviando(false);
       setProgresso(0);
@@ -264,20 +287,12 @@ export const IntroVideoManager: React.FC = () => {
     setAviso(null);
 
     try {
-      const res = await fetch('/api/admin/intro-video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url,
-          inicioSeg: trechoNovo.inicioSeg,
-          fimSeg: trechoNovo.fimSeg,
-          titulo: tituloVideo.trim() || 'Vídeo Externo',
-          ativo: true,
-        }),
+      await registrarNaPlaylist({
+        url,
+        inicioSeg: trechoNovo.inicioSeg,
+        fimSeg: trechoNovo.fimSeg,
+        titulo: tituloVideo.trim() || 'Vídeo Externo',
       });
-
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) throw new Error(data.error || 'Falha ao cadastrar URL.');
 
       setAviso('Vídeo externo cadastrado na playlist com sucesso!');
       setUrlDireta('');

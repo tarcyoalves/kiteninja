@@ -1,4 +1,5 @@
-import { put, del } from '@vercel/blob';
+import { del } from '@vercel/blob';
+import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { revalidatePath } from 'next/cache';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
@@ -39,117 +40,104 @@ export async function GET() {
 }
 
 /**
- * Adiciona um novo vídeo à playlist (via upload de arquivo ou URL direta).
+ * Adiciona um novo vídeo à playlist (via upload direto para o Blob ou URL direta).
+ *
+ * ATENÇÃO — por que esta rota NUNCA deve voltar a ler `request.formData()`:
+ * a Vercel limita o corpo de uma requisição de função serverless a 4,5MB. Um
+ * vídeo de poucos segundos já passa disso, então um `await request.formData()`
+ * aqui seria rejeitado pela PLATAFORMA antes da função sequer rodar — sem
+ * lançar erro no código, sem log nenhum (foi exatamente esse o bug original:
+ * nada aparecia em `get_runtime_errors`/`get_runtime_logs` porque a
+ * requisição nunca chegava a executar este arquivo).
+ *
+ * Por isso o navegador sobe o arquivo DIRETO para o Vercel Blob, sem passar
+ * por esta função, usando `upload()` de `@vercel/blob/client`
+ * (app/admin/IntroVideoManager.tsx). Esta rota só faz duas coisas, as únicas
+ * que cabem dentro do limite de corpo de requisição:
+ *   Caso 1 — emite o token de autorização do upload (`handleUpload`);
+ *   Caso 2 — registra a URL final (já no Blob, ou uma URL externa colada
+ *            pelo admin) na playlist.
  */
 export async function POST(request: Request) {
   return handle(async () => {
     const admin = await requireAdmin();
 
-    const contentType = request.headers.get('content-type') || '';
+    const body = await readJson(request);
+    const b = (body ?? {}) as Record<string, unknown>;
 
-    // Caso 1: Envio de JSON (para cadastrar vídeo por URL direta)
-    if (contentType.includes('application/json')) {
-      const body = await readJson(request);
-      const b = (body ?? {}) as Record<string, unknown>;
-      const url = String(b.url || '').trim();
-      if (!url.startsWith('https://')) {
-        throw new HttpError(400, 'A URL do vídeo deve começar com https://');
+    // Caso 1: protocolo do @vercel/blob client — o navegador está pedindo um
+    // token para subir o arquivo direto para o Blob (upload() -> handleUploadUrl).
+    if (b.type === 'blob.generate-client-token') {
+      if (!process.env.BLOB_READ_WRITE_TOKEN) {
+        throw new HttpError(
+          503,
+          'Armazenamento de vídeo não configurado. Falta BLOB_READ_WRITE_TOKEN no ambiente.'
+        );
       }
 
-      const inicioSeg = Number(b.inicioSeg) || 0;
-      const fimSeg = Number(b.fimSeg) || 6;
-      validarTrecho(inicioSeg, fimSeg);
+      return handleUpload({
+        body: body as HandleUploadBody,
+        request,
+        onBeforeGenerateToken: async (pathname) => {
+          // O ponto mais importante desta rota: sem checar admin AQUI dentro,
+          // qualquer pessoa que descubra esta URL consegue um token válido e
+          // sobe arquivo no storage do projeto — é este callback que de fato
+          // autoriza a emissão do token, então a checagem no topo do POST
+          // (que também protege, mas é deste mesmo handler) não é o bastante
+          // por si só: repetir aqui é o padrão documentado do @vercel/blob e
+          // sobrevive mesmo se este trecho um dia for extraído para outra rota.
+          await requireAdmin();
 
-      const novoItem: IntroVideo = {
-        id: `vid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-        url,
-        inicioSeg,
-        fimSeg,
-        ativo: b.ativo !== false,
-        nomeArquivo: typeof b.nomeArquivo === 'string' ? b.nomeArquivo : undefined,
-        titulo: typeof b.titulo === 'string' ? b.titulo : 'Vídeo Externo',
-        duracaoSeg: Number(b.duracaoSeg) || undefined,
-        posterDataUrl: typeof b.posterDataUrl === 'string' ? b.posterDataUrl : undefined,
-        criadoEm: new Date().toISOString(),
-      };
+          if (!pathname.startsWith('intro/')) {
+            throw new HttpError(400, 'Caminho de upload inválido.');
+          }
 
-      const atual = await getIntroVideoConfig();
-      const novaConfig: IntroVideoConfig = {
-        modo: atual.modo || 'rodizio',
-        videos: [novoItem, ...atual.videos],
-      };
-
-      await setIntroVideoConfig(novaConfig, admin.id);
-      revalidatePath('/api/intro-video');
-      return { ok: true, video: novoItem, config: novaConfig };
+          return {
+            allowedContentTypes: [...TIPOS_ACEITOS],
+            maximumSizeInBytes: MAX_BYTES_VIDEO,
+            addRandomSuffix: true,
+          };
+        },
+        // Sem onUploadCompleted/callbackUrl de propósito: esse callback só é
+        // chamado pela Vercel quando existe URL pública de callback — NÃO
+        // funciona em localhost (a Vercel precisa conseguir chamar de volta).
+        // Quem registra o vídeo na playlist é o próprio cliente, chamando
+        // este mesmo POST com {url,...} assim que upload() resolve (Caso 2
+        // abaixo) — funciona igual em dev e em produção.
+      });
     }
 
-    // Caso 2: Upload multipart de arquivo
-    if (!process.env.BLOB_READ_WRITE_TOKEN) {
-      throw new HttpError(
-        503,
-        'Armazenamento de vídeo não configurado. Falta BLOB_READ_WRITE_TOKEN no ambiente.'
-      );
+    // Caso 2: cadastro do vídeo na playlist por URL — tanto um vídeo externo
+    // colado pelo admin quanto o vídeo que acabou de subir direto para o
+    // Blob (o cliente chama este POST de novo com a URL que upload() devolveu).
+    const url = String(b.url || '').trim();
+    if (!url.startsWith('https://')) {
+      throw new HttpError(400, 'A URL do vídeo deve começar com https://');
     }
 
-    let form: FormData;
-    try {
-      form = await request.formData();
-    } catch {
-      throw new HttpError(400, 'Envio inválido: esperado formulário com o arquivo.');
-    }
-
-    const arquivo = form.get('file');
-    if (!(arquivo instanceof File)) {
-      throw new HttpError(400, 'Nenhum arquivo de vídeo recebido.');
-    }
-
-    if (arquivo.size === 0) {
-      throw new HttpError(400, 'O arquivo está vazio.');
-    }
-    if (arquivo.size > MAX_BYTES_VIDEO) {
-      const mb = (arquivo.size / 1024 / 1024).toFixed(1);
-      throw new HttpError(
-        413,
-        `Vídeo de ${mb}MB excede o limite de ${MAX_BYTES_VIDEO / 1024 / 1024}MB.`
-      );
-    }
-    if (!TIPOS_ACEITOS.has(arquivo.type)) {
-      throw new HttpError(
-        415,
-        `Formato "${arquivo.type || 'desconhecido'}" não suportado. Use MP4, WebM ou MOV.`
-      );
-    }
-
-    const inicioSeg = numeroDoForm(form, 'inicioSeg', 0);
-    const fimSeg = numeroDoForm(form, 'fimSeg', 6);
-    const duracaoSeg = numeroDoForm(form, 'duracaoSeg', 0);
-    const titulo = form.get('titulo');
+    const inicioSeg = Number(b.inicioSeg) || 0;
+    const fimSeg = Number(b.fimSeg) || 6;
     validarTrecho(inicioSeg, fimSeg);
 
-    const poster = form.get('posterDataUrl');
     const posterDataUrl =
-      typeof poster === 'string' && poster.startsWith('data:image/') && poster.length < 500_000
-        ? poster
+      typeof b.posterDataUrl === 'string' &&
+      b.posterDataUrl.startsWith('data:image/') &&
+      b.posterDataUrl.length < 500_000
+        ? b.posterDataUrl
         : undefined;
 
-    const ext = extensaoDe(arquivo.type);
-    const enviado = await put(`intro/abertura-${Date.now()}.${ext}`, arquivo, {
-      access: 'public',
-      contentType: arquivo.type,
-      addRandomSuffix: true,
-    });
+    const duracaoSeg = Number(b.duracaoSeg);
 
     const novoItem: IntroVideo = {
       id: `vid-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      url: enviado.url,
+      url,
       inicioSeg,
       fimSeg,
+      ativo: b.ativo !== false,
+      nomeArquivo: typeof b.nomeArquivo === 'string' ? b.nomeArquivo : undefined,
+      titulo: typeof b.titulo === 'string' && b.titulo.trim() ? b.titulo.trim() : 'Vídeo Externo',
+      duracaoSeg: Number.isFinite(duracaoSeg) && duracaoSeg > 0 ? duracaoSeg : undefined,
       posterDataUrl,
-      ativo: true,
-      nomeArquivo: arquivo.name,
-      titulo: typeof titulo === 'string' && titulo.trim() ? titulo.trim() : arquivo.name,
-      duracaoSeg: duracaoSeg > 0 ? duracaoSeg : undefined,
       criadoEm: new Date().toISOString(),
     };
 
@@ -268,22 +256,9 @@ export async function DELETE(request: Request) {
   });
 }
 
-function numeroDoForm(form: FormData, campo: string, fallback: number): number {
-  const v = form.get(campo);
-  if (typeof v !== 'string' || v.trim() === '') return fallback;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : fallback;
-}
-
 function validarTrecho(inicioSeg: number, fimSeg: number): void {
   const erro = erroDoTrecho(inicioSeg, fimSeg);
   if (erro) throw new HttpError(400, erro);
-}
-
-function extensaoDe(mime: string): string {
-  if (mime === 'video/webm') return 'webm';
-  if (mime === 'video/quicktime') return 'mov';
-  return 'mp4';
 }
 
 async function removerArquivoAntigo(url: string | undefined): Promise<void> {
