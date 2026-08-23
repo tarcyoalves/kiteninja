@@ -235,11 +235,23 @@ select {
    defeito menor, sumir com os controles do mapa é grave. */
 
 /* O Leaflet fixa 1000 no painel de controles e 800 nos popups, o que estoura
-   qualquer chrome do app. Rebaixamos para dentro da nossa escala. */
-.leaflet-pane { z-index: var(--z-map); }
-.leaflet-top,
-.leaflet-bottom { z-index: var(--z-map-ui); }
-.leaflet-popup { z-index: var(--z-map-ui); }
+   qualquer chrome do app. Rebaixamos para dentro da nossa escala.
+
+   Qualificado com `.leaflet-container` (na frente) de propósito: o
+   `leaflet/dist/leaflet.css` só entra no <head> quando o chunk do mapa
+   carrega no cliente (LeafletMap.tsx é `next/dynamic({ssr:false})`) — ou
+   seja, DEPOIS deste arquivo, que faz parte do CSS inicial da página.
+   Confirmado num teste isolado (build real + Playwright): com os seletores
+   de uma classe só como antes (`.leaflet-pane`, `.leaflet-top`), as regras
+   do PRÓPRIO leaflet.css, chegando depois com a MESMA especificidade,
+   venciam a nossa por ordem — `.leaflet-top`/`.leaflet-bottom` ficavam em
+   1000 de verdade, não 400, silenciosamente. Duas classes (0,2,0) vence
+   qualquer seletor de uma classe do Leaflet (0,1,0) não importa a ordem de
+   carregamento — não depende mais de quem chega por último. */
+.leaflet-container .leaflet-pane { z-index: var(--z-map); }
+.leaflet-container .leaflet-top,
+.leaflet-container .leaflet-bottom { z-index: var(--z-map-ui); }
+.leaflet-container .leaflet-popup { z-index: var(--z-map-ui); }
 
 /* ALTURA DO APP — decidida uma vez, no shell.
 
