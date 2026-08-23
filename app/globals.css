@@ -222,6 +222,22 @@ select {
   font-family: inherit;
 }
 
+/* Linhas finas entre tiles adjacentes (mais visíveis no satélite, de alto
+   contraste, do que eram no basemap claro anterior): o Leaflet posiciona
+   cada tile com `transform: translate3d`, e o WebKit do iOS arredonda essa
+   posição para sub-pixel de um jeito que deixa uma frincha de 1px entre
+   tiles vizinhos — cada tile é renderizado numa camada de composição
+   própria, então a frincha aparece como uma linha reta (quase sempre
+   horizontal, por ser a direção mais comum de tile a tile na tela). Forçar
+   a composição em GPU por tile (mesmo truque documentado para esse bug
+   específico do Leaflet no WebKit) faz o navegador alinhar os tiles no
+   mesmo plano em vez de cada um arredondar para o pixel mais próximo por
+   conta própria. */
+.leaflet-tile {
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
 /* O Leaflet fixa 1000 no painel de controles e 800 nos popups, o que estoura
    qualquer chrome do app. Rebaixamos para dentro da nossa escala. */
 .leaflet-pane { z-index: var(--z-map); }

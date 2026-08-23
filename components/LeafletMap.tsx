@@ -11,7 +11,7 @@ import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
 import { WindParticleLayer } from './WindParticleLayer';
-import { Navigation, Wind, Waves, Zap, MapPin, XCircle, Loader2, Layers } from 'lucide-react';
+import { Wind, Waves, Zap, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
 import { MAP_TILES, type MapStyle } from '@/lib/mapTiles';
 
@@ -85,24 +85,43 @@ function MapController({
    * endereço do mobile recolhendo, `dvh` reavaliando), então a medida inicial
    * sai errada e os tiles ficam cinza — o mapa "vazio" que aparecia na tela.
    * invalidateSize remede; o ResizeObserver cobre rotação e troca de aba.
+   *
+   * Um único remédio em 250ms não bastava na prática: relato real mostrou o
+   * mapa com metade da largura em cinza e sem pedir tile nenhum ali — o
+   * Leaflet mediu o container ANTES da barra de endereço do iOS recolher (ou
+   * antes da transição de entrada na aba assentar), ficou com `_size` menor
+   * que o real, e nunca recalculou sozinho depois disso porque nada mudou o
+   * `clientWidth`/`clientHeight` de um jeito que o ResizeObserver notasse a
+   * tempo. Mais tentativas espaçadas (250/600/1200ms) cobrem esse atraso sem
+   * custo perceptível quando a medida já estava certa desde o início —
+   * `invalidateSize` é barato quando não há nada para corrigir.
    */
   useEffect(() => {
     const remedir = () => map.invalidateSize({ animate: false });
 
     // Depois do paint: no frame da montagem o container ainda tem altura 0.
     const raf = requestAnimationFrame(remedir);
-    const t = setTimeout(remedir, 250);
+    const temporizadores = [250, 600, 1200].map((ms) => setTimeout(remedir, ms));
 
     const el = map.getContainer();
     const ro = new ResizeObserver(remedir);
     ro.observe(el);
     window.addEventListener('orientationchange', remedir);
 
+    // Voltar de segundo plano (app trocado, tela bloqueada) é outro momento
+    // clássico de medida desatualizada — o container pode ter mudado de
+    // tamanho enquanto a aba não estava sendo pintada.
+    const aoVoltarVisivel = () => {
+      if (!document.hidden) remedir();
+    };
+    document.addEventListener('visibilitychange', aoVoltarVisivel);
+
     return () => {
       cancelAnimationFrame(raf);
-      clearTimeout(t);
+      temporizadores.forEach(clearTimeout);
       ro.disconnect();
       window.removeEventListener('orientationchange', remedir);
+      document.removeEventListener('visibilitychange', aoVoltarVisivel);
     };
   }, [map]);
 
@@ -417,18 +436,25 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
             <Wind size={18} />
           </button>
 
-          {/* Locate Me Button */}
+          {/* Botão de centralizar no GPS — de propósito diferente dos dois
+              vizinhos (estilo/animação): estes são ajustes de exibição, este
+              é a ação que a pessoa mais procura ao abrir o mapa. Fundo cyan
+              preenchido (mesma linguagem do botão INICIAR) + ícone de mira
+              (LocateFixed, o mesmo símbolo de "centralizar em mim" do Google/
+              Apple Maps — MapPin, o pino de gota, significa "um lugar
+              marcado", não "minha posição ao vivo") fazem ele se destacar em
+              vez de se misturar aos outros dois ícones neutros da fileira. */}
           <button
             onClick={onLocateUser}
             disabled={locateStatus === 'loading'}
-            className="p-2.5 rounded-2xl bg-[#0F172A]/90 backdrop-blur-md border border-slate-700/80 text-white pointer-events-auto hover:bg-slate-800 active:scale-95 shadow-xl disabled:opacity-50"
-            title="Minha localização"
-            aria-label="Localizar minha posição"
+            className="p-2.5 rounded-2xl bg-cyan-500 border border-cyan-300/50 text-slate-950 pointer-events-auto hover:bg-cyan-400 active:scale-95 shadow-xl shadow-cyan-500/30 disabled:opacity-50"
+            title="Centralizar no meu GPS"
+            aria-label="Centralizar mapa na minha localização"
           >
             {locateStatus === 'loading' ? (
-              <Loader2 size={18} className="text-cyan-400 animate-spin" />
+              <Loader2 size={18} className="animate-spin" />
             ) : (
-              <MapPin size={18} className="text-cyan-400" />
+              <LocateFixed size={18} className="stroke-[2.5]" />
             )}
           </button>
         </div>

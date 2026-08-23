@@ -53,19 +53,28 @@ function MapaController({
 }) {
   const map = useMap();
 
-  // Mesma correção de views/LeafletMap.tsx: o container mede 0 na montagem
-  // (aba recém-trocada, dvh ainda reavaliando), então os tiles saem cinza sem
-  // isto.
+  // Mesma correção de components/LeafletMap.tsx (ver o comentário completo
+  // lá): o container mede 0 (ou uma largura desatualizada) na montagem —
+  // aba recém-trocada, dvh ainda reavaliando, barra de endereço do iOS ainda
+  // recolhendo — então os tiles saem cinza, às vezes só numa metade da tela,
+  // sem isto. Um único remédio em 250ms não bastava na prática; mais
+  // tentativas espaçadas cobrem o atraso sem custo perceptível quando a
+  // medida já estava certa.
   useEffect(() => {
     const remedir = () => map.invalidateSize({ animate: false });
     const raf = requestAnimationFrame(remedir);
-    const t = setTimeout(remedir, 250);
+    const temporizadores = [250, 600, 1200].map((ms) => setTimeout(remedir, ms));
     const ro = new ResizeObserver(remedir);
     ro.observe(map.getContainer());
+    const aoVoltarVisivel = () => {
+      if (!document.hidden) remedir();
+    };
+    document.addEventListener('visibilitychange', aoVoltarVisivel);
     return () => {
       cancelAnimationFrame(raf);
-      clearTimeout(t);
+      temporizadores.forEach(clearTimeout);
       ro.disconnect();
+      document.removeEventListener('visibilitychange', aoVoltarVisivel);
     };
   }, [map]);
 
