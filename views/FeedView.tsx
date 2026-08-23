@@ -22,6 +22,7 @@ import { CommunityPost, SessionFeedItem } from '../types';
 import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
 import { CardSessaoFeed } from '../components/CardSessaoFeed';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
+import { formatRelativeTime } from '../lib/chat';
 
 /** Dados da foto aberta em tela cheia; null = lightbox fechado. */
 interface LightboxState {
@@ -528,7 +529,7 @@ export const FeedView: React.FC = () => {
                         <div key={c.id} className="p-2.5 rounded-xl bg-[#1E293B] text-xs border border-slate-700/80">
                           <div className="flex items-center justify-between font-black text-white mb-0.5">
                             <span className="text-cyan-400">{c.userName}</span>
-                            <span className="text-[10px] text-slate-400 font-normal">{c.time}</span>
+                            <span className="text-[10px] text-slate-400 font-normal">{formatRelativeTime(c.time)}</span>
                           </div>
                           <p className="text-slate-300">{c.text}</p>
                         </div>
