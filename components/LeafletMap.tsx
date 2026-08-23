@@ -364,8 +364,17 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
 
   return (
     <div className="flex flex-col h-full relative">
-      {/* Layer Selector Controls */}
-      <div className="absolute top-3 left-3 right-3 z-map-ui flex items-center justify-between pointer-events-none gap-2 flex-wrap sm:flex-nowrap">
+      {/* Layer Selector Controls + Locate Status Message: um wrapper só, em
+          fluxo normal (flex-col), em vez de dois blocos `absolute`
+          independentes com `top` fixo em pixel. Antes o aviso verde usava
+          `top-20` chutando a altura da fileira de cima — em telas estreitas
+          essa fileira quebra em duas linhas (flex-wrap) e passa dos ~80px
+          previstos, o aviso ficava por cima dos ícones. Empilhando os dois
+          em fluxo normal, o aviso sempre nasce logo abaixo da fileira,
+          quebrada em uma ou duas linhas, sem depender de nenhum número
+          mágico. */}
+      <div className="absolute top-3 left-3 right-3 z-map-ui flex flex-col gap-2 pointer-events-none">
+        <div className="flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap">
         <div className="flex items-center gap-1.5 bg-[#0F172A]/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-700/80 pointer-events-auto shadow-2xl text-xs font-black text-white">
           <button
             onClick={() => onLayerChange('vento')}
@@ -458,6 +467,60 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
             )}
           </button>
         </div>
+        </div>
+
+        {/* Locate Status Message — em fluxo normal logo abaixo da fileira
+            acima (ver comentário no wrapper pai), nunca mais com `top`
+            chutado em pixel. */}
+        {locateStatus !== 'idle' && (
+          <div className="animate-in fade-in duration-200">
+            <div
+              role="status"
+              aria-live="polite"
+              className={`px-3 py-2 rounded-xl text-xs font-bold text-center shadow-lg relative pointer-events-auto ${
+                locateStatus === 'loading'
+                  ? 'bg-slate-800 text-cyan-400'
+                  : locateStatus === 'success'
+                  ? 'bg-emerald-900/90 text-emerald-300 border border-emerald-500/30'
+                  : locateStatus === 'denied'
+                  ? 'bg-rose-900/90 text-rose-300 border border-rose-500/30'
+                  : 'bg-amber-900/90 text-amber-300 border border-amber-500/30'
+              }`}
+            >
+              {locateStatus === 'loading' && 'Localizando...'}
+              {locateStatus === 'success' && nearestSpotInfo && userPosition && (
+                <div className="flex flex-col gap-1">
+                  <span>
+                    Você está a {formatDistance(nearestSpotInfo.distanceKm)} de {nearestSpotInfo.spot.name}
+                  </span>
+                  {/* Mostrar precisão apenas se for ruim (> 100m), para não poluir a tela */}
+                  {userPosition.accuracy > 100 && (
+                    <span className="text-[10px] opacity-75">
+                      Precisão: {userPosition.accuracy > 1000
+                        ? `~${(userPosition.accuracy / 1000).toFixed(1)} km`
+                        : `~${Math.round(userPosition.accuracy)} m`}
+                    </span>
+                  )}
+                </div>
+              )}
+              {locateStatus === 'denied' && 'Permissão negada. Ative nas configurações do navegador.'}
+              {locateStatus === 'error' && 'Não foi possível obter sua localização. Verifique o GPS.'}
+              {/* App instalado na tela de início do iOS pede permissão de
+                  localização separada da do Safari — quando ela trava, o
+                  navegador às vezes nunca responde (nem sucesso, nem erro).
+                  Ver o vigia de timeout em views/MapView.tsx. */}
+              {locateStatus === 'timeout' && (
+                <div className="flex flex-col gap-1">
+                  <span>Sua localização está demorando demais para responder.</span>
+                  <span className="text-[10px] opacity-75 font-normal">
+                    Se você instalou o app na tela de início, confira se a permissão de
+                    localização foi concedida a ELE (separada da do navegador) nos Ajustes do celular.
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Map Container */}
@@ -475,12 +538,26 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
           whenReady={() => setMapReady(true)}
         >
           {/* Tile layer dinâmico — URL, atribuição e rótulo vêm todos de
-              lib/mapTiles.ts (fonte única, ver comentário lá). */}
+              lib/mapTiles.ts (fonte única, ver comentário lá).
+
+              keepBuffer sobe de 2 (padrão) para 6: no mobile o Leaflet só
+              busca tile novo quando o gesto de arrastar TERMINA
+              (updateWhenIdle, padrão true no mobile) — de propósito, para não
+              disparar dezenas de requisições por segundo durante o arrasto.
+              O preço é que a área recém-revelada só tem tile pedido DEPOIS
+              de soltar o dedo, e a viagem de rede até o tile de satélite
+              chegar é o "demora um pouco para carregar" relatado ao
+              deslizar. keepBuffer maior pré-busca mais anéis de tiles ao
+              redor da área visível enquanto o mapa está parado, então boa
+              parte do que aparece ao arrastar já está em cache local
+              quando o gesto termina — sem mudar o comportamento de só
+              buscar ao soltar o dedo (que continua correto). */}
           <TileLayer
             key={mapStyle}
             attribution={MAP_TILES[mapStyle].attribution}
             url={MAP_TILES[mapStyle].url}
             noWrap={false}
+            keepBuffer={6}
           />
 
           <MapController center={mapCenter} zoom={mapZoom} />
@@ -573,57 +650,6 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
             </>
           )}
         </MapContainer>
-
-        {/* Locate Status Message */}
-        {locateStatus !== 'idle' && (
-          <div className="absolute top-20 left-3 right-3 z-map-ui animate-in fade-in duration-200">
-            <div
-              role="status"
-              aria-live="polite"
-              className={`px-3 py-2 rounded-xl text-xs font-bold text-center shadow-lg relative ${
-                locateStatus === 'loading'
-                  ? 'bg-slate-800 text-cyan-400'
-                  : locateStatus === 'success'
-                  ? 'bg-emerald-900/90 text-emerald-300 border border-emerald-500/30'
-                  : locateStatus === 'denied'
-                  ? 'bg-rose-900/90 text-rose-300 border border-rose-500/30'
-                  : 'bg-amber-900/90 text-amber-300 border border-amber-500/30'
-              }`}
-            >
-              {locateStatus === 'loading' && 'Localizando...'}
-              {locateStatus === 'success' && nearestSpotInfo && userPosition && (
-                <div className="flex flex-col gap-1">
-                  <span>
-                    Você está a {formatDistance(nearestSpotInfo.distanceKm)} de {nearestSpotInfo.spot.name}
-                  </span>
-                  {/* Mostrar precisão apenas se for ruim (> 100m), para não poluir a tela */}
-                  {userPosition.accuracy > 100 && (
-                    <span className="text-[10px] opacity-75">
-                      Precisão: {userPosition.accuracy > 1000
-                        ? `~${(userPosition.accuracy / 1000).toFixed(1)} km`
-                        : `~${Math.round(userPosition.accuracy)} m`}
-                    </span>
-                  )}
-                </div>
-              )}
-              {locateStatus === 'denied' && 'Permissão negada. Ative nas configurações do navegador.'}
-              {locateStatus === 'error' && 'Não foi possível obter sua localização. Verifique o GPS.'}
-              {/* App instalado na tela de início do iOS pede permissão de
-                  localização separada da do Safari — quando ela trava, o
-                  navegador às vezes nunca responde (nem sucesso, nem erro).
-                  Ver o vigia de timeout em views/MapView.tsx. */}
-              {locateStatus === 'timeout' && (
-                <div className="flex flex-col gap-1">
-                  <span>Sua localização está demorando demais para responder.</span>
-                  <span className="text-[10px] opacity-75 font-normal">
-                    Se você instalou o app na tela de início, confira se a permissão de
-                    localização foi concedida a ELE (separada da do navegador) nos Ajustes do celular.
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Legend */}

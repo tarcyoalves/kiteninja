@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, Suspense, useRef } from 'react
 import dynamic from 'next/dynamic';
 import { useKiteData } from '../context/KiteDataContext';
 import { Spot } from '../types';
-import { ChevronRight, Loader2, Navigation } from 'lucide-react';
+import { Loader2, Navigation } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
 import { MapLayer, UserPosition } from '@/components/LeafletMap';
 import { ModoNavegacao, ResumoNavegacao } from '@/components/ModoNavegacao';
@@ -312,13 +312,12 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       </Suspense>
 
       {/* Entrada do Modo Navegação (referência: botão de PLAY do Wind Maps).
-          Fica no meio da lateral direita de propósito: o topo (top-3 até
-          ~top-20 quando a busca de spot abre resultados) já está ocupado
-          pelos controles de camada/estilo/localização do LeafletMap, e o
-          rodapé (map-card-bottom + o menu flutuante, cuja altura real vem de
-          --nav-h) é ocupado pelo card do spot selecionado, que fica visível
-          quase sempre. Um ponto fixo na metade vertical da tela nunca cai
-          dentro de nenhuma dessas duas faixas, em nenhum iPhone. */}
+          Fica no meio da lateral direita de propósito: o topo já é ocupado
+          pelos controles de camada/estilo/localização do LeafletMap (mais o
+          aviso de GPS, quando aparece), e o rodapé é ocupado pelo menu
+          flutuante (altura real em --nav-h). Um ponto fixo na metade
+          vertical da tela nunca cai dentro de nenhuma dessas duas faixas,
+          em nenhum iPhone. */}
       {!modoNavegacaoAtivo && (
         <button
           type="button"
@@ -334,50 +333,6 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
 
       {modoNavegacaoAtivo && (
         <ModoNavegacao onSair={handleSairModoNavegacao} />
-      )}
-
-      {/* Selected Spot Bottom Floating Card */}
-      {/* map-card-bottom (globals.css) levanta o card acima do menu fixo + safe
-          area. O cálculo mora no CSS porque o ">" de env()/calc() dentro de uma
-          classe arbitrária do Tailwind quebra o parser de JSX. */}
-      {selectedMapSpot && (
-        <div className="absolute left-3 right-3 z-map-ui map-card-bottom">
-          <div
-            onClick={() => onSelectSpot(selectedMapSpot)}
-            className="bg-[#1E293B]/95 backdrop-blur-md text-white p-3.5 rounded-2xl border border-slate-700 shadow-2xl flex items-center justify-between cursor-pointer hover:bg-slate-800 active:scale-99 transition-all"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              {/* Wind circle badge */}
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-rose-500 to-rose-700 flex flex-col items-center justify-center shrink-0 shadow-md shadow-rose-600/30">
-                <span className="text-base font-black leading-none">
-                  {selectedMapSpot.currentKnots}
-                </span>
-                <span className="text-[9px] font-black uppercase tracking-tight opacity-95">
-                  Nós
-                </span>
-              </div>
-
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h3 className="font-extrabold text-sm text-white truncate">
-                    {selectedMapSpot.name}
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                    {selectedMapSpot.windSafety}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400 truncate mt-0.5">
-                  {selectedMapSpot.location} &bull; Maré: {selectedMapSpot.currentTideHeightM}m ({selectedMapSpot.currentTideTrend})
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1 pl-2 shrink-0 text-cyan-400 font-black text-xs">
-              <span>Ver Previsão</span>
-              <ChevronRight size={16} />
-            </div>
-          </div>
-        </div>
       )}
     </div>
   );
