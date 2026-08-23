@@ -39,6 +39,14 @@ function formatarDuracao(minutos: number): string {
 
 interface CardSessaoFeedProps {
   sessao: SessionFeedItem;
+  /**
+   * Abre o perfil público do autor (seção 4.5 do plano de rede social) — quem
+   * chama passa o próprio `setRiderIdAberto` do contexto (identidade estável
+   * de um `useState`), nunca uma função nova a cada render: `CardSessaoFeed`
+   * é `React.memo` e uma prop de função recriada quebraria o memo para toda
+   * a lista a cada render do pai.
+   */
+  onAbrirPerfil: (riderId: string) => void;
 }
 
 /**
@@ -56,7 +64,7 @@ interface CardSessaoFeedProps {
  * inline (ver `views/FeedView.tsx`: `sessao` vem direto do array de estado,
  * nunca de um spread `{...sessao}` novo a cada render).
  */
-export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao }: CardSessaoFeedProps) {
+export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao, onAbrirPerfil }: CardSessaoFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [emViewport, setEmViewport] = useState(false);
 
@@ -124,7 +132,15 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao }: CardSessa
       {/* Topo: avatar + nome + spot + bandeira à esquerda; duração + vento à
           direita (seção 3.5 do plano, layout do print do Surfr). */}
       <div className="p-4 flex items-start justify-between gap-2">
-        <div className="flex items-center gap-3 min-w-0">
+        {/* Botão, não div com onClick (mesmo motivo do lightbox de foto em
+            FeedView.tsx): precisa de foco e Enter para quem navega por
+            teclado. Abre o perfil público do autor — seção 4.5 do plano. */}
+        <button
+          type="button"
+          onClick={() => onAbrirPerfil(sessao.authorId)}
+          className="flex items-center gap-3 min-w-0 text-left"
+          aria-label={`Ver perfil de ${sessao.authorName}`}
+        >
           <div className="w-10 h-10 rounded-full bg-slate-800 ring-2 ring-cyan-400 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
             {sessao.authorAvatarUrl ? (
               <img src={sessao.authorAvatarUrl} alt={sessao.authorName} className="w-full h-full object-cover" />
@@ -142,7 +158,7 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao }: CardSessa
             <p className="text-xs text-cyan-400 font-bold truncate">{sessao.spotName}</p>
             <p className="text-[11px] text-slate-400 font-mono">{formatRelativeTime(sessao.createdAt)}</p>
           </div>
-        </div>
+        </button>
 
         <div className="flex flex-col items-end shrink-0 text-right">
           <span className="flex items-center gap-1 text-xs font-black text-slate-200">

@@ -13,6 +13,8 @@ import { SessionLoggerModal } from "../components/SessionLoggerModal";
 import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
 import { NewPostModal } from "../components/NewPostModal";
 import { NewListingModal } from "../components/NewListingModal";
+import { BuscarVelejadores } from "../components/BuscarVelejadores";
+import { RiderProfileModal } from "../components/RiderProfileModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
@@ -46,6 +48,10 @@ const MainContent: React.FC = () => {
     respondToSos,
     cancelMySos,
     setActiveTab,
+    isBuscaVelejadoresOpen,
+    setIsBuscaVelejadoresOpen,
+    riderIdAberto,
+    setRiderIdAberto,
   } = useKiteData();
 
   const { user } = useAuth();
@@ -177,6 +183,23 @@ const MainContent: React.FC = () => {
       <KiteCalculatorModal />
       <NewPostModal />
       <NewListingModal />
+
+      {/* Busca de velejadores + perfil público (Fase 4 do plano de rede
+          social) — fecham o ciclo achar → seguir → ver o velejo. O perfil é
+          renderizado DEPOIS da busca no DOM de propósito: os dois usam
+          `z-modal` (mesma camada), e quem monta por último empilha por cima
+          quando o velejador abre um perfil a partir de um resultado de busca. */}
+      {isBuscaVelejadoresOpen && (
+        <BuscarVelejadores
+          onClose={() => setIsBuscaVelejadoresOpen(false)}
+          onAbrirPerfil={setRiderIdAberto}
+        />
+      )}
+      <RiderProfileModal
+        riderId={riderIdAberto}
+        onClose={() => setRiderIdAberto(null)}
+        onAbrirPerfil={setRiderIdAberto}
+      />
 
       {/* In-App Push Notification Toast */}
       <InAppPushToast />

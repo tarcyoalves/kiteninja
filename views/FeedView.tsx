@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import {
   Heart,
   MessageCircle,
+  Search,
   Share2,
   Send,
   Plus,
@@ -57,7 +58,16 @@ async function buscarPaginaFeed(cursor: string | null): Promise<RespostaFeed> {
  * 2. Puxar para atualizar (gesto de toque no topo da lista).
  * 3. Voltar de background/troca de aba do navegador (`visibilitychange`).
  */
-function AbaVelejos() {
+interface AbaVelejosProps {
+  /** Abre a folha de busca de velejadores (seção 4.5 do plano: o estado
+   * vazio precisa de um jeito de CUMPRIR a própria instrução). */
+  onAbrirBusca: () => void;
+  /** Repassado direto para cada `CardSessaoFeed` — identidade estável do
+   * `setRiderIdAberto` do contexto, ver comentário em CardSessaoFeed.tsx. */
+  onAbrirPerfil: (riderId: string) => void;
+}
+
+function AbaVelejos({ onAbrirBusca, onAbrirPerfil }: AbaVelejosProps) {
   const [sessoes, setSessoes] = useState<SessionFeedItem[]>([]);
   const [proximoCursor, setProximoCursor] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -200,6 +210,17 @@ function AbaVelejos() {
             Siga outros velejadores para ver os velejos deles aqui, ou registre a sua
             própria sessão no mapa — ela aparece pra quem te segue.
           </p>
+          {/* Sem isto a instrução acima era impossível de cumprir (seção 7 do
+              plano: "reordenação decidida depois da Fase 3") — não existia
+              tela de busca em lugar nenhum do app. */}
+          <button
+            type="button"
+            onClick={onAbrirBusca}
+            className="mt-4 inline-flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 font-black text-sm active:scale-95 transition-transform"
+          >
+            <Search size={16} className="stroke-[2.5]" />
+            Buscar velejadores
+          </button>
         </div>
       )}
 
@@ -210,7 +231,7 @@ function AbaVelejos() {
       )}
 
       {sessoes.map((sessao) => (
-        <CardSessaoFeed key={sessao.id} sessao={sessao} />
+        <CardSessaoFeed key={sessao.id} sessao={sessao} onAbrirPerfil={onAbrirPerfil} />
       ))}
 
       {/* Sentinela do scroll infinito — 1px invisível, só serve de gatilho
@@ -227,7 +248,8 @@ function AbaVelejos() {
 }
 
 export const FeedView: React.FC = () => {
-  const { posts, toggleLikePost, addComment, setIsNewPostOpen, beachMode } = useKiteData();
+  const { posts, toggleLikePost, addComment, setIsNewPostOpen, beachMode, setIsBuscaVelejadoresOpen, setRiderIdAberto } =
+    useKiteData();
   const { user, openAuthModal } = useAuth();
 
   const [aba, setAba] = useState<AbaFeed>('velejos');
@@ -296,11 +318,29 @@ export const FeedView: React.FC = () => {
             <Users size={15} className="shrink-0" />
             <span>Comunidade</span>
           </button>
+
+          {/* Ponto de entrada da busca de velejadores (seção 4.5 do plano) —
+              só na aba Velejos: é onde "achar" alguém para seguir faz
+              sentido; a Comunidade é feed de relatos, não de pessoas. */}
+          {aba === 'velejos' && (
+            <button
+              type="button"
+              onClick={() => setIsBuscaVelejadoresOpen(true)}
+              className="h-10 w-10 shrink-0 rounded-xl bg-[#1E293B] border border-slate-700/80 text-slate-300 hover:text-white hover:bg-slate-700/50 flex items-center justify-center transition-all active:scale-95"
+              aria-label="Buscar velejadores"
+              title="Buscar velejadores"
+            >
+              <Search size={16} />
+            </button>
+          )}
         </div>
       </div>
 
       {aba === 'velejos' ? (
-        <AbaVelejos />
+        <AbaVelejos
+          onAbrirBusca={() => setIsBuscaVelejadoresOpen(true)}
+          onAbrirPerfil={setRiderIdAberto}
+        />
       ) : (
         /* Aba "Comunidade": exatamente o feed de posts que já existia antes
            da Fase 3, só movido para cá — nenhuma mudança de comportamento

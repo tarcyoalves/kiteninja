@@ -121,6 +121,22 @@ interface KiteDataContextType {
   setActiveTab: (tab: ActiveTab) => void;
 
   /**
+   * Busca de velejadores e perfil público (Fase 4 do plano de rede social) —
+   * vivem no contexto, não em state local do FeedView, porque são abertos de
+   * vários lugares diferentes: o ícone de busca e o estado vazio do feed
+   * (views/FeedView.tsx), e o nome/avatar do autor em qualquer
+   * `CardSessaoFeed` — inclusive dentro do próprio `RiderProfileModal`
+   * (a lista de velejos do perfil reaproveita o card). Um estado só,
+   * controlado por quem está montado em `app/page.tsx`, evita perfurar essa
+   * função por vários componentes que não têm relação de pai/filho direta.
+   */
+  isBuscaVelejadoresOpen: boolean;
+  setIsBuscaVelejadoresOpen: (open: boolean) => void;
+  /** `null` = nenhum perfil aberto — mesmo contrato de `selectedSpot`. */
+  riderIdAberto: string | null;
+  setRiderIdAberto: (riderId: string | null) => void;
+
+  /**
    * Marketplace. Os anúncios NÃO vivem no contexto: a lista depende de filtros e
    * paginação que só a tela conhece, e duplicar isso aqui criaria duas fontes de
    * verdade. O contexto só carrega um contador que a view observa para recarregar
@@ -256,6 +272,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
+  const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
+  const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -906,6 +924,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsNewAlertOpen,
         isNewListingOpen,
         setIsNewListingOpen,
+        isBuscaVelejadoresOpen,
+        setIsBuscaVelejadoresOpen,
+        riderIdAberto,
+        setRiderIdAberto,
         listingsVersion,
         refreshListings,
         activeTab,
