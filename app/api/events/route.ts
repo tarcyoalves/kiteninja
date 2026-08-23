@@ -28,6 +28,7 @@ export async function GET() {
         ) THEN true ELSE false END AS is_registered
       FROM events e
       ORDER BY e.event_date ASC
+      LIMIT 200
     `;
 
     const events = rows.map((row) => {

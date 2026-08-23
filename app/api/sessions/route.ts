@@ -71,6 +71,7 @@ export async function GET() {
       FROM sessions_log s
       WHERE s.user_id = ${user.id}
       ORDER BY s.date DESC
+      LIMIT 500
     `;
 
     const sessions = rows.map((row) => {

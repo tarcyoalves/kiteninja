@@ -86,10 +86,15 @@ export async function POST(request: Request) {
       });
     }
 
+    // (sos_id, user_id) é PK composta: sem ON CONFLICT, uma única duplicata
+    // aborta a requisição inteira e o SOS já gravado não notifica ninguém.
+    // distance_km vai gravada porque é o que diz ao pedinte quem está mais
+    // perto — antes era calculada e descartada.
     for (const c of candidatos) {
       await sql`
-        INSERT INTO sos_responders (sos_id, user_id, state)
-        VALUES (${sosId}, ${c.userId}, 'notificado')
+        INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
+        VALUES (${sosId}, ${c.userId}, 'notificado', ${c.dist})
+        ON CONFLICT (sos_id, user_id) DO NOTHING
       `;
     }
 

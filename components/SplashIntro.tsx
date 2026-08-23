@@ -412,19 +412,21 @@ const SplashVideo: React.FC<{
       Math.min((video.fimSeg - video.inicioSeg) * 1000 + 4000, 20000)
     );
 
+    // Handler nomeado: uma arrow inline aqui não pode ser removida no cleanup
+    // (removeEventListener compara por referência), e a cada troca de vídeo
+    // sobraria um listener preso ao elemento.
+    const onError = () => falhaRef.current();
+
     el.addEventListener('loadedmetadata', iniciar);
     el.addEventListener('ended', onEnded);
-    el.addEventListener('error', () => falhaRef.current());
+    el.addEventListener('error', onError);
 
-    if (el.readyState >= 2) {
-      iniciar();
-    } else {
-      iniciar();
-    }
+    iniciar();
 
     return () => {
       el.removeEventListener('loadedmetadata', iniciar);
       el.removeEventListener('ended', onEnded);
+      el.removeEventListener('error', onError);
       cancelAnimationFrame(raf);
       clearTimeout(limite);
     };

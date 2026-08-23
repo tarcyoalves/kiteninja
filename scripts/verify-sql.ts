@@ -529,6 +529,18 @@ async function main() {
     [sosId, riderB]
   );
 
+  // A notificação inicial (e a da escalada) usam ON CONFLICT DO NOTHING: se o
+  // mesmo velejador reaparecer entre os candidatos, a violação de PK derrubaria
+  // a requisição e o SOS já gravado não notificaria ninguém.
+  await expectOk(
+    db,
+    'sos_responders: notificação com ON CONFLICT sobrevive a candidato repetido',
+    `INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
+     VALUES ($1, $2, 'notificado', 3.2)
+     ON CONFLICT (sos_id, user_id) DO NOTHING`,
+    [sosId, riderB]
+  );
+
   const respondersCount = await db.query<{ cnt: number }>(
     `SELECT COUNT(*)::int AS cnt FROM sos_responders WHERE sos_id = $1`,
     [sosId]
