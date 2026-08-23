@@ -222,21 +222,17 @@ select {
   font-family: inherit;
 }
 
-/* Linhas finas entre tiles adjacentes (mais visíveis no satélite, de alto
-   contraste, do que eram no basemap claro anterior): o Leaflet posiciona
-   cada tile com `transform: translate3d`, e o WebKit do iOS arredonda essa
-   posição para sub-pixel de um jeito que deixa uma frincha de 1px entre
-   tiles vizinhos — cada tile é renderizado numa camada de composição
-   própria, então a frincha aparece como uma linha reta (quase sempre
-   horizontal, por ser a direção mais comum de tile a tile na tela). Forçar
-   a composição em GPU por tile (mesmo truque documentado para esse bug
-   específico do Leaflet no WebKit) faz o navegador alinhar os tiles no
-   mesmo plano em vez de cada um arredondar para o pixel mais próximo por
-   conta própria. */
-.leaflet-tile {
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
+/* TENTATIVA REVERTIDA — `.leaflet-tile { backface-visibility: hidden }`
+   (commit b174963) tentava corrigir a frincha de 1px entre tiles vizinhos,
+   mas essa mesma propriedade tem um bug bem documentado no WebKit/iOS: pode
+   promover o tile a uma camada de composição própria que "vaza" por cima de
+   elementos com z-index maior fora da hierarquia do Leaflet, mesmo sem
+   nenhum conflito de z-index no CSS em si. Relato real após o deploy: a
+   fileira de botões (Vento/Rajadas/Ondas + centralizar no GPS), que fica em
+   `.z-map-ui` (z-index 400) por cima do mapa (`.leaflet-pane`, z-index 0),
+   sumiu — coerente com o mapa passando a compor por cima dela. Revertido até
+   achar uma correção para a frincha que não arrisque isso; a frincha é um
+   defeito menor, sumir com os controles do mapa é grave. */
 
 /* O Leaflet fixa 1000 no painel de controles e 800 nos popups, o que estoura
    qualquer chrome do app. Rebaixamos para dentro da nossa escala. */
