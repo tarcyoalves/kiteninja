@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { podeSeguir, relacaoComRider } from '@/lib/social';
+import { criarNotificacao } from '@/lib/notificacoes';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -36,6 +37,10 @@ async function exigirAlvoAtivo(id: string) {
  * é um INSERT, e seguir de novo é no-op (ON CONFLICT DO NOTHING), não erro —
  * a UI pode chamar duas vezes seguidas (duplo toque, retry de rede) sem
  * precisar tratar 409.
+ *
+ * `RETURNING follower_id` distingue follow NOVO de re-follow ignorado pelo
+ * `ON CONFLICT` — só o novo notifica quem foi seguido (Fase 6), senão um
+ * duplo toque notificaria "novo seguidor" duas vezes para a mesma pessoa.
  */
 export async function POST(_request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
@@ -46,11 +51,20 @@ export async function POST(_request: Request, ctx: { params: Promise<{ id: strin
     if (!podeSeguir(user.id, id)) throw new HttpError(400, 'Você não pode seguir a si mesmo.');
     await exigirAlvoAtivo(id);
 
-    await sql`
+    const inserted = await sql`
       INSERT INTO user_follows (follower_id, following_id)
       VALUES (${user.id}, ${id})
       ON CONFLICT (follower_id, following_id) DO NOTHING
+      RETURNING follower_id
     `;
+
+    if (inserted.length > 0) {
+      await criarNotificacao({
+        recipientId: id,
+        actorId: user.id,
+        type: 'novo_seguidor',
+      });
+    }
 
     return { relacao: await lerRelacao(user.id, id) };
   });

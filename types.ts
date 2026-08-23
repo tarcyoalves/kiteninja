@@ -269,6 +269,31 @@ export interface SessionComment {
   userAvatarUrl?: string;
   text: string;
   createdAt: string;
+  /** `null` = comentário de primeiro nível. Presente = é resposta a esse
+   * comentário-pai (Fase 6, estilo Facebook: só 1 nível — ver
+   * lib/social.ts, podeResponderComentario). */
+  parentCommentId: string | null;
+}
+
+/**
+ * Uma notificação da central de atividades in-app (Fase 6 do plano de rede
+ * social — SEM push de propósito, decisão do dono do produto). `actorId`/
+ * `actorName` são quem praticou a ação; `sessionId`/`spotName` e
+ * `commentId`/`commentText` só vêm preenchidos quando fazem sentido para o
+ * tipo (ver GET /api/notifications).
+ */
+export interface AppNotification {
+  id: string;
+  type: 'curtida_sessao' | 'comentario_sessao' | 'resposta_comentario' | 'novo_seguidor';
+  actorId: string;
+  actorName: string;
+  actorAvatarUrl?: string;
+  sessionId?: string;
+  spotName?: string;
+  commentId?: string;
+  commentText?: string;
+  readAt: string | null;
+  createdAt: string;
 }
 
 export interface CommunityPost {

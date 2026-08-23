@@ -194,6 +194,33 @@ CREATE TABLE IF NOT EXISTS session_comments (
 
 CREATE INDEX IF NOT EXISTS idx_session_comments ON session_comments (session_id, created_at);
 
+-- Resposta a comentário de sessão (Fase 6, estilo Facebook: só 1 nível — uma
+-- resposta nunca pode ter outra resposta pendurada nela, ver lib/social.ts
+-- podeResponderComentario). NULL = comentário de primeiro nível (como hoje).
+ALTER TABLE session_comments ADD COLUMN IF NOT EXISTS parent_comment_id UUID REFERENCES session_comments(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_session_comments_parent ON session_comments (parent_comment_id);
+
+-- Central de notificações in-app (Fase 6) — SEM push de propósito (decisão
+-- do dono: "só dentro do app"). actor_id é quem PRATICOU a ação (curtiu,
+-- comentou, respondeu, seguiu); recipient_id é quem RECEBE o aviso. CHECK
+-- (actor_id <> recipient_id) é a segunda camada de defesa contra
+-- auto-notificação (a primeira é o código da rota — lib/notificacoes.ts,
+-- criarNotificacao — nunca inserir quando os dois IDs são iguais) — mesmo
+-- princípio de duas camadas já usado no CHECK de auto-follow (user_follows)
+-- e auto-DM (parseRoomName em lib/chat.ts).
+CREATE TABLE IF NOT EXISTS notifications (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor')),
+  session_id   UUID REFERENCES sessions_log(id) ON DELETE CASCADE,
+  comment_id   UUID REFERENCES session_comments(id) ON DELETE CASCADE,
+  read_at      TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (actor_id <> recipient_id)
+);
+CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications (recipient_id, created_at DESC);
+
 -- Consulta do feed (GET /api/feed, Fase 3): keyset por created_at DESC,
 -- SEMPRE filtrando por is_public = TRUE para toda sessão que não é a minha
 -- (lib/social.ts, podeVerSessao) — a própria sessão privada do usuário nunca

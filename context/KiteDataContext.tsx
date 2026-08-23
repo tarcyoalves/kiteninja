@@ -145,6 +145,23 @@ interface KiteDataContextType {
   setSessaoIdAberta: (sessionId: string | null) => void;
 
   /**
+   * Central de notificações in-app (Fase 6 do plano de rede social) — mesmo
+   * contrato de `riderIdAberto`/`sessaoIdAberta`: um booleano só, controlado
+   * por quem está montado em `app/page.tsx`, aberto a partir do sininho do
+   * Header (`components/NotificationCenterModal.tsx`).
+   */
+  isNotificacoesAbertas: boolean;
+  setIsNotificacoesAbertas: (open: boolean) => void;
+  /** Contagem de não lidas para o badge do sininho — mesmo mecanismo de
+   * polling em segundo plano de `unreadChatCount`/`dmUnreadCount` (ver os
+   * `useEffect` de "Background watcher" abaixo), não um `setInterval` novo
+   * inventado à parte. */
+  notificacoesNaoLidas: number;
+  /** Zera o contador na hora que a central abre (otimista) — o próximo
+   * `GET /api/notifications` confirma o valor real. */
+  zerarNotificacoesNaoLidas: () => void;
+
+  /**
    * Marketplace. Os anúncios NÃO vivem no contexto: a lista depende de filtros e
    * paginação que só a tela conhece, e duplicar isso aqui criaria duas fontes de
    * verdade. O contexto só carrega um contador que a view observa para recarregar
@@ -283,6 +300,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
   const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
   const [sessaoIdAberta, setSessaoIdAberta] = useState<string | null>(null);
+  const [isNotificacoesAbertas, setIsNotificacoesAbertas] = useState(false);
+  const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState(0);
+  const zerarNotificacoesNaoLidas = useCallback(() => setNotificacoesNaoLidas(0), []);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -490,6 +510,49 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       if (timeoutId) clearTimeout(timeoutId);
     };
   }, [isAuthenticated, activeTab]);
+
+  /**
+   * Background watcher da contagem de notificações não lidas (Fase 6) —
+   * MESMO mecanismo dos dois de cima (chat geral e DM): setTimeout
+   * encadeado, pausa com `document.hidden`, sem depender de WebSocket. Só lê
+   * a contagem (`naoLidas`), nunca a lista inteira — a central de
+   * notificações (`NotificationCenterModal`) busca a lista completa só
+   * quando de fato abre.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let cancelado = false;
+
+    const checkNotificacoes = async () => {
+      if (document.hidden) {
+        timeoutId = setTimeout(checkNotificacoes, 15000);
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/notifications', { cache: 'no-store' });
+        if (res.ok) {
+          const body = await res.json().catch(() => null);
+          if (typeof body?.naoLidas === 'number') setNotificacoesNaoLidas(body.naoLidas);
+        }
+      } catch {
+        // Ignora oscilações de rede
+      }
+
+      if (!cancelado) {
+        timeoutId = setTimeout(checkNotificacoes, 20000);
+      }
+    };
+
+    timeoutId = setTimeout(checkNotificacoes, 4000);
+
+    return () => {
+      cancelado = true;
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isAuthenticated]);
 
   const loadSpots = useCallback(async (forceRefresh = false) => {
     try {
@@ -939,6 +1002,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setRiderIdAberto,
         sessaoIdAberta,
         setSessaoIdAberta,
+        isNotificacoesAbertas,
+        setIsNotificacoesAbertas,
+        notificacoesNaoLidas,
+        zerarNotificacoesNaoLidas,
         listingsVersion,
         refreshListings,
         activeTab,

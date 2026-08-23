@@ -167,6 +167,8 @@ describe('autorização das rotas de API', () => {
       'deixar de seguir filtra por follower_id = user.id, não por user_id — mas follower_id É o dono da linha nesta tabela (user_follows não tem coluna user_id nem id: a PK é (follower_id, following_id)). WHERE follower_id = ${user.id} garante que só a própria relação "eu sigo" pode ser apagada, nunca a de outro velejador.',
     'sessions/[id]/comments/[commentId]/route.ts::DELETE FROM session_comments':
       'apagar comentário: o filtro SQL é id + session_id (não user_id) porque moderador/admin precisam apagar comentário de TERCEIRO, não só o próprio — quem decide é canDeleteComment (lib/authz.ts) em código antes do DELETE, mesma família de "checagem em código substitui o filtro por dono" de chat/messages/[id]/route.ts::DELETE FROM chat_messages logo acima. Prova positiva em lib/authz.test.ts, describe("matriz RBAC"): canDeleteComment autoriza o autor do próprio comentário e moderadores/admins de um comentário de terceiro, e nega um estranho sem privilégio (rider comum tentando apagar comentário alheio) — exatamente os 3 casos que a rota precisa acertar.',
+    'notifications/route.ts::UPDATE notifications':
+      'marcar as próprias notificações como lidas filtra por recipient_id = user.id, não user_id — mas nesta tabela recipient_id É o dono da linha (quem recebe o aviso), mesmo papel que user_id cumpre nas demais tabelas. WHERE recipient_id = ${user.id} garante que só as próprias notificações podem ser marcadas como lidas, nunca as de outro velejador.',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -248,6 +250,18 @@ describe('autorização das rotas de API', () => {
        */
       if (rel === 'riders/[id]/follow/route.ts') {
         expect(/WHERE\s+follower_id\s*=\s*\$\{user\.id\}/.test(r.src)).toBe(true);
+        continue;
+      }
+
+      /*
+       * notifications/route.ts (marcar como lidas): mesma família de "coluna
+       * de dono com outro nome" do caso acima, só que a coluna se chama
+       * recipient_id nesta tabela (quem recebe o aviso). WHERE recipient_id
+       * = ${user.id} É "a própria conta autenticada", o mesmo papel que
+       * ${user.id} cumpre em auth/change-password/route.ts.
+       */
+      if (rel === 'notifications/route.ts') {
+        expect(/WHERE\s+recipient_id\s*=\s*\$\{user\.id\}/.test(r.src)).toBe(true);
         continue;
       }
 

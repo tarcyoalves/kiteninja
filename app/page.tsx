@@ -16,6 +16,7 @@ import { NewListingModal } from "../components/NewListingModal";
 import { BuscarVelejadores } from "../components/BuscarVelejadores";
 import { RiderProfileModal } from "../components/RiderProfileModal";
 import { SessionDetailModal } from "../components/SessionDetailModal";
+import { NotificationCenterModal } from "../components/NotificationCenterModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
@@ -55,6 +56,10 @@ const MainContent: React.FC = () => {
     setRiderIdAberto,
     sessaoIdAberta,
     setSessaoIdAberta,
+    isNotificacoesAbertas,
+    setIsNotificacoesAbertas,
+    unreadChatCount,
+    dmUnreadCount,
   } = useKiteData();
 
   const { user } = useAuth();
@@ -212,6 +217,18 @@ const MainContent: React.FC = () => {
         sessionId={sessaoIdAberta}
         onClose={() => setSessaoIdAberta(null)}
         onAbrirPerfil={setRiderIdAberto}
+      />
+
+      {/* Central de notificações in-app (Fase 6 do plano de rede social) —
+          aberta pelo sininho do Header, mesmo padrão de estado único
+          controlado aqui e montado uma vez só. */}
+      <NotificationCenterModal
+        aberto={isNotificacoesAbertas}
+        onClose={() => setIsNotificacoesAbertas(false)}
+        onAbrirSessao={setSessaoIdAberta}
+        onAbrirPerfil={setRiderIdAberto}
+        totalChatUnread={unreadChatCount + dmUnreadCount}
+        onIrParaChat={() => setActiveTab('chat')}
       />
 
       {/* In-App Push Notification Toast */}

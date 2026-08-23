@@ -7,6 +7,7 @@ import {
   ArrowUpToLine,
   Clock,
   Compass,
+  CornerDownRight,
   Droplet,
   Gauge,
   Heart,
@@ -59,6 +60,68 @@ function formatarDuracao(minutos: number): string {
   return `${h}h${String(m).padStart(2, '0')}`;
 }
 
+interface ComentarioItemProps {
+  comentario: SessionComment;
+  podeApagar: boolean;
+  onApagar: () => void;
+  /** Ausente para uma RESPOSTA: comentário que já é resposta não pode ganhar
+   * outra resposta (Fase 6, regra de 1 nível — reforço visual do que a rota
+   * já reforça no servidor via podeResponderComentario). */
+  onResponder?: () => void;
+  respondendoAberto?: boolean;
+}
+
+/** Um comentário (ou resposta) da lista — mesmo visual para os dois casos,
+ * só o recuo (`ml-8` de quem chama) e o botão "Responder" diferem. */
+const ComentarioItem: React.FC<ComentarioItemProps> = ({
+  comentario: c,
+  podeApagar,
+  onApagar,
+  onResponder,
+  respondendoAberto,
+}) => (
+  <div className="flex items-start gap-2.5">
+    <div className="w-8 h-8 rounded-full bg-slate-800 ring-1 ring-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
+      {c.userAvatarUrl ? (
+        <img src={c.userAvatarUrl} alt={c.userName} className="w-full h-full object-cover" />
+      ) : (
+        <User size={14} className="text-slate-400" />
+      )}
+    </div>
+    <div className="min-w-0 flex-1">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-black text-slate-100 truncate">{c.userName}</span>
+        <span className="text-[10px] text-slate-500 font-mono shrink-0">
+          {formatRelativeTime(c.createdAt)}
+        </span>
+      </div>
+      <p className="text-sm text-slate-300 leading-snug break-words">{c.text}</p>
+      {onResponder && (
+        <button
+          type="button"
+          onClick={onResponder}
+          className={`mt-0.5 flex items-center gap-1 text-[11px] font-bold transition-colors ${
+            respondendoAberto ? 'text-cyan-300' : 'text-slate-500 hover:text-cyan-400'
+          }`}
+        >
+          <CornerDownRight size={12} />
+          Responder
+        </button>
+      )}
+    </div>
+    {podeApagar && (
+      <button
+        type="button"
+        onClick={onApagar}
+        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
+        aria-label="Apagar comentário"
+      >
+        <Trash2 size={14} />
+      </button>
+    )}
+  </div>
+);
+
 /**
  * Detalhe de uma sessão de velejo (Fase 5 do plano de rede social): o
  * "achar → seguir → ver o velejo" ganha aqui a página final — mapa full-bleed
@@ -88,6 +151,15 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   const [textoComentario, setTextoComentario] = useState('');
   const [enviandoComentario, setEnviandoComentario] = useState(false);
   const [erroComentario, setErroComentario] = useState<string | null>(null);
+
+  // Resposta a comentário (Fase 6, estilo Facebook: só 1 nível) — campo
+  // ANINHADO sob o comentário de primeiro nível, não um modal novo.
+  // `respondendoParaId` é o id do comentário-pai cujo campo está aberto;
+  // `null` = nenhum campo de resposta aberto no momento.
+  const [respondendoParaId, setRespondendoParaId] = useState<string | null>(null);
+  const [textoResposta, setTextoResposta] = useState('');
+  const [enviandoResposta, setEnviandoResposta] = useState(false);
+  const [erroResposta, setErroResposta] = useState<string | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -242,12 +314,68 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
     [sessionId]
   );
 
+  const handleAbrirResposta = useCallback((parentId: string) => {
+    setRespondendoParaId((atual) => (atual === parentId ? null : parentId));
+    setTextoResposta('');
+    setErroResposta(null);
+  }, []);
+
+  const handleEnviarResposta = useCallback(
+    (parentId: string) => {
+      if (!sessionId) return;
+      const texto = textoResposta.trim();
+      if (!texto || enviandoResposta) return;
+
+      setEnviandoResposta(true);
+      setErroResposta(null);
+
+      fetch(`/api/sessions/${sessionId}/comments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: texto, parentCommentId: parentId }),
+      })
+        .then(async (res) => {
+          const body = await res.json().catch(() => null);
+          if (!res.ok) {
+            throw new Error(
+              (body && typeof body === 'object' && 'error' in body
+                ? String((body as { error: unknown }).error)
+                : null) || 'Não foi possível responder.'
+            );
+          }
+          // Mesmo padrão otimista do comentário raiz: insere no FIM da lista
+          // local (ordem cronológica) — o agrupamento por comentário-pai
+          // acontece na renderização, não aqui.
+          setComentarios((prev) => [...prev, (body as { comentario: SessionComment }).comentario]);
+          setTextoResposta('');
+          setRespondendoParaId(null);
+        })
+        .catch((err) => setErroResposta(err instanceof Error ? err.message : 'Falha de rede ao responder.'))
+        .finally(() => setEnviandoResposta(false));
+    },
+    [sessionId, textoResposta, enviandoResposta]
+  );
+
   // Após todos os hooks (regra do React): fechado não renderiza nada.
   if (!sessionId) return null;
 
   const temTrilha = Boolean(sessao?.trilhaReduzida && sessao.trilhaReduzida.length > 0);
   const podeApagar = (autorComentarioId: string) =>
     Boolean(user && (autorComentarioId === user.id || canModerateEvents));
+
+  // Agrupamento de respostas sob o comentário-pai (Fase 6) — feito no
+  // CLIENTE: a rota devolve tudo ordenado por created_at ASC, sem aninhar
+  // (ver GET /api/sessions/[id]/comments). Comentários com `parentCommentId`
+  // nulo são de primeiro nível; os demais entram no mapa pelo id do pai, na
+  // mesma ordem cronológica em que já vieram.
+  const comentariosDePrimeiroNivel = comentarios.filter((c) => c.parentCommentId === null);
+  const respostasPorPai = new Map<string, SessionComment[]>();
+  for (const c of comentarios) {
+    if (!c.parentCommentId) continue;
+    const lista = respostasPorPai.get(c.parentCommentId) ?? [];
+    lista.push(c);
+    respostasPorPai.set(c.parentCommentId, lista);
+  }
 
   return (
     <div className="fixed inset-0 z-modal flex items-start sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-xs overflow-y-auto">
@@ -431,37 +559,67 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                 <p className="text-xs text-slate-500 py-2">Nenhum comentário ainda. Seja o primeiro.</p>
               )}
 
-              <ul className="space-y-3">
-                {comentarios.map((c) => (
-                  <li key={c.id} className="flex items-start gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-slate-800 ring-1 ring-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
-                      {c.userAvatarUrl ? (
-                        <img src={c.userAvatarUrl} alt={c.userName} className="w-full h-full object-cover" />
-                      ) : (
-                        <User size={14} className="text-slate-400" />
+              <ul className="space-y-4">
+                {comentariosDePrimeiroNivel.map((c) => {
+                  const respostas = respostasPorPai.get(c.id) ?? [];
+                  return (
+                    <li key={c.id} className="space-y-2.5">
+                      <ComentarioItem
+                        comentario={c}
+                        podeApagar={podeApagar(c.userId)}
+                        onApagar={() => handleApagarComentario(c.id)}
+                        // Comentário que JÁ É resposta não mostra "Responder"
+                        // (reforça no cliente a regra de 1 nível que a rota
+                        // já reforça no servidor).
+                        onResponder={() => handleAbrirResposta(c.id)}
+                        respondendoAberto={respondendoParaId === c.id}
+                      />
+
+                      {respostas.map((r) => (
+                        <div key={r.id} className="ml-8">
+                          <ComentarioItem
+                            comentario={r}
+                            podeApagar={podeApagar(r.userId)}
+                            onApagar={() => handleApagarComentario(r.id)}
+                          />
+                        </div>
+                      ))}
+
+                      {respondendoParaId === c.id && (
+                        <div className="ml-8 flex items-center gap-2">
+                          {erroResposta && (
+                            <p className="text-[11px] text-rose-400 w-full">{erroResposta}</p>
+                          )}
+                          <input
+                            type="text"
+                            value={textoResposta}
+                            onChange={(e) => setTextoResposta(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleEnviarResposta(c.id);
+                            }}
+                            placeholder={`Responder a ${c.userName}...`}
+                            maxLength={1000}
+                            autoFocus
+                            className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-slate-800/80 border border-slate-700 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/60"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleEnviarResposta(c.id)}
+                            disabled={!textoResposta.trim() || enviandoResposta}
+                            className="w-10 h-10 shrink-0 flex items-center justify-center rounded-xl bg-cyan-500 text-slate-950 disabled:opacity-40 disabled:pointer-events-none active:scale-95 transition-transform"
+                            aria-label="Enviar resposta"
+                          >
+                            {enviandoResposta ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Send size={14} />
+                            )}
+                          </button>
+                        </div>
                       )}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-black text-slate-100 truncate">{c.userName}</span>
-                        <span className="text-[10px] text-slate-500 font-mono shrink-0">
-                          {formatRelativeTime(c.createdAt)}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-300 leading-snug break-words">{c.text}</p>
-                    </div>
-                    {podeApagar(c.userId) && (
-                      <button
-                        type="button"
-                        onClick={() => handleApagarComentario(c.id)}
-                        className="shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors"
-                        aria-label="Apagar comentário"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </li>
-                ))}
+                    </li>
+                  );
+                })}
               </ul>
             </div>
           </div>

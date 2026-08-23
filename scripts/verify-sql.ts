@@ -99,6 +99,7 @@ async function main() {
     'downwind_participantes',
     'downwind_posicoes',
     'downwind_convites',
+    'notifications',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -901,6 +902,138 @@ async function main() {
   check(
     'a sessão curtida/comentada continua existindo — só a curtida/comentário do usuário apagado sumiu',
     sessBPublica1AindaExiste.rows.length === 1
+  );
+
+  console.log('\nRespostas a comentário e notificações in-app (Fase 6 do plano de rede social):');
+
+  // ---------------------------------------------- respostas a comentário (1 nível)
+  const comentarioPaiId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO session_comments (session_id, user_id, text) VALUES ($1, $2, 'comentário raiz') RETURNING id`,
+      [sessAId, riderB]
+    )
+  ).rows[0].id;
+
+  const respostaAoComentario = await expectOk(
+    db,
+    'resposta a um comentário de primeiro nível grava parent_comment_id',
+    `INSERT INTO session_comments (session_id, user_id, text, parent_comment_id)
+     VALUES ($1, $2, 'valeu, foi ótimo!', $3) RETURNING id, parent_comment_id`,
+    [sessAId, riderA, comentarioPaiId]
+  );
+  const respostaId = respostaAoComentario[0]?.id;
+  check(
+    'a resposta grava o parent_comment_id do comentário-pai',
+    respostaAoComentario[0]?.parent_comment_id === comentarioPaiId
+  );
+
+  await db.query(`DELETE FROM session_comments WHERE id = $1`, [comentarioPaiId]);
+  const respostaAposApagarPai = await db.query(
+    `SELECT id FROM session_comments WHERE id = $1`,
+    [respostaId]
+  );
+  check(
+    'apagar um comentário de primeiro nível cascateia suas respostas (parent_comment_id ON DELETE CASCADE)',
+    respostaAposApagarPai.rows.length === 0
+  );
+
+  // ------------------------------------------------------ notificações in-app
+  const notifRecipienteId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('notif-recipiente@t.local', '$2b$12$x', 'Notif Recipiente', '5001') RETURNING id`
+    )
+  ).rows[0].id;
+
+  const notifAtorId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('notif-ator@t.local', '$2b$12$x', 'Notif Ator', '5002') RETURNING id`
+    )
+  ).rows[0].id;
+
+  // CHECK (actor_id <> recipient_id): segunda camada de defesa contra
+  // auto-notificação — a primeira é lib/notificacoes.ts (criarNotificacao),
+  // que nunca insere quando os dois ids são iguais. Este teste prova que o
+  // CHECK barra mesmo um INSERT cru, não só existe no papel — mesmo
+  // princípio do CHECK de auto-follow em user_follows acima.
+  await expectFail(
+    db,
+    'CHECK barra auto-notificação (actor_id = recipient_id)',
+    `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $1, 'novo_seguidor')`,
+    [notifAtorId]
+  );
+
+  // Sessão descartável só para testar a cascata de "sessão apagada" sem
+  // mexer em sessAId (ainda referenciada por checks acima).
+  const sessParaNotifId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO sessions_log (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+         discipline, kite_size_m2, avg_wind_knots, rating)
+       VALUES ($1, 'X', 'Y', CURRENT_DATE, '10:00', 60, 'Kitesurf Twintip', 9, 18, 5) RETURNING id`,
+      [riderB]
+    )
+  ).rows[0].id;
+
+  const notifDeSessaoId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO notifications (recipient_id, actor_id, type, session_id)
+       VALUES ($1, $2, 'curtida_sessao', $3) RETURNING id`,
+      [notifRecipienteId, notifAtorId, sessParaNotifId]
+    )
+  ).rows[0].id;
+
+  await db.query(`DELETE FROM sessions_log WHERE id = $1`, [sessParaNotifId]);
+  const notifOrfaDeSessao = await db.query(
+    `SELECT id FROM notifications WHERE id = $1`,
+    [notifDeSessaoId]
+  );
+  check(
+    'apagar uma sessão cascateia as notificações que a referenciam (session_id ON DELETE CASCADE)',
+    notifOrfaDeSessao.rows.length === 0
+  );
+
+  // Duas notificações para o MESMO par recipiente/ator, para provar os dois
+  // lados da cascata de apagar usuário separadamente: uma some quando o
+  // RECIPIENTE é apagado, outra quando é o ATOR.
+  const notifComoRecipienteId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'novo_seguidor') RETURNING id`,
+      [notifRecipienteId, riderA]
+    )
+  ).rows[0].id;
+
+  const outroAtorId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('notif-ator-2@t.local', '$2b$12$x', 'Notif Ator 2', '5003') RETURNING id`
+    )
+  ).rows[0].id;
+  const notifComoAtorId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'novo_seguidor') RETURNING id`,
+      [outroAtorId, notifAtorId]
+    )
+  ).rows[0].id;
+
+  await db.query(`DELETE FROM users WHERE id = $1`, [notifRecipienteId]);
+  const notifOrfaComoRecipiente = await db.query(
+    `SELECT id FROM notifications WHERE id = $1`,
+    [notifComoRecipienteId]
+  );
+  check(
+    'apagar o usuário RECIPIENTE cascateia a notificação (recipient_id ON DELETE CASCADE)',
+    notifOrfaComoRecipiente.rows.length === 0
+  );
+
+  await db.query(`DELETE FROM users WHERE id = $1`, [notifAtorId]);
+  const notifOrfaComoAtor = await db.query(
+    `SELECT id FROM notifications WHERE id = $1`,
+    [notifComoAtorId]
+  );
+  check(
+    'apagar o usuário ATOR cascateia a notificação (actor_id ON DELETE CASCADE)',
+    notifOrfaComoAtor.rows.length === 0
   );
 
   console.log('\nToggles (chave composta, sem coluna id):');

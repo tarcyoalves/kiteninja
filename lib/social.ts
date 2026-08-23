@@ -74,3 +74,14 @@ export function podeVerSessao(
   if (sessao.autorId === viewerId) return true;
   return sessao.isPublic;
 }
+
+/**
+ * Uma resposta só pode ser feita a um comentário de PRIMEIRO NÍVEL (Facebook:
+ * um nível só, nunca resposta de resposta, Fase 6 do plano). `parentCommentId`
+ * já vem validado como pertencente à MESMA sessão pela rota
+ * (app/api/sessions/[id]/comments/route.ts) — esta função só decide a regra
+ * de profundidade, dado o `parent_comment_id` do comentário-alvo.
+ */
+export function podeResponderComentario(comentarioAlvo: { parentCommentId: string | null }): boolean {
+  return comentarioAlvo.parentCommentId === null;
+}

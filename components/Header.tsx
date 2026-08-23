@@ -21,18 +21,21 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
     refreshWindData,
     isRefreshing,
     activeTab,
-    setActiveTab,
     selectedSpot,
     setSelectedSpot,
     setIsLoggerOpen,
     unreadChatCount,
     dmUnreadCount,
     safetyAlerts,
+    setIsNotificacoesAbertas,
+    notificacoesNaoLidas,
   } = useKiteData();
 
   // Total do sino: geral + DM juntos. A aba chat, ao abrir, zera os dois
   // contadores separadamente (KiteDataContext) — aqui só soma para o badge.
   const totalChatUnread = unreadChatCount + dmUnreadCount;
+  // Badge do sino (Fase 6): chat/DM + notificações da central, num número só.
+  const totalSino = totalChatUnread + notificacoesNaoLidas;
 
   const { user, isAdmin, openAuthModal } = useAuth();
 
@@ -179,28 +182,23 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
             <span className="hidden sm:inline">Velejo</span>
           </button>
 
-          {/* Sininho de Notificações com badge */}
+          {/* Sininho de Notificações com badge — abre a central de
+              notificações (Fase 6), que já oferece o atalho pro chat quando
+              faz sentido (ver NotificationCenterModal), preservando o que o
+              sininho já fazia antes desta fase. */}
           <button
             onClick={() => {
               if (selectedSpot) setSelectedSpot(null);
-              if (totalChatUnread > 0) {
-                setActiveTab('chat');
-              } else {
-                setActiveTab('alertas');
-              }
+              setIsNotificacoesAbertas(true);
             }}
             className="relative w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all"
-            title={
-              totalChatUnread > 0
-                ? `${totalChatUnread} nova(s) mensagem(ns) no chat`
-                : 'Notificações e Alertas'
-            }
-            aria-label="Notificações e Alertas"
+            title={totalSino > 0 ? `${totalSino} notificação(ões) nova(s)` : 'Notificações'}
+            aria-label="Notificações"
           >
-            <Bell size={16} className={totalChatUnread > 0 ? 'text-cyan-300' : 'text-white'} />
-            {totalChatUnread > 0 && (
+            <Bell size={16} className={totalSino > 0 ? 'text-cyan-300' : 'text-white'} />
+            {totalSino > 0 && (
               <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-[#0B1220] animate-bounce">
-                {totalChatUnread}
+                {totalSino}
               </span>
             )}
           </button>

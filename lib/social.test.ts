@@ -4,7 +4,13 @@
  * exatamente os dois jeitos de um velejador ver o que não devia.
  */
 import { describe, expect, it } from 'vitest';
-import { podeSeguir, podeVerSessao, relacaoComRider, rotuloBotaoSeguir } from './social';
+import {
+  podeResponderComentario,
+  podeSeguir,
+  podeVerSessao,
+  relacaoComRider,
+  rotuloBotaoSeguir,
+} from './social';
 
 describe('podeSeguir', () => {
   it('autoriza seguir outro velejador', () => {
@@ -64,5 +70,15 @@ describe('podeVerSessao', () => {
 
   it('terceiro NÃO vê sessão privada de outro velejador', () => {
     expect(podeVerSessao({ autorId: 'u-a', isPublic: false }, 'u-b')).toBe(false);
+  });
+});
+
+describe('podeResponderComentario', () => {
+  it('permite responder a um comentário de primeiro nível (parentCommentId null)', () => {
+    expect(podeResponderComentario({ parentCommentId: null })).toBe(true);
+  });
+
+  it('nega responder a uma resposta — Facebook: só 1 nível, nunca resposta de resposta', () => {
+    expect(podeResponderComentario({ parentCommentId: 'c-pai' })).toBe(false);
   });
 });

@@ -362,6 +362,114 @@ nenhum teste novo isolável: a lógica nova é rota HTTP + componente React, nã
 função pura), `verify-sql.ts` 210/210 (sem mudança de schema — as tabelas já
 existiam desde a Fase 3, com cascata já testada), `next build` limpo.
 
+### Fase 6 concluída (23/08/2026)
+
+Pedido do dono: "Analise o que melhorar no geral para ficar estilo Facebook.
+Podendo responder comentários. Fazer as notificações sobre as ações etc."
+Confirmado por pergunta direta: notificações só DENTRO do app, sem push
+("ruído demais" — mesmo raciocínio já usado para não adicionar push ao chat
+geral), e mantida só a curtida (❤️) atual, sem múltiplas reações — o par
+respostas+notificações já é o essencial do estilo Facebook pedido; múltiplas
+reações mudaria o schema de `session_likes`/`post_likes` por um ganho só
+visual, e não foi pedido.
+
+**Escopo deliberado:** respostas e notificações valem só para comentário de
+SESSÃO (`session_comments`, o centro do feed novo da Fase 3-5) — não para
+comentário de POST antigo (`post_comments`, aba Comunidade). Registrado aqui
+como decisão consciente, não esquecimento: a Comunidade é a aba antiga, o
+feed de sessões é onde o dono está investindo desde a Fase 3.
+
+**Respostas (`session_comments.parent_comment_id`):** um nível só, estilo
+Facebook — uma resposta nunca pode ter outra resposta pendurada nela.
+`lib/social.ts` ganhou `podeResponderComentario` (função pura: `true` só
+quando o comentário-alvo é de primeiro nível, ou seja, o PRÓPRIO
+`parent_comment_id` dele é `null`), testada em `lib/social.test.ts` nos dois
+sentidos (responder um de primeiro nível / negar responder uma resposta). A
+rota (`POST /api/sessions/[id]/comments`, estendida) valida que o
+`parentCommentId` recebido pertence à MESMA sessão da URL antes de qualquer
+outra coisa — sem isso, dava para "responder" um comentário de uma sessão
+totalmente diferente, e a notificação criada vazaria a existência desse
+comentário para quem talvez nem devesse saber que a sessão existe.
+`SessionDetailModal.tsx` agrupa respostas sob o comentário-pai NO CLIENTE
+(a rota continua devolvendo tudo ordenado por `created_at ASC`, sem aninhar):
+um `Map<parentId, respostas[]>` construído a partir da lista plana, réplicas
+indentadas (`ml-8`) logo abaixo do pai. O botão "Responder" só aparece em
+comentário de primeiro nível — reforço visual no cliente da regra que o
+servidor já aplica.
+
+**Central de notificações (`notifications`, sem push):** `actor_id` é quem
+praticou a ação, `recipient_id` é quem recebe o aviso; `CHECK (actor_id <>
+recipient_id)` é a segunda camada de defesa contra auto-notificação (mesmo
+princípio do `CHECK` de auto-follow em `user_follows`) — a primeira é
+`lib/notificacoes.ts`, `criarNotificacao()`, único ponto que insere em
+`notifications` em todo o código (nunca um INSERT direto numa rota) e que
+simplesmente não faz nada quando `recipientId === actorId`. As 3 rotas que
+geram notificação (curtir sessão, comentar/responder sessão, seguir
+velejador) já tinham `ON CONFLICT DO NOTHING`/checagem de "já existia" para
+lidar com toque duplo — a mudança em cada uma foi trocar o INSERT por
+`RETURNING <chave>` e só chamar `criarNotificacao` quando uma linha nova de
+fato voltou, senão um retry de rede ou um duplo toque notificaria a mesma
+ação duas vezes.
+
+`GET /api/notifications` devolve as últimas 50 (`AppNotification[]`, com
+nome/avatar do ator, `spotName`/`commentText` já resolvidos via `LEFT JOIN`
+para o card não precisar de mais nenhuma requisição) e `naoLidas` via
+`COUNT(*) WHERE read_at IS NULL` — consulta separada, de propósito, para não
+subcontar quando houver mais de 50 não lidas acumuladas. `POST
+/api/notifications` marca todas como lidas, filtrando por `recipient_id =
+user.id` — só a própria conta, nunca a de outro velejador.
+
+**Central visual (`NotificationCenterModal.tsx`):** mesmo padrão estrutural
+de `RiderProfileModal.tsx`/`SessionDetailModal.tsx` (header com X, fetch com
+guard `ativo`, estados carregando/erro). Abrir o modal já dispara o `POST`
+de marcar como lida (mesmo espírito de `clearUnreadChat` ao entrar na aba de
+chat) — a lista busca de novo na próxima abertura, já mostrando os itens
+como lidos. Preserva o atalho que o sininho JÁ tinha antes desta fase
+(tocar nele ia direto para a aba de chat quando havia mensagem não lida): a
+faixa "Você tem N mensagens não lidas no chat" aparece no topo do modal
+quando `totalChatUnread > 0`.
+
+**`Header.tsx`:** o sininho trocou de comportamento — antes pulava direto
+para a aba `chat` ou `alertas` via `setActiveTab`; agora abre o
+`NotificationCenterModal` (mesmo padrão `riderIdAberto`/`sessaoIdAberta` de
+estado único em `KiteDataContext.tsx`, modal montado uma vez em
+`app/page.tsx`). O badge do sino passou a somar chat+DM com a nova contagem
+de notificações não lidas.
+
+**Contagem de não lidas no contexto:** `notificacoesNaoLidas` segue o MESMO
+mecanismo já usado por `unreadChatCount`/`dmUnreadCount` — um `useEffect` com
+`setTimeout` encadeado, pausando quando `document.hidden`, sem WebSocket. É
+um terceiro poll independente (chat geral e DM já são dois pollings
+separados, não um ciclo único compartilhado), então esta fase não inventou
+um mecanismo novo, só replicou o padrão já estabelecido pela terceira vez.
+
+**Divergência de design registrada:** a spec desta fase previa que `POST
+/api/notifications` (marcar como lida, filtrando por `recipient_id =
+user.id`) não precisaria de entrada em `MUTACOES_JUSTIFICADAS`
+(`lib/authz.test.ts`) por já filtrar por dono. Na prática, o auditor
+verifica a presença literal do texto `user_id =` na query — e a coluna aqui
+se chama `recipient_id`, não `user_id`, então o regex não casa (mesmo caso
+já existente de `auth/change-password/route.ts::UPDATE users`, que filtra
+por `id = user.id` e MESMO ASSIM está na lista de justificadas). Preferido o
+comportamento real do auditor: adicionada uma entrada em
+`MUTACOES_JUSTIFICADAS` com prova positiva (`WHERE recipient_id =
+${user.id}`), e um bypass específico no segundo teste (`mutação sem user_id
+só existe atrás de checagem de admin`), no mesmo molde do bypass já existente
+para `riders/[id]/follow/route.ts::DELETE FROM user_follows`
+(`follower_id = user.id`). Nenhuma exceção nova foi criada sem prova — a
+prova é a regex de `WHERE recipient_id = ${user.id}` no próprio código-fonte
+da rota, checada pelo teste.
+
+Verificação: `tsc --noEmit` limpo; `vitest run` 635/635 (2 testes novos de
+`podeResponderComentario`, a única lógica nova isolável em função pura);
+`verify-sql.ts` 218/218 (8 checks novos: tabela `notifications` + cascata de
+resposta por `parent_comment_id`, CHECK de auto-notificação, cascata de
+notificação por sessão apagada, e cascata de notificação nos dois sentidos
+de usuário apagado — recipiente e ator, separadamente); `next build` limpo
+(o erro de host allowlist do Neon que aparece no log é esperado — a
+`DATABASE_URL` de build é um placeholder, o mesmo comportamento de fases
+anteriores).
+
 ## 8. Critérios de aceite
 
 - `node node_modules/tsx/dist/cli.mjs scripts/verify-sql.ts` — verde, com
