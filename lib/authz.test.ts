@@ -117,6 +117,7 @@ describe('autorização das rotas de API', () => {
       'posts/[id]/comments/route.ts',
       'alerts/route.ts',
       'riders/search/route.ts',
+      'riders/[id]/route.ts',
     ]) {
       const r = rotas.find((x) => x.rel === rel);
       if (!r) continue;

@@ -4,7 +4,7 @@
  * exatamente os dois jeitos de um velejador ver o que não devia.
  */
 import { describe, expect, it } from 'vitest';
-import { podeSeguir, podeVerSessao, relacaoComRider } from './social';
+import { podeSeguir, podeVerSessao, relacaoComRider, rotuloBotaoSeguir } from './social';
 
 describe('podeSeguir', () => {
   it('autoriza seguir outro velejador', () => {
@@ -31,6 +31,24 @@ describe('relacaoComRider', () => {
 
   it('amigos: seguimento mútuo — derivado, não é tabela', () => {
     expect(relacaoComRider(true, true)).toBe('amigos');
+  });
+});
+
+describe('rotuloBotaoSeguir', () => {
+  it('nenhuma -> "Seguir"', () => {
+    expect(rotuloBotaoSeguir('nenhuma')).toBe('Seguir');
+  });
+
+  it('segue_voce -> "Seguir de volta" (ele já me segue, eu ainda não)', () => {
+    expect(rotuloBotaoSeguir('segue_voce')).toBe('Seguir de volta');
+  });
+
+  it('seguindo -> "Seguindo" (eu sigo, ele não me segue de volta)', () => {
+    expect(rotuloBotaoSeguir('seguindo')).toBe('Seguindo');
+  });
+
+  it('amigos -> "Amigos" (seguimento mútuo)', () => {
+    expect(rotuloBotaoSeguir('amigos')).toBe('Amigos');
   });
 });
 

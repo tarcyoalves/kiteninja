@@ -423,3 +423,29 @@ export interface RiderSearchResult {
   homeSpot?: string;
   relacao: RelacaoRider;
 }
+
+/**
+ * Perfil público de um velejador — `GET /api/riders/[id]` (Fase 4 do plano de
+ * rede social). Superconjunto de `RiderSearchResult`: o perfil precisa de
+ * nacionalidade, bio, disciplinas e contadores de seguidores/seguindo, que a
+ * busca (uma lista compacta) nunca precisa. Assim como `RiderSearchResult`,
+ * NUNCA inclui email/senha/IP/contato de emergência — ver
+ * app/api/riders/[id]/route.ts.
+ */
+export interface RiderProfile {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  riderId: string;
+  countryFlag: string;
+  nationality: string;
+  riderLevel: RiderLevel;
+  homeSpot?: string;
+  bio?: string;
+  disciplines: Discipline[];
+  /** Quantos velejadores seguem este perfil. */
+  seguidores: number;
+  /** Quantos velejadores este perfil segue. */
+  seguindo: number;
+  relacao: RelacaoRider;
+}

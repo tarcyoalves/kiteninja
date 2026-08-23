@@ -50,6 +50,9 @@ async function expectOk(
   }
 }
 
+/** Mesmo teto fixo de app/api/riders/[id]/route.ts (LIMITE_VELEJOS). */
+const LIMITE_VELEJOS_TESTE = 20;
+
 async function main() {
   console.log('Postgres em processo (PGlite)\n');
   // gen_random_uuid() vem do pgcrypto; no Neon a extensão já está disponível,
@@ -736,6 +739,82 @@ async function main() {
   check(
     'página 2 traz só o que sobrou (sessAId), sem repetir o que a página 1 já devolveu',
     paginaDois.length === 1 && String(paginaDois[0].id) === sessAId
+  );
+
+  console.log('\nPerfil público do velejador (Fase 4 do plano de rede social):');
+
+  // Réplica exata das duas subconsultas de contagem de app/api/riders/[id]/
+  // route.ts. Neste ponto do script: A segue B e B segue A (seção "Grafo
+  // social" acima) — seguimento mútuo, então B tem exatamente 1 seguidor (A)
+  // e segue exatamente 1 pessoa (A) de volta.
+  const contagensB = await expectOk(
+    db,
+    'perfil de B: contagem de seguidores e seguindo (subconsultas de user_follows)',
+    `SELECT
+       (SELECT COUNT(*)::int FROM user_follows f WHERE f.following_id = $1) AS seguidores,
+       (SELECT COUNT(*)::int FROM user_follows f WHERE f.follower_id = $1) AS seguindo`,
+    [riderB]
+  );
+  check(
+    'B tem exatamente 1 seguidor (A) e segue exatamente 1 (A) — seguimento mútuo',
+    Number(contagensB[0]?.seguidores) === 1 && Number(contagensB[0]?.seguindo) === 1
+  );
+
+  const contagensC = await expectOk(
+    db,
+    'perfil de C: contagem zerada — ninguém segue C, C não segue ninguém',
+    `SELECT
+       (SELECT COUNT(*)::int FROM user_follows f WHERE f.following_id = $1) AS seguidores,
+       (SELECT COUNT(*)::int FROM user_follows f WHERE f.follower_id = $1) AS seguindo`,
+    [riderC]
+  );
+  check(
+    'C não tem seguidor nem segue ninguém',
+    Number(contagensC[0]?.seguidores) === 0 && Number(contagensC[0]?.seguindo) === 0
+  );
+
+  // Réplica exata da consulta de velejos de app/api/riders/[id]/route.ts:
+  // WHERE s.user_id = <dono do perfil> AND (s.user_id = <viewer> OR is_public).
+  const consultaVelejosDoPerfil = `
+    SELECT s.id, s.is_public
+    FROM sessions_log s
+    WHERE s.user_id = $1
+      AND (s.user_id = $2 OR s.is_public = TRUE)
+    ORDER BY s.created_at DESC
+    LIMIT $3
+  `;
+
+  // A visitando o perfil de B: as duas sessões PÚBLICAS de B aparecem
+  // (sessBPublica2 mais nova primeiro), a PRIVADA nunca — este é o teste de
+  // negação central da Fase 4: perfil de terceiro não vaza sessão privada,
+  // mesmo sendo A quem já segue B.
+  const velejosDeBParaA = await expectOk(
+    db,
+    'velejos do perfil de B, vistos por A (terceiro): só as públicas',
+    consultaVelejosDoPerfil,
+    [riderB, riderA, LIMITE_VELEJOS_TESTE]
+  );
+  check(
+    'perfil de B para A traz as 2 sessões públicas, na ordem certa (mais nova primeiro)',
+    velejosDeBParaA.map((r) => String(r.id)).join(',') === [sessBPublica2, sessBPublica1].join(',')
+  );
+  check(
+    'sessão PRIVADA de B NÃO aparece no próprio perfil dele quando quem olha é A',
+    !velejosDeBParaA.some((r) => String(r.id) === sessBPrivada)
+  );
+
+  // B visitando o PRÓPRIO perfil: a privada aparece também — dono sempre vê a
+  // própria sessão (mesma regra de podeVerSessao, "autorId === viewerId").
+  const velejosDeBParaSiMesmo = await expectOk(
+    db,
+    'velejos do perfil de B, vistos pelo próprio B: a privada também aparece',
+    consultaVelejosDoPerfil,
+    [riderB, riderB, LIMITE_VELEJOS_TESTE]
+  );
+  check(
+    'perfil de B para o próprio B traz as 3 sessões, incluindo a privada',
+    velejosDeBParaSiMesmo.length === 3 &&
+      velejosDeBParaSiMesmo.some((r) => String(r.id) === sessBPrivada)
   );
 
   console.log('\nCascata de curtidas/comentários de sessão (Fase 3):');

@@ -39,6 +39,25 @@ export function relacaoComRider(euSigo: boolean, meSegue: boolean): RelacaoRider
 }
 
 /**
+ * Rótulo do botão Seguir (componentes/BotaoSeguir.tsx, seção 4.2 do plano),
+ * derivado da MESMA `RelacaoRider` de `relacaoComRider` — um só lugar decide
+ * o texto, para a busca de velejadores e o perfil público nunca mostrarem
+ * rótulos diferentes para a mesma relação.
+ */
+export function rotuloBotaoSeguir(relacao: RelacaoRider): string {
+  switch (relacao) {
+    case 'nenhuma':
+      return 'Seguir';
+    case 'segue_voce':
+      return 'Seguir de volta';
+    case 'seguindo':
+      return 'Seguindo';
+    case 'amigos':
+      return 'Amigos';
+  }
+}
+
+/**
  * Regra de visibilidade de UMA sessão de velejo (`sessions_log.is_public`):
  * o dono sempre vê a própria sessão, pública ou não — precisa continuar
  * enxergando um rascunho que marcou como privado. De uma sessão de
