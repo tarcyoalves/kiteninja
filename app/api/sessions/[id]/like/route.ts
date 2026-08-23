@@ -1,38 +1,9 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
-import { podeVerSessao } from '@/lib/social';
+import { exigirSessaoVisivel } from '@/lib/sessaoAcesso';
 
 const UUID = /^[0-9a-f-]{36}$/i;
-
-interface SessaoRow {
-  user_id: unknown;
-  is_public: unknown;
-}
-
-/**
- * Confere que a sessão existe E que quem está tentando curtir pode vê-la
- * (`lib/social.ts`, `podeVerSessao`) antes de deixar o INSERT acontecer.
- *
- * Sem isto, um velejador que descobrisse (ou adivinhasse) o UUID de uma
- * sessão PRIVADA de um estranho conseguiria curtir mesmo sem ter acesso a
- * ela — a única barreira hoje é "não sei o id", que não é barreira nenhuma.
- *
- * 404 genérico nos dois casos (não existe / existe mas é privada de
- * terceiro): mesmo princípio de MSG_DOWNWIND_NAO_ENCONTRADO em
- * lib/downwindAcesso.ts — se a mensagem fosse diferente, dava para usar a
- * curtida como oráculo de "essa sessão existe?" testando ids ao acaso.
- */
-async function exigirSessaoVisivel(id: string, viewerId: string): Promise<void> {
-  const rows = (await sql`
-    SELECT user_id, is_public FROM sessions_log WHERE id = ${id} LIMIT 1
-  `) as SessaoRow[];
-  const row = rows[0];
-  const visivel =
-    row !== undefined &&
-    podeVerSessao({ autorId: String(row.user_id), isPublic: Boolean(row.is_public) }, viewerId);
-  if (!visivel) throw new HttpError(404, 'Sessão não encontrada.');
-}
 
 async function contarCurtidas(id: string): Promise<number> {
   const rows = await sql`

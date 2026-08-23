@@ -15,6 +15,7 @@ import { NewPostModal } from "../components/NewPostModal";
 import { NewListingModal } from "../components/NewListingModal";
 import { BuscarVelejadores } from "../components/BuscarVelejadores";
 import { RiderProfileModal } from "../components/RiderProfileModal";
+import { SessionDetailModal } from "../components/SessionDetailModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
@@ -52,6 +53,8 @@ const MainContent: React.FC = () => {
     setIsBuscaVelejadoresOpen,
     riderIdAberto,
     setRiderIdAberto,
+    sessaoIdAberta,
+    setSessaoIdAberta,
   } = useKiteData();
 
   const { user } = useAuth();
@@ -198,6 +201,16 @@ const MainContent: React.FC = () => {
       <RiderProfileModal
         riderId={riderIdAberto}
         onClose={() => setRiderIdAberto(null)}
+        onAbrirPerfil={setRiderIdAberto}
+        onAbrirDetalhe={setSessaoIdAberta}
+      />
+
+      {/* Detalhe da sessão (Fase 5 do plano de rede social) — mapa full-bleed
+          + estatísticas completas + comentários, aberto de qualquer
+          CardSessaoFeed (feed ou perfil público). */}
+      <SessionDetailModal
+        sessionId={sessaoIdAberta}
+        onClose={() => setSessaoIdAberta(null)}
         onAbrirPerfil={setRiderIdAberto}
       />
 

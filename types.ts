@@ -223,6 +223,54 @@ export interface SessionFeedItem {
   comentarios: number;
 }
 
+/** Sessão completa para a tela de detalhe (Fase 5): tudo que SessionFeedItem
+ * deliberadamente NÃO tem (notes, photoUrl, kiteSizeM2, windDirection,
+ * tideCondition, waterCondition, rating) porque o feed não precisa, mas o
+ * detalhe sim. */
+export interface SessionDetail {
+  id: string;
+  spotName: string;
+  spotLocation: string;
+  date: string;
+  startTime: string;
+  createdAt: string;
+  durationMinutes: number;
+  discipline: Discipline;
+  kiteSizeM2: number;
+  boardModel?: string;
+  avgWindKnots: number;
+  maxGustKnots?: number;
+  windDirection: string;
+  tideCondition: 'Seca' | 'Enchendo' | 'Cheia' | 'Vazando';
+  waterCondition: string;
+  rating: number;
+  distanceKm?: number;
+  maxSpeedKnots?: number;
+  highestJumpM?: number;
+  notes?: string;
+  photoUrl?: string;
+  isPublic: boolean;
+  trilhaReduzida?: Array<[number, number, number]>;
+  authorId: string;
+  authorName: string;
+  authorAvatarUrl?: string;
+  authorRiderId: string;
+  authorCountryFlag: string;
+  curtidas: number;
+  euCurti: boolean;
+  comentarios: number;
+}
+
+/** Um comentário em uma sessão (Fase 5). */
+export interface SessionComment {
+  id: string;
+  userId: string;
+  userName: string;
+  userAvatarUrl?: string;
+  text: string;
+  createdAt: string;
+}
+
 export interface CommunityPost {
   id: string;
   authorName: string;

@@ -1,8 +1,9 @@
 # Plano — KiteNinja como rede social de velejo
 
-Status: **Fases 0 a 3 implementadas** (21-22/08/2026 — `f7f6a3d`, `856f929`,
-`a74d774`, `be50b25`, `355ce05`). Fases 4 e 5 pendentes, **e trocadas de
-ordem** — ver "Reordenação" no fim da seção 7. Escrito em 21/08/2026 a partir de um
+Status: **Fases 0 a 5 implementadas** (21-23/08/2026 — `f7f6a3d`, `856f929`,
+`a74d774`, `be50b25`, `355ce05`, `cff45a8`). Fases 4 e 5 foram **trocadas de
+ordem** — ver "Reordenação" no fim da seção 7; ambas concluídas nesta ordem
+trocada. Escrito em 21/08/2026 a partir de um
 pedido do dono, com prints do app **Surfr** como referência visual:
 
 > "Pensando no futuro do app para abrirmos para o público geral vamos adotar
@@ -318,6 +319,48 @@ algo que já se vê no card. Fechar o ciclo **achar → seguir → ver o velejo*
 - **Fase 5 (nova) — Detalhe da sessão + comentários.** Tela de detalhe
   (mapa full-bleed + folha + estatísticas) e a UI de ler/escrever comentário,
   que a Fase 3 deixou só como contagem.
+
+### Fase 5 concluída (23/08/2026)
+
+`GET /api/sessions/[id]` (novo, no mesmo arquivo do PATCH/DELETE já existentes
+— mas com regra de visibilidade DIFERENTE: dono OU seguidor com sessão
+pública, via `podeVerSessao`, não só dono) devolve o detalhe completo
+(`types.ts`, `SessionDetail` — tudo que `SessionFeedItem` deliberadamente não
+tem: notas, foto, tamanho da pipa, direção do vento, maré, condição da água,
+nota). `GET`/`POST /api/sessions/[id]/comments` (novo) e `DELETE
+/api/sessions/[id]/comments/[commentId]` (novo, usando `canDeleteComment` de
+`lib/authz.ts` — código morto desde a fundação do projeto, finalmente
+consumido: autor apaga o próprio, moderador/admin apaga de terceiro).
+
+`lib/sessaoAcesso.ts` (novo): `exigirSessaoVisivel` extraída de
+`app/api/sessions/[id]/like/route.ts` (onde nasceu) porque virou 4
+call-sites (curtir, detalhe, listar comentários, criar comentário) — o limiar
+em que duplicar deixa de valer a pena. `lib/useCurtidaOtimista.ts` (novo):
+mesmo raciocínio para a lógica de curtida otimista, agora reaproveitada por
+`CardSessaoFeed.tsx` e pelo novo `components/SessionDetailModal.tsx`.
+
+`SessionDetailModal.tsx`: mesmo padrão estrutural de `RiderProfileModal.tsx`
+(header com botão fechar, foco inicial nele, fetch com guard `ativo`). Mapa
+full-bleed reaproveita `CardSessaoFeedMapa`/`TrilhaMiniatura` direto (sem o
+gate de `IntersectionObserver` do card de lista — aqui é um modal só, sempre
+montado quando aberto). Aberto tocando em qualquer parte do card do feed
+(`CardSessaoFeed.tsx` ganhou `role="button"` + `onClick` no `<article>`
+inteiro, com `stopPropagation` nos dois botões internos — abrir perfil e
+curtir — para não abrirem os dois modais ao mesmo toque) ou pelos velejos
+listados dentro de `RiderProfileModal.tsx`. Estado (`sessaoIdAberta`/
+`setSessaoIdAberta`) mora em `KiteDataContext.tsx`, modal montado uma única
+vez em `app/page.tsx` — mesmo padrão de `riderIdAberto`/`RiderProfileModal`.
+
+`lib/authz.test.ts`: o DELETE de comentário entrou em `MUTACOES_JUSTIFICADAS`
+(filtra por `id + session_id`, não `user_id`, porque moderador precisa apagar
+comentário de terceiro) com prova positiva — o teste de `canDeleteComment`
+(autor, estranho negado, moderador/admin em comentário de terceiro) já
+existia, sem consumidor, desde antes desta fase.
+
+Verificação: `tsc --noEmit` limpo, `vitest run` 633/633 (mesma contagem —
+nenhum teste novo isolável: a lógica nova é rota HTTP + componente React, não
+função pura), `verify-sql.ts` 210/210 (sem mudança de schema — as tabelas já
+existiam desde a Fase 3, com cascata já testada), `next build` limpo.
 
 ## 8. Critérios de aceite
 

@@ -17,6 +17,10 @@ interface RiderProfileModalProps {
    * então tocar no autor de um velejo aqui dentro troca o perfil em exibição
    * em vez de não fazer nada. */
   onAbrirPerfil: (riderId: string) => void;
+  /** Repassado para cada `CardSessaoFeed` da lista de velejos deste perfil —
+   * mesmo `setSessaoIdAberta` do contexto que abre o detalhe de sessão de
+   * qualquer outro lugar do app (Fase 5 do plano de rede social). */
+  onAbrirDetalhe: (sessionId: string) => void;
 }
 
 interface RespostaPerfil {
@@ -39,7 +43,12 @@ function euSigoNaRelacao(relacao: RelacaoRider): boolean {
  * de navegação direta — mesmo raciocínio de `ListingDetailModal`/
  * `SpotDetailModal`, os dois modais de detalhe que o app já tem.
  */
-export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({ riderId, onClose, onAbrirPerfil }) => {
+export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
+  riderId,
+  onClose,
+  onAbrirPerfil,
+  onAbrirDetalhe,
+}) => {
   const { user } = useAuth();
   const [rider, setRider] = useState<RiderProfile | null>(null);
   const [velejos, setVelejos] = useState<SessionFeedItem[]>([]);
@@ -235,7 +244,12 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({ riderId, o
                 </div>
               ) : (
                 velejos.map((sessao) => (
-                  <CardSessaoFeed key={sessao.id} sessao={sessao} onAbrirPerfil={onAbrirPerfil} />
+                  <CardSessaoFeed
+                    key={sessao.id}
+                    sessao={sessao}
+                    onAbrirPerfil={onAbrirPerfil}
+                    onAbrirDetalhe={onAbrirDetalhe}
+                  />
                 ))
               )}
             </div>

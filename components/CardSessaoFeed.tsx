@@ -1,10 +1,11 @@
 'use client';
 
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Heart, MessageCircle, Wind, Route, Gauge, Clock, User } from 'lucide-react';
 import { TrilhaMiniatura } from './TrilhaMiniatura';
 import { formatRelativeTime } from '@/lib/chat';
+import { useCurtidaOtimista } from '@/lib/useCurtidaOtimista';
 import type { SessionFeedItem } from '@/types';
 
 /**
@@ -47,6 +48,12 @@ interface CardSessaoFeedProps {
    * a lista a cada render do pai.
    */
   onAbrirPerfil: (riderId: string) => void;
+  /**
+   * Abre o detalhe da sessão (mapa full-bleed + estatísticas + comentários,
+   * Fase 5 do plano de rede social) — mesma identidade estável de
+   * `onAbrirPerfil` acima, vinda de `setSessaoIdAberta` do contexto.
+   */
+  onAbrirDetalhe: (sessionId: string) => void;
 }
 
 /**
@@ -64,7 +71,11 @@ interface CardSessaoFeedProps {
  * inline (ver `views/FeedView.tsx`: `sessao` vem direto do array de estado,
  * nunca de um spread `{...sessao}` novo a cada render).
  */
-export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao, onAbrirPerfil }: CardSessaoFeedProps) {
+export const CardSessaoFeed = memo(function CardSessaoFeed({
+  sessao,
+  onAbrirPerfil,
+  onAbrirDetalhe,
+}: CardSessaoFeedProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [emViewport, setEmViewport] = useState(false);
 
@@ -86,58 +97,44 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao, onAbrirPerf
 
   const temTrilha = Boolean(sessao.trilhaReduzida && sessao.trilhaReduzida.length > 0);
 
-  // Curtida otimista (seção 3 do plano): pinta no toque, a requisição vai
-  // atrás. `null` = "sem override local", mostra o que veio do servidor
-  // (`sessao.euCurti`/`sessao.curtidas`) — é o estado normal. Um objeto aqui
-  // é a exceção: só existe enquanto o toque local diverge do que o
-  // `FeedView` tem (durante a requisição, ou depois dela, até o próximo
-  // fetch trazer a verdade do servidor de novo).
-  const [otimista, setOtimista] = useState<{ curtido: boolean; contagem: number } | null>(null);
-
-  // Sempre que uma nova verdade do servidor chega para ESTA sessão (feed
-  // recarregado por pull-to-refresh, por exemplo), o override local perde a
-  // validade — sem isto, um pull-to-refresh que trouxesse curtidas de OUTRAS
-  // pessoas continuaria escondido atrás do valor otimista antigo para sempre.
-  useEffect(() => {
-    setOtimista(null);
-  }, [sessao.euCurti, sessao.curtidas]);
-
-  const curtido = otimista ? otimista.curtido : sessao.euCurti;
-  const contagemCurtidas = otimista ? otimista.contagem : sessao.curtidas;
-
-  const handleCurtir = useCallback(() => {
-    const proximoCurtido = !curtido;
-    const proximaContagem = Math.max(0, contagemCurtidas + (proximoCurtido ? 1 : -1));
-    setOtimista({ curtido: proximoCurtido, contagem: proximaContagem });
-
-    fetch(`/api/sessions/${sessao.id}/like`, { method: proximoCurtido ? 'POST' : 'DELETE' })
-      .then((res) => {
-        if (!res.ok) throw new Error('curtida falhou');
-        return res.json() as Promise<{ count: number }>;
-      })
-      .then((body) => setOtimista({ curtido: proximoCurtido, contagem: body.count }))
-      .catch(() => {
-        // Reverte: some o override e volta a mostrar o que o servidor tinha
-        // antes do toque — nunca deixa a UI presa num estado que a
-        // requisição não confirmou.
-        setOtimista(null);
-      });
-  }, [curtido, contagemCurtidas, sessao.id]);
+  // Curtida otimista (seção 3 do plano) — lógica extraída para
+  // lib/useCurtidaOtimista.ts, reaproveitada também por SessionDetailModal.
+  const { curtido, contagem: contagemCurtidas, alternar: handleCurtir } = useCurtidaOtimista(
+    sessao.id,
+    sessao.euCurti,
+    sessao.curtidas
+  );
 
   return (
     <article
       ref={containerRef}
-      className="feed-card rounded-2xl border border-slate-700/80 bg-[#1E293B] text-slate-100 shadow-xl overflow-hidden"
+      onClick={() => onAbrirDetalhe(sessao.id)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onAbrirDetalhe(sessao.id);
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`Ver detalhe do velejo em ${sessao.spotName}`}
+      className="feed-card rounded-2xl border border-slate-700/80 bg-[#1E293B] text-slate-100 shadow-xl overflow-hidden cursor-pointer"
     >
       {/* Topo: avatar + nome + spot + bandeira à esquerda; duração + vento à
           direita (seção 3.5 do plano, layout do print do Surfr). */}
       <div className="p-4 flex items-start justify-between gap-2">
         {/* Botão, não div com onClick (mesmo motivo do lightbox de foto em
             FeedView.tsx): precisa de foco e Enter para quem navega por
-            teclado. Abre o perfil público do autor — seção 4.5 do plano. */}
+            teclado. Abre o perfil público do autor — seção 4.5 do plano.
+            stopPropagation: o <article> inteiro agora abre o detalhe da
+            sessão (Fase 5) — sem isto, tocar no autor abriria os dois
+            modais ao mesmo tempo. */}
         <button
           type="button"
-          onClick={() => onAbrirPerfil(sessao.authorId)}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAbrirPerfil(sessao.authorId);
+          }}
           className="flex items-center gap-3 min-w-0 text-left"
           aria-label={`Ver perfil de ${sessao.authorName}`}
         >
@@ -214,7 +211,10 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao, onAbrirPerf
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={handleCurtir}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCurtir();
+            }}
             aria-pressed={curtido}
             className={`flex items-center gap-1.5 text-xs font-black transition-all active:scale-125 min-h-11 ${
               curtido
@@ -242,8 +242,10 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({ sessao, onAbrirPerf
 });
 
 /** Uma célula da faixa de 4 números — extraída para não repetir o markup 4
- * vezes e para o rótulo/valor sempre ficarem no mesmo lugar visual. */
-function EstatisticaCard({
+ * vezes e para o rótulo/valor sempre ficarem no mesmo lugar visual.
+ * Exportada: `SessionDetailModal.tsx` (Fase 5) reaproveita a MESMA aparência
+ * visual para a grade maior de estatísticas do detalhe. */
+export function EstatisticaCard({
   icone,
   rotulo,
   children,

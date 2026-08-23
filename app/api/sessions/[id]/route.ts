@@ -2,7 +2,8 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { num, oneOf, str } from '@/lib/validation';
-import type { Discipline } from '@/types';
+import { exigirSessaoVisivel } from '@/lib/sessaoAcesso';
+import type { Discipline, SessionDetail } from '@/types';
 
 const DISCIPLINES = [
   'Kitesurf Twintip',
@@ -22,6 +23,129 @@ function sent(body: unknown, field: string): boolean {
     Object.prototype.hasOwnProperty.call(body, field) &&
     (body as Record<string, unknown>)[field] !== undefined
   );
+}
+
+interface SessaoDetalheRow {
+  id: unknown;
+  user_id: unknown;
+  spot_name: unknown;
+  spot_location: unknown;
+  date: unknown;
+  start_time: unknown;
+  duration_minutes: unknown;
+  discipline: unknown;
+  kite_size_m2: unknown;
+  board_model: unknown;
+  avg_wind_knots: unknown;
+  max_gust_knots: unknown;
+  wind_direction: unknown;
+  tide_condition: unknown;
+  water_condition: unknown;
+  rating: unknown;
+  distance_km: unknown;
+  max_speed_knots: unknown;
+  highest_jump_m: unknown;
+  notes: unknown;
+  photo_url: unknown;
+  is_public: unknown;
+  trilha_reduzida: unknown;
+  created_at: unknown;
+  author_name: unknown;
+  author_avatar_url: unknown;
+  author_rider_id: unknown;
+  author_country_flag: unknown;
+  curtidas: unknown;
+  eu_curti: unknown;
+  comentarios: unknown;
+}
+
+/**
+ * Detalhe completo de UMA sessão (Fase 5 do plano de rede social — tela de
+ * detalhe com mapa full-bleed + estatísticas + comentários).
+ *
+ * DIFERENTE do DELETE/PATCH abaixo (só o dono): aqui a regra é a mesma do
+ * feed, dono OU seguidor com sessão pública — por isso `exigirSessaoVisivel`
+ * em vez de `WHERE user_id = ${user.id}`. Não confundir os dois padrões
+ * dentro do mesmo arquivo.
+ */
+export async function GET(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+  return handle(async () => {
+    const user = await requireUser();
+    const { id } = await ctx.params;
+
+    if (!UUID.test(id)) throw new HttpError(400, 'Identificador de sessão inválido.');
+
+    await exigirSessaoVisivel(id, user.id);
+
+    // Só as 4 colunas de autor que o resto do app já usa (feed, comentários)
+    // — nunca email/password_hash/last_ip/last_user_agent/emergency_contact_*.
+    const rows = (await sql`
+      SELECT
+        s.id, s.user_id, s.spot_name, s.spot_location, s.date, s.start_time,
+        s.duration_minutes, s.discipline, s.kite_size_m2, s.board_model,
+        s.avg_wind_knots, s.max_gust_knots, s.wind_direction, s.tide_condition,
+        s.water_condition, s.rating, s.distance_km, s.max_speed_knots,
+        s.highest_jump_m, s.notes, s.photo_url, s.is_public, s.trilha_reduzida,
+        s.created_at,
+        u.name AS author_name, u.avatar_url AS author_avatar_url,
+        u.rider_id AS author_rider_id, u.country_flag AS author_country_flag,
+        COALESCE((
+          SELECT COUNT(*)::int FROM session_likes sl WHERE sl.session_id = s.id
+        ), 0) AS curtidas,
+        EXISTS (
+          SELECT 1 FROM session_likes sl2
+          WHERE sl2.session_id = s.id AND sl2.user_id = ${user.id}
+        ) AS eu_curti,
+        COALESCE((
+          SELECT COUNT(*)::int FROM session_comments sc WHERE sc.session_id = s.id
+        ), 0) AS comentarios
+      FROM sessions_log s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.id = ${id}
+      LIMIT 1
+    `) as SessaoDetalheRow[];
+
+    const r = rows[0];
+    if (!r) throw new HttpError(404, 'Sessão não encontrada.');
+
+    const sessao: SessionDetail = {
+      id: String(r.id),
+      spotName: String(r.spot_name),
+      spotLocation: String(r.spot_location),
+      date: String(r.date),
+      startTime: String(r.start_time),
+      createdAt: String(r.created_at),
+      durationMinutes: Number(r.duration_minutes),
+      discipline: r.discipline as SessionDetail['discipline'],
+      kiteSizeM2: Number(r.kite_size_m2),
+      boardModel: r.board_model ? String(r.board_model) : undefined,
+      avgWindKnots: Number(r.avg_wind_knots),
+      maxGustKnots: r.max_gust_knots !== null ? Number(r.max_gust_knots) : undefined,
+      windDirection: r.wind_direction ? String(r.wind_direction) : '',
+      tideCondition: (r.tide_condition ? String(r.tide_condition) : '') as SessionDetail['tideCondition'],
+      waterCondition: r.water_condition ? String(r.water_condition) : '',
+      rating: Number(r.rating),
+      distanceKm: r.distance_km !== null ? Number(r.distance_km) : undefined,
+      maxSpeedKnots: r.max_speed_knots !== null ? Number(r.max_speed_knots) : undefined,
+      highestJumpM: r.highest_jump_m !== null ? Number(r.highest_jump_m) : undefined,
+      notes: r.notes ? String(r.notes) : undefined,
+      photoUrl: r.photo_url ? String(r.photo_url) : undefined,
+      isPublic: Boolean(r.is_public),
+      trilhaReduzida: Array.isArray(r.trilha_reduzida)
+        ? (r.trilha_reduzida as SessionDetail['trilhaReduzida'])
+        : undefined,
+      authorId: String(r.user_id),
+      authorName: String(r.author_name),
+      authorAvatarUrl: r.author_avatar_url ? String(r.author_avatar_url) : undefined,
+      authorRiderId: String(r.author_rider_id),
+      authorCountryFlag: String(r.author_country_flag),
+      curtidas: Number(r.curtidas),
+      euCurti: Boolean(r.eu_curti),
+      comentarios: Number(r.comentarios),
+    };
+
+    return { sessao };
+  });
 }
 
 export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {

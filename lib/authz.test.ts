@@ -165,6 +165,8 @@ describe('autorização das rotas de API', () => {
       'auto-encerramento: quando alguém sai da água (encerrado/desistiu) e isso esvazia o quórum de velejadores, muda o status de UM downwind (WHERE id = ${id} AND status = \'em_andamento\'), não dado de usuário; usa a MESMA podeEncerrarDownwind (lib/downwind.ts) que autoriza o encerramento manual em status/route.ts — sem isto o downwind ficava travado em em_andamento pra sempre quando o único velejador encerrava a própria participação',
     'riders/[id]/follow/route.ts::DELETE FROM user_follows':
       'deixar de seguir filtra por follower_id = user.id, não por user_id — mas follower_id É o dono da linha nesta tabela (user_follows não tem coluna user_id nem id: a PK é (follower_id, following_id)). WHERE follower_id = ${user.id} garante que só a própria relação "eu sigo" pode ser apagada, nunca a de outro velejador.',
+    'sessions/[id]/comments/[commentId]/route.ts::DELETE FROM session_comments':
+      'apagar comentário: o filtro SQL é id + session_id (não user_id) porque moderador/admin precisam apagar comentário de TERCEIRO, não só o próprio — quem decide é canDeleteComment (lib/authz.ts) em código antes do DELETE, mesma família de "checagem em código substitui o filtro por dono" de chat/messages/[id]/route.ts::DELETE FROM chat_messages logo acima. Prova positiva em lib/authz.test.ts, describe("matriz RBAC"): canDeleteComment autoriza o autor do próprio comentário e moderadores/admins de um comentário de terceiro, e nega um estranho sem privilégio (rider comum tentando apagar comentário alheio) — exatamente os 3 casos que a rota precisa acertar.',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {

@@ -137,6 +137,14 @@ interface KiteDataContextType {
   setRiderIdAberto: (riderId: string | null) => void;
 
   /**
+   * Detalhe da sessão (Fase 5 do plano de rede social) — mesmo contrato de
+   * `riderIdAberto` acima: `null` = fechado, montado UMA VEZ em
+   * `app/page.tsx` e aberto de qualquer card do feed ou do perfil público.
+   */
+  sessaoIdAberta: string | null;
+  setSessaoIdAberta: (sessionId: string | null) => void;
+
+  /**
    * Marketplace. Os anúncios NÃO vivem no contexto: a lista depende de filtros e
    * paginação que só a tela conhece, e duplicar isso aqui criaria duas fontes de
    * verdade. O contexto só carrega um contador que a view observa para recarregar
@@ -274,6 +282,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
   const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
   const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
+  const [sessaoIdAberta, setSessaoIdAberta] = useState<string | null>(null);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -928,6 +937,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsBuscaVelejadoresOpen,
         riderIdAberto,
         setRiderIdAberto,
+        sessaoIdAberta,
+        setSessaoIdAberta,
         listingsVersion,
         refreshListings,
         activeTab,

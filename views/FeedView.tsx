@@ -65,9 +65,11 @@ interface AbaVelejosProps {
   /** Repassado direto para cada `CardSessaoFeed` — identidade estável do
    * `setRiderIdAberto` do contexto, ver comentário em CardSessaoFeed.tsx. */
   onAbrirPerfil: (riderId: string) => void;
+  /** Idem, para `setSessaoIdAberta` — abre o detalhe da sessão (Fase 5). */
+  onAbrirDetalhe: (sessionId: string) => void;
 }
 
-function AbaVelejos({ onAbrirBusca, onAbrirPerfil }: AbaVelejosProps) {
+function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosProps) {
   const [sessoes, setSessoes] = useState<SessionFeedItem[]>([]);
   const [proximoCursor, setProximoCursor] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
@@ -231,7 +233,12 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil }: AbaVelejosProps) {
       )}
 
       {sessoes.map((sessao) => (
-        <CardSessaoFeed key={sessao.id} sessao={sessao} onAbrirPerfil={onAbrirPerfil} />
+        <CardSessaoFeed
+          key={sessao.id}
+          sessao={sessao}
+          onAbrirPerfil={onAbrirPerfil}
+          onAbrirDetalhe={onAbrirDetalhe}
+        />
       ))}
 
       {/* Sentinela do scroll infinito — 1px invisível, só serve de gatilho
@@ -248,8 +255,16 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil }: AbaVelejosProps) {
 }
 
 export const FeedView: React.FC = () => {
-  const { posts, toggleLikePost, addComment, setIsNewPostOpen, beachMode, setIsBuscaVelejadoresOpen, setRiderIdAberto } =
-    useKiteData();
+  const {
+    posts,
+    toggleLikePost,
+    addComment,
+    setIsNewPostOpen,
+    beachMode,
+    setIsBuscaVelejadoresOpen,
+    setRiderIdAberto,
+    setSessaoIdAberta,
+  } = useKiteData();
   const { user, openAuthModal } = useAuth();
 
   const [aba, setAba] = useState<AbaFeed>('velejos');
@@ -340,6 +355,7 @@ export const FeedView: React.FC = () => {
         <AbaVelejos
           onAbrirBusca={() => setIsBuscaVelejadoresOpen(true)}
           onAbrirPerfil={setRiderIdAberto}
+          onAbrirDetalhe={setSessaoIdAberta}
         />
       ) : (
         /* Aba "Comunidade": exatamente o feed de posts que já existia antes
