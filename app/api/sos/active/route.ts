@@ -96,10 +96,14 @@ export async function GET() {
               alreadyNotified: existingResponders,
             });
 
+            // ON CONFLICT: na escalada o risco é maior, porque o mesmo
+            // velejador pode reaparecer entre os candidatos do raio ampliado.
+            // Sem isso a violação de PK derruba a escalada inteira.
             for (const c of newCandidatos) {
               await sql`
-                INSERT INTO sos_responders (sos_id, user_id, state)
-                VALUES (${sosId}, ${c.userId}, 'notificado')
+                INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
+                VALUES (${sosId}, ${c.userId}, 'notificado', ${c.dist})
+                ON CONFLICT (sos_id, user_id) DO NOTHING
               `;
               responders.push({
                 userId: c.userId,

@@ -1119,16 +1119,23 @@ async function main() {
   const [dmMenor, dmMaior] = [riderA, riderB].sort();
   const dmRoom = `dm:${dmMenor}:${dmMaior}`;
 
+  // created_at explícito e separado: os dois INSERT rodam no mesmo instante e o
+  // DEFAULT NOW() os empatava, deixando o ORDER BY created_at DESC sem desempate.
+  // O teste do inbox abaixo passava ou falhava conforme a ordem física das linhas
+  // — foi visto falhando de verdade. A distância de 1 minuto torna o "mais
+  // recente" um fato, não um sorteio.
   await expectOk(
     db,
     'DM: primeira mensagem grava na sala canônica dm:<menor>:<maior>',
-    `INSERT INTO chat_messages (user_id, room, text) VALUES ($1, $2, 'oi, bora velejar?')`,
+    `INSERT INTO chat_messages (user_id, room, text, created_at)
+     VALUES ($1, $2, 'oi, bora velejar?', NOW() - INTERVAL '1 minute')`,
     [riderA, dmRoom]
   );
   await expectOk(
     db,
     'DM: resposta do outro lado na MESMA sala (não cria uma segunda)',
-    `INSERT INTO chat_messages (user_id, room, text) VALUES ($1, $2, 'bora sim!')`,
+    `INSERT INTO chat_messages (user_id, room, text, created_at)
+     VALUES ($1, $2, 'bora sim!', NOW())`,
     [riderB, dmRoom]
   );
 
@@ -1233,6 +1240,18 @@ async function main() {
      VALUES ($1, $2, 'a_caminho', -4.9500, -36.8800, NOW())
      ON CONFLICT (sos_id, user_id) DO UPDATE
        SET state = EXCLUDED.state, lat = EXCLUDED.lat, lng = EXCLUDED.lng, responded_at = EXCLUDED.responded_at`,
+    [sosId, riderB]
+  );
+
+  // A notificação inicial (e a da escalada) usam ON CONFLICT DO NOTHING: se o
+  // mesmo velejador reaparecer entre os candidatos, a violação de PK derrubaria
+  // a requisição e o SOS já gravado não notificaria ninguém.
+  await expectOk(
+    db,
+    'sos_responders: notificação com ON CONFLICT sobrevive a candidato repetido',
+    `INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
+     VALUES ($1, $2, 'notificado', 3.2)
+     ON CONFLICT (sos_id, user_id) DO NOTHING`,
     [sosId, riderB]
   );
 

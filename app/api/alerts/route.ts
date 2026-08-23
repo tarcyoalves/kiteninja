@@ -22,6 +22,7 @@ export async function GET() {
       JOIN users u ON u.id = sa.user_id
       WHERE sa.status = 'Ativo'
       ORDER BY sa.created_at DESC
+      LIMIT 200
     `;
 
     const alerts = rows.map((row) => {
