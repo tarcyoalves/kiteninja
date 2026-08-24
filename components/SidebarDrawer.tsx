@@ -489,27 +489,34 @@ export const SidebarDrawer: React.FC = () => {
             <span className="flex-1">Notificações</span>
           </button>
 
-          {/* Central de chamados — destaque pulsante enquanto a função é nova.
-              A camada animada é só decorativa e para com prefers-reduced-motion;
-              texto e botão ficam estáveis, legíveis e acessíveis. */}
+          {/* Central de chamados — propositalmente mais chamativa enquanto é
+              novidade: bloco inteiro pisca, ícone emite um ping e o selo se
+              move. prefers-reduced-motion desliga todos os movimentos. */}
           <button
             onClick={() => {
               setIsSidebarOpen(false);
               setIsChamadosAbertos(true);
             }}
-            className="relative isolate w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl overflow-hidden border border-cyan-400/50 bg-cyan-500/10 text-cyan-50 hover:bg-cyan-500/20 hover:border-cyan-300 transition-colors text-left shadow-[0_0_14px_rgba(34,211,238,0.12)]"
+            className="chamados-destaque relative isolate w-full flex items-center gap-3 px-3 py-3 rounded-xl overflow-hidden border-2 border-cyan-300 bg-gradient-to-r from-cyan-500/30 via-blue-500/25 to-violet-500/25 text-white hover:from-cyan-400/40 hover:via-blue-400/35 hover:to-violet-400/35 transition-colors text-left"
           >
             <span
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-cyan-400/15 animate-pulse motion-reduce:animate-none"
+              className="chamados-destaque-luz pointer-events-none absolute inset-0 -z-10"
             />
-            <MessageSquareWarning
-              size={18}
-              aria-hidden="true"
-              className="shrink-0 text-cyan-300 animate-pulse motion-reduce:animate-none"
-            />
-            <span className="flex-1 font-black">Reportar Bug/Melhoria</span>
-            <span className="rounded-full bg-cyan-300 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-sm animate-pulse motion-reduce:animate-none">
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-300 text-slate-950 shadow-[0_0_16px_rgba(103,232,249,0.75)]">
+              <span
+                aria-hidden="true"
+                className="absolute inset-0 rounded-lg bg-cyan-300 animate-ping motion-reduce:animate-none"
+              />
+              <MessageSquareWarning size={21} aria-hidden="true" className="relative" />
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="font-black leading-tight">Reportar Bug/Melhoria</span>
+              <span className="mt-0.5 text-[10px] font-bold leading-tight text-cyan-100">
+                Ajude a melhorar o KiteNinja
+              </span>
+            </span>
+            <span className="rounded-full bg-amber-300 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-[0_0_12px_rgba(253,224,71,0.65)] animate-bounce motion-reduce:animate-none">
               Novo
             </span>
           </button>

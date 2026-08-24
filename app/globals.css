@@ -376,3 +376,39 @@ html[data-modo='praia'] {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* Chamada visual da Central de Chamados no menu lateral. A alternância de
+   ciano para amarelo é intencionalmente evidente: a função é nova e precisa
+   ser descoberta pelos usuários. O conteúdo não se move; só luz e borda
+   variam, evitando prejudicar a leitura enquanto chama atenção. */
+@keyframes chamadosDestaque {
+  0%, 100% {
+    border-color: rgb(103 232 249 / 0.75);
+    box-shadow: 0 0 10px rgb(34 211 238 / 0.25), inset 0 0 8px rgb(34 211 238 / 0.08);
+  }
+  50% {
+    border-color: rgb(253 224 71 / 0.95);
+    box-shadow: 0 0 26px rgb(34 211 238 / 0.65), inset 0 0 18px rgb(255 255 255 / 0.18);
+  }
+}
+
+@keyframes chamadosDestaqueLuz {
+  0%, 100% { opacity: 0.08; }
+  50% { opacity: 0.5; }
+}
+
+.chamados-destaque {
+  animation: chamadosDestaque 1.35s ease-in-out infinite;
+}
+
+.chamados-destaque-luz {
+  background: linear-gradient(110deg, transparent 10%, rgb(255 255 255 / 0.55) 50%, transparent 90%);
+  animation: chamadosDestaqueLuz 1.35s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chamados-destaque,
+  .chamados-destaque-luz {
+    animation: none;
+  }
+}
