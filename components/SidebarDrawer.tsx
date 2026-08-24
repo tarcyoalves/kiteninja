@@ -489,17 +489,29 @@ export const SidebarDrawer: React.FC = () => {
             <span className="flex-1">Notificações</span>
           </button>
 
-          {/* Central de chamados — reportar bug/melhoria, mesmo padrão de
-              fechar a gaveta antes de abrir o modal dos dois itens acima. */}
+          {/* Central de chamados — destaque pulsante enquanto a função é nova.
+              A camada animada é só decorativa e para com prefers-reduced-motion;
+              texto e botão ficam estáveis, legíveis e acessíveis. */}
           <button
             onClick={() => {
               setIsSidebarOpen(false);
               setIsChamadosAbertos(true);
             }}
-            className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
+            className="relative isolate w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl overflow-hidden border border-cyan-400/50 bg-cyan-500/10 text-cyan-50 hover:bg-cyan-500/20 hover:border-cyan-300 transition-colors text-left shadow-[0_0_14px_rgba(34,211,238,0.12)]"
           >
-            <MessageSquareWarning size={18} className="text-slate-400" />
-            <span className="flex-1">Reportar Bug/Melhoria</span>
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 -z-10 rounded-xl bg-cyan-400/15 animate-pulse motion-reduce:animate-none"
+            />
+            <MessageSquareWarning
+              size={18}
+              aria-hidden="true"
+              className="shrink-0 text-cyan-300 animate-pulse motion-reduce:animate-none"
+            />
+            <span className="flex-1 font-black">Reportar Bug/Melhoria</span>
+            <span className="rounded-full bg-cyan-300 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-sm animate-pulse motion-reduce:animate-none">
+              Novo
+            </span>
           </button>
 
           <div className="my-2 border-t border-slate-800 pt-2" />
