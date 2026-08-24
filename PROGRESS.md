@@ -4,6 +4,32 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
+## Atualização — 24/08/2026 (restauração do menu flutuante)
+
+Correção urgente após relato do dono: o `BottomNav` não havia sido apagado do
+JSX, mas era desmontado quando `downwindAtivo` existia. Isso fazia o menu
+flutuante desaparecer durante todo downwind, comportamento não solicitado.
+
+- `BottomNav` não depende mais de `useDownwind` e permanece disponível durante a
+  travessia.
+- `DownwindAoVivoView` ocupa somente a aba **Mapa**; entrar pelo card abre essa
+  aba automaticamente, mas as demais áreas continuam navegáveis.
+- O beacon de posição foi movido para `DownwindProvider`, que permanece montado
+  em todas as abas. Navegar pelo menu não interrompe o rastreamento de segurança.
+- A tela do mapa reserva `--nav-h`, evitando que sua barra de ações fique atrás
+  do menu restaurado.
+- Teste de regressão em `app/globals.layout.test.ts` proíbe o `BottomNav` de
+  voltar a depender de `downwindAtivo`/`useDownwind`.
+- O SOS continua somente no menu do avatar; o botão SOS flutuante não voltou.
+- A imagem do preview 375×812 mostrou a tela de login sem sessão; nessa tela o
+  app autenticado e seu menu não são montados. O círculo “N” é apenas o indicador
+  de desenvolvimento do Next.js, ausente em produção.
+
+Validações desta correção: `npm run typecheck` limpo, **672/672** testes verdes,
+`app/globals.layout.test.ts` **15/15**, build Next completo com migração
+**110/110** e 34 páginas. O lint localizado mantém apenas dívidas anteriores
+(documentadas abaixo), sem erro novo desta alteração.
+
 ## Atualização — 23/08/2026 (varredura funcional e de navegação)
 
 Varredura executada sobre chat/SOS, navegação lateral, Comunidade, Marketplace,

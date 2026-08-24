@@ -10,7 +10,6 @@ import { useSosHold } from '../lib/useSosHold';
 import { estadoDeSaidaVelejo } from '../lib/downwind';
 import { useSplitArrastavel } from '../lib/useSplitArrastavel';
 import { SplitDragHandle } from '../components/SplitDragHandle';
-import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
 import { ModoNavegacao } from '../components/ModoNavegacao';
@@ -31,16 +30,11 @@ const DownwindMapa = dynamic(
 );
 
 /**
- * Tela de takeover do mapa ao vivo do downwind.
+ * Tela do mapa ao vivo do downwind.
  *
- * O mapa em si (marcadores, trilha) chega na Fase 5 — este componente já
- * carrega a estrutura definitiva: cabeçalho, ações de ciclo de vida (iniciar,
- * encerrar minha travessia, encerrar/cancelar o downwind do grupo pelo
- * organizador) e o chat privado do grupo (única saída sem encerrar).
- *
- * app/page.tsx renderiza isto NO LUGAR das abas normais, sem BottomNav,
- * enquanto `downwindAtivo` existir — ver a decisão de produto documentada em
- * context/DownwindContext.tsx.
+ * Durante um downwind ativo, app/page.tsx mostra este componente dentro da aba
+ * Mapa. O BottomNav permanece disponível e o beacon continua no provider
+ * global, portanto trocar de aba não interrompe o rastreamento.
  */
 
 /** Tempo de hold para confirmar "Encerrei o velejo" — mesmo padrão de
@@ -79,6 +73,7 @@ function usePressAndHold(duracaoMs: number, aoCompletar: () => void) {
 export const DownwindAoVivoView: React.FC = () => {
   const {
     downwindAtivo,
+    ultimaPosicaoEm,
     iniciarDownwind,
     encerrarMinhaParticipacao,
     encerrarDownwind,
@@ -115,7 +110,6 @@ export const DownwindAoVivoView: React.FC = () => {
   // bateria numa travessia de horas. O POST do beacon NÃO pausa por isso —
   // é segurança, não UI.
   const emAndamento = downwindAtivo?.status === 'em_andamento';
-  const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
   const { participantes, minhaTrilha } = useDownwindPosicoes(
     downwindAtivo?.id ?? null,
     !emAndamento || modoNavegacaoAtivo
@@ -196,7 +190,7 @@ export const DownwindAoVivoView: React.FC = () => {
   const souOrganizador = minhaParticipacao.ehOrganizador;
 
   return (
-    <div className="flex flex-col app-viewport relative overflow-hidden bg-[#090e1a]">
+    <div className="flex flex-col app-viewport relative overflow-hidden bg-[#090e1a] pb-[var(--nav-h)]">
       {/* Cabeçalho: nome do downwind + status, sempre visível — é o que
           lembra o velejador de que ele está preso nesta tela e por quê. */}
       <div className="shrink-0 px-4 py-3 bg-[#0F172A] border-b border-slate-800 flex items-center justify-between">
@@ -514,7 +508,7 @@ export const DownwindAoVivoView: React.FC = () => {
         <ModoNavegacao
           rotuloSair="Voltar ao mapa"
           onSair={() => setModoNavegacaoAtivo(false)}
-          ultimaPosicaoConfirmadaEm={beacon.ultimaPosicaoEm}
+          ultimaPosicaoConfirmadaEm={ultimaPosicaoEm}
           downwindId={downwindAtivo.id}
         />
       )}

@@ -14,14 +14,13 @@ O pedido do dono trouxe três decisões que este documento não previa:
 1. **Entrada pelo evento, não por convite.** `downwind_convites` ficou fora de
    escopo. O ponto de entrada é o botão no card do evento tipo Downwind em
    `views/EventsAndAlertsView.tsx` — `POST /api/downwind/[id]/entrar`.
-2. **Takeover real, sem "usar o app".** Enquanto o velejador participa de um
-   downwind aberto/em andamento, `app/page.tsx` substitui as abas normais por
-   `views/DownwindAoVivoView.tsx` e o `BottomNav` some. Não existe minimizar —
-   a única saída sem encerrar é o **chat privado do próprio downwind** (sala
-   `dw:<id>` nova em `lib/chat.ts`, embutido no mapa via
-   `components/DownwindChat.tsx`). Só "Encerrar velejo" (a própria
-   participação) ou o organizador encerrando o downwind devolve as demais
-   páginas. Ver `context/DownwindContext.tsx` para a decisão completa.
+2. **Mapa ao vivo sem remover a navegação.** Enquanto o velejador participa de
+   um downwind aberto/em andamento, `app/page.tsx` mostra
+   `views/DownwindAoVivoView.tsx` dentro da aba Mapa. O `BottomNav` permanece
+   visível e as demais abas continuam disponíveis. O beacon de posição vive em
+   `context/DownwindContext.tsx`, portanto sair da aba Mapa não interrompe o
+   rastreamento. O chat privado do downwind (`dw:<id>`) continua embutido no mapa
+   via `components/DownwindChat.tsx`.
 3. **Só a própria trilha, nunca a de terceiros.** O dono pediu trajeto no
    mapa ("marcar o trajeto de cada velejador também"), mas decidiu, depois de
    ver o trade-off de 20 trilhas cruzadas virando sopa visual, mostrar só a
@@ -37,7 +36,7 @@ O pedido do dono trouxe três decisões que este documento não previa:
 | Transporte da trilha (amostragem, cursor, cauda viva) | `lib/trilhaDownwind.ts` |
 | Rotas | `app/api/downwind/ativo`, `app/api/downwind/[id]/{posicoes,status,entrar,participantes/[userId]}` |
 | Estado "estou num downwind agora?" | `context/DownwindContext.tsx` |
-| Tela de takeover | `views/DownwindAoVivoView.tsx` |
+| Mapa ao vivo na aba Mapa | `views/DownwindAoVivoView.tsx` |
 | Mapa (marcadores, trilha própria) | `components/DownwindMapa.tsx` |
 | Faixa das 4 perguntas | `components/DownwindFaixaInfo.tsx` |
 | Detalhe do participante + vínculo de apoio | `components/DownwindParticipanteSheet.tsx` |

@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
+import { useDownwindBeacon } from '../lib/useDownwindBeacon';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -12,14 +13,11 @@ import { useAuth } from './AuthContext';
  * Modo Navegação, que já lê KiteDataContext — por isso este provider entra
  * DENTRO do KiteDataProvider em app/page.tsx, nunca fora.
  *
- * DECISÃO DE PRODUTO (pedido do dono, ajustado numa conversa de esclarecimento):
- * enquanto o usuário participa de um downwind aberto/em andamento, o app
- * substitui as abas normais pelo mapa ao vivo. NÃO existe um botão "usar o
- * app" que minimiza o takeover — a trava é real. A única saída sem encerrar a
- * travessia é o chat PRIVADO do próprio downwind (sala `dw:<id>`, ver
- * lib/chat.ts), acessível de dentro do mapa. Só um "Encerrar velejo" (ou o
- * organizador encerrando o downwind inteiro) devolve o usuário às demais
- * páginas do app.
+ * DECISÃO DE PRODUTO: um downwind ativo permanece rastreado globalmente, mas
+ * não sequestra a navegação principal. A aba Mapa mostra o mapa ao vivo e o
+ * menu flutuante continua disponível para acessar chat, feed e demais áreas.
+ * O beacon vive neste provider (não na tela do mapa), portanto trocar de aba
+ * não interrompe o envio de posição durante a travessia.
  */
 
 export type DownwindPapel = 'velejador' | 'apoio_terra';
@@ -54,6 +52,8 @@ interface DownwindContextType {
   downwindAtivo: DownwindAtivo | null;
   /** Primeira resolução (GET /api/downwind/ativo) ainda em voo. */
   carregando: boolean;
+  /** Último POST de posição confirmado; continua atualizando fora da aba Mapa. */
+  ultimaPosicaoEm: Date | null;
   entrarNoDownwind: (
     downwindId: string,
     papel?: DownwindPapel
@@ -127,6 +127,10 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { isAuthenticated, user } = useAuth();
   const [downwindAtivo, setDownwindAtivo] = useState<DownwindAtivo | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const beacon = useDownwindBeacon(
+    downwindAtivo?.id ?? null,
+    downwindAtivo?.status === 'em_andamento'
+  );
   // Evita que a resposta do GET sobrescreva um estado mais novo (ex.: acabou
   // de entrar num downwind) se as duas chegarem fora de ordem.
   const versaoRef = useRef(0);
@@ -290,6 +294,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       value={{
         downwindAtivo,
         carregando,
+        ultimaPosicaoEm: beacon.ultimaPosicaoEm,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,

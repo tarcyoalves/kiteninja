@@ -64,12 +64,10 @@ export const DownwindParticipanteSheet: React.FC<DownwindParticipanteSheetProps>
 
   return (
     <div
-      // Sem .map-card-bottom (globals.css) de propósito: aquela classe deriva
-      // de --nav-h, a geometria da pílula flutuante do BottomNav — que não
-      // existe nesta tela (BottomNav some durante o takeover, ver
-      // context/DownwindContext.tsx). Aqui o rodapé já é reservado pela
-      // própria barra de ações via flexbox (shrink-0, abaixo do mapa), então
-      // um offset fixo pequeno basta.
+      // Sem .map-card-bottom (globals.css) de propósito: o componente pai já
+      // reserva a altura do BottomNav e esta folha fica dentro da área do mapa.
+      // A barra de ações do downwind também é um sibling shrink-0, então um
+      // offset interno pequeno é suficiente.
       className="absolute inset-x-3 bottom-2 z-map-ui rounded-2xl bg-[#0F172A]/95 backdrop-blur-md border border-slate-700 shadow-2xl p-4 space-y-3"
       role="dialog"
     >

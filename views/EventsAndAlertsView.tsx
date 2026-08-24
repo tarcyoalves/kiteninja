@@ -26,7 +26,7 @@ import {
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
 
 export const EventsAndAlertsView: React.FC = () => {
-  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, deleteEvent, spots, beachMode, createDownwind } =
+  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, deleteEvent, spots, beachMode, createDownwind, setActiveTab } =
     useKiteData();
   const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
@@ -132,11 +132,9 @@ export const EventsAndAlertsView: React.FC = () => {
   };
 
   /**
-   * Entra num downwind pelo card do evento — o ponto de entrada que o dono
-   * pediu ("ao entrar no downwind, ele vai clicar lá dentro do evento para
-   * iniciar"). Depois disso o shell troca de tela sozinho (app/page.tsx
-   * observa `downwindAtivo` em context/DownwindContext.tsx) — não navegamos
-   * por setActiveTab, o takeover não é uma aba.
+   * Entra num downwind pelo card do evento e abre a aba Mapa. O mapa ao vivo
+   * substitui somente o mapa comum; o menu flutuante e as demais abas continuam
+   * acessíveis durante toda a travessia.
    */
   const handleEntrarDownwind = async (downwindId: string) => {
     if (!user) {
@@ -147,7 +145,11 @@ export const EventsAndAlertsView: React.FC = () => {
     setEntrandoEmId(downwindId);
     const res = await entrarNoDownwind(downwindId, 'velejador');
     setEntrandoEmId(null);
-    if (!res.ok) setErroEntrar(res.error ?? 'Não foi possível entrar no downwind.');
+    if (!res.ok) {
+      setErroEntrar(res.error ?? 'Não foi possível entrar no downwind.');
+      return;
+    }
+    setActiveTab('mapa');
   };
 
   return (

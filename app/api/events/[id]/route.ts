@@ -19,8 +19,7 @@ interface Params {
  * associado) não têm como provar autoria, então só moderação apaga esses.
  *
  * BLOQUEIO DE SEGURANÇA: nunca apaga um downwind `em_andamento` — isso
- * arrancaria o mapa ao vivo (e o próprio takeover, ver
- * context/DownwindContext.tsx) de baixo de gente possivelmente na água, sem
+ * arrancaria o mapa ao vivo da aba Mapa de gente possivelmente na água, sem
  * aviso e sem passar pelas regras de encerramento de lib/downwind.ts.
  * Encerrar ou cancelar a travessia primeiro é obrigatório.
  */

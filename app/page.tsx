@@ -64,11 +64,8 @@ const MainContent: React.FC = () => {
 
   const { user } = useAuth();
   const { downwindAtivo } = useDownwind();
-  // Trava real: enquanto o velejador participa de um downwind aberto/em
-  // andamento, o app substitui as abas normais pelo mapa ao vivo — decisão de
-  // produto documentada em context/DownwindContext.tsx. Só some quando o
-  // downwind é de fato encerrado/cancelado ou a própria participação termina
-  // (o servidor deixa de devolvê-lo em GET /api/downwind/ativo).
+  // Um downwind ativo troca apenas o conteúdo da aba Mapa pelo mapa ao vivo.
+  // O menu flutuante e as demais abas permanecem disponíveis.
   const emDownwind = Boolean(downwindAtivo);
   const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
   // Marca o estado do teclado no shell para o CSS zerar a folga do menu
@@ -106,35 +103,34 @@ const MainContent: React.FC = () => {
           durante o takeover do downwind (é onde vive o menu do avatar/SOS). */}
       <Header />
 
-      {emDownwind ? (
-        <div className="w-full max-w-lg mx-auto flex-1 min-h-0 overflow-hidden flex flex-col">
-          <DownwindAoVivoView />
-        </div>
-      ) : (
-        /* Área central do app: quando for chat ou mapa, gerencia scroll internamente */
-        <main
-          className={`w-full max-w-lg mx-auto ${
-            activeTab === "chat" || activeTab === "mapa"
-              ? "flex-1 min-h-0 overflow-hidden flex flex-col"
-              : "app-scroll"
-          }`}
-        >
-          {activeTab === "favoritos" && (
-            <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
-          )}
-          {activeTab === "mapa" && (
+      {/* Área central do app. Durante um downwind, a aba Mapa mostra o mapa ao
+          vivo; as demais abas e o menu flutuante continuam disponíveis. */}
+      <main
+        className={`w-full max-w-lg mx-auto ${
+          activeTab === "chat" || activeTab === "mapa"
+            ? "flex-1 min-h-0 overflow-hidden flex flex-col"
+            : "app-scroll"
+        }`}
+      >
+        {activeTab === "favoritos" && (
+          <SpotsView onSelectSpot={(spot) => setSelectedSpot(spot)} />
+        )}
+        {activeTab === "mapa" && (
+          emDownwind ? (
+            <DownwindAoVivoView />
+          ) : (
             <MapView onSelectSpot={(spot) => setSelectedSpot(spot)} />
-          )}
-          {activeTab === "destaques" && <FeedView />}
-          {activeTab === "sessoes" && <SessionsView />}
-          {activeTab === "perfil" && <PerfilView />}
-          {activeTab === "chat" && <ChatView />}
-          {activeTab === "anuncios" && <MarketplaceView />}
-          {(activeTab === "alertas" || activeTab === "mais") && (
-            <EventsAndAlertsView />
-          )}
-        </main>
-      )}
+          )
+        )}
+        {activeTab === "destaques" && <FeedView />}
+        {activeTab === "sessoes" && <SessionsView />}
+        {activeTab === "perfil" && <PerfilView />}
+        {activeTab === "chat" && <ChatView />}
+        {activeTab === "anuncios" && <MarketplaceView />}
+        {(activeTab === "alertas" || activeTab === "mais") && (
+          <EventsAndAlertsView />
+        )}
+      </main>
 
       {/* O gatilho de SOS agora vive dentro do menu do avatar (SidebarDrawer),
           na seção "Segurança & Emergência". O botão flutuante foi removido

@@ -156,6 +156,20 @@ describe('BottomNav — sem medição de DOM', () => {
     expect(tsx, 'altura da pílula mudou: atualize --nav-pill-h').toContain('h-[58px]');
     expect(tsx, 'distância do fundo mudou: atualize --nav-pill-gap').toContain('bottom-1.5');
   });
+
+  it('permanece disponível durante um downwind ativo', () => {
+    const tsx = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'BottomNav.tsx'),
+      'utf8',
+    );
+    const codigo = tsx.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    expect(
+      codigo,
+      'o menu flutuante não pode ser desmontado só porque existe um downwind ativo',
+    ).not.toContain('downwindAtivo');
+    expect(codigo).not.toContain('useDownwind');
+  });
 });
 
 /*
