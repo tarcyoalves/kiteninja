@@ -15,7 +15,7 @@
 - `BLOQUEADO`: não executado porque faltou ambiente seguro, ferramenta, aparelho ou autorização.
 - `NÃO TESTADO`: fora do escopo técnico executável desta máquina.
 
-Resultado agregado: **nenhum `FAIL NOVO`**. A Fase 1 permanece bloqueada até revisão do Opus 5.
+Resultado agregado: **nenhum `FAIL NOVO`**. A Fase 1 ainda não foi iniciada; staging/banco descartável e toolchain Android permanecem condições de preparação conforme a decisão do Opus 5 na seção 11.
 
 ## 2. Git e integridade da árvore
 
