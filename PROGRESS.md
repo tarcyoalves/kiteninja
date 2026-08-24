@@ -25,10 +25,12 @@ flutuante desaparecer durante todo downwind, comportamento não solicitado.
   app autenticado e seu menu não são montados. O círculo “N” é apenas o indicador
   de desenvolvimento do Next.js, ausente em produção.
 
-Validações desta correção: `npm run typecheck` limpo, **672/672** testes verdes,
+Validações desta correção: `npm run typecheck` limpo, **673/673** testes verdes,
 `app/globals.layout.test.ts` **15/15**, build Next completo com migração
-**110/110** e 34 páginas. O lint localizado mantém apenas dívidas anteriores
-(documentadas abaixo), sem erro novo desta alteração.
+**110/110** e 34 páginas. Publicado em produção no commit **`896d3a0`**; deploy
+**Ready**, alias público respondendo 200, manifest 200 e `/api/auth/me` sem
+sessão respondendo `{"user":null}` com 200. O lint localizado mantém apenas
+dívidas anteriores (documentadas abaixo), sem erro novo desta alteração.
 
 ## Atualização — 23/08/2026 (varredura funcional e de navegação)
 
