@@ -296,6 +296,30 @@ export interface AppNotification {
   createdAt: string;
 }
 
+export type TipoChamado = 'bug' | 'melhoria';
+export type StatusChamado = 'novo' | 'em_analise' | 'aprovado' | 'rejeitado' | 'implementado';
+
+/** Um chamado de bug/melhoria reportado por um usuário — visão do PRÓPRIO
+ * usuário que reportou (sem dado de outros usuários). */
+export interface MeuChamado {
+  id: string;
+  tipo: TipoChamado;
+  titulo: string;
+  descricao: string;
+  tela?: string;
+  status: StatusChamado;
+  parecer?: string;
+  createdAt: string;
+}
+
+/** Visão de administração: mesmo chamado, mais quem reportou (para o dono
+ * saber quem é, sem expor isso ao próprio autor do chamado nem a terceiros). */
+export interface ChamadoAdmin extends MeuChamado {
+  autorId: string;
+  autorNome: string;
+  autorAvatarUrl?: string;
+}
+
 export interface CommunityPost {
   id: string;
   authorName: string;

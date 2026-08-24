@@ -17,6 +17,7 @@ import { BuscarVelejadores } from "../components/BuscarVelejadores";
 import { RiderProfileModal } from "../components/RiderProfileModal";
 import { SessionDetailModal } from "../components/SessionDetailModal";
 import { NotificationCenterModal } from "../components/NotificationCenterModal";
+import { ChamadosModal } from "../components/ChamadosModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
@@ -58,6 +59,8 @@ const MainContent: React.FC = () => {
     setSessaoIdAberta,
     isNotificacoesAbertas,
     setIsNotificacoesAbertas,
+    isChamadosAbertos,
+    setIsChamadosAbertos,
     unreadChatCount,
     dmUnreadCount,
   } = useKiteData();
@@ -226,6 +229,14 @@ const MainContent: React.FC = () => {
         onAbrirPerfil={setRiderIdAberto}
         totalChatUnread={unreadChatCount + dmUnreadCount}
         onIrParaChat={() => setActiveTab('chat')}
+      />
+
+      {/* Central de chamados (reportar bug/melhoria) — aberta pelo menu
+          lateral, mesmo padrão de estado único controlado aqui. */}
+      <ChamadosModal
+        aberto={isChamadosAbertos}
+        onClose={() => setIsChamadosAbertos(false)}
+        telaAtual={activeTab}
       />
 
       {/* In-App Push Notification Toast */}

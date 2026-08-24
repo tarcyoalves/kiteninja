@@ -2,13 +2,14 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film } from 'lucide-react';
+import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning } from 'lucide-react';
 import { InviteManager } from './InviteManager';
 import { UserManager } from './UserManager';
 import { IntroVideoManager } from './IntroVideoManager';
+import { ChamadosManager } from './ChamadosManager';
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
-  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura'>('convites');
+  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados'>('convites');
 
   return (
     // O app inteiro herda `body { overflow: hidden }` (globals.css) pensado para o
@@ -90,6 +91,18 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                 <Film size={14} />
                 <span>Abertura</span>
               </button>
+
+              <button
+                onClick={() => setTab('chamados')}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all ${
+                  tab === 'chamados'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <MessageSquareWarning size={14} />
+                <span>Chamados</span>
+              </button>
             </div>
           </div>
         </div>
@@ -98,6 +111,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         {tab === 'convites' && <InviteManager />}
         {tab === 'usuarios' && <UserManager />}
         {tab === 'abertura' && <IntroVideoManager />}
+        {tab === 'chamados' && <ChamadosManager />}
       </div>
       </main>
     </div>

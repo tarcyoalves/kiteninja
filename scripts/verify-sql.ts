@@ -106,6 +106,7 @@ async function main() {
     'downwind_posicoes',
     'downwind_convites',
     'notifications',
+    'chamados',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -1135,6 +1136,49 @@ async function main() {
   check(
     'apagar o usuário ATOR cascateia a notificação (actor_id ON DELETE CASCADE)',
     notifOrfaComoAtor.rows.length === 0
+  );
+
+  // ------------------------------------------------- central de chamados
+  const chamadoUserId = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('chamado-user@t.local', '$2b$12$x', 'Chamado User', '5004') RETURNING id`
+    )
+  ).rows[0].id;
+
+  const chamadoNovoRow = (
+    await db.query<{ id: string; status: string; parecer: string | null }>(
+      `INSERT INTO chamados (user_id, tipo, titulo, descricao)
+       VALUES ($1, 'bug', 'Foto do perfil não salva', 'Ao trocar a foto, o app trava na tela de carregamento.')
+       RETURNING id, status, parecer`,
+      [chamadoUserId]
+    )
+  ).rows[0];
+  check(
+    'chamado novo nasce com status = novo (DEFAULT da coluna)',
+    chamadoNovoRow.status === 'novo'
+  );
+  check('chamado novo nasce com parecer nulo', chamadoNovoRow.parecer === null);
+
+  await expectFail(
+    db,
+    'CHECK barra tipo fora de (bug, melhoria)',
+    `INSERT INTO chamados (user_id, tipo, titulo, descricao) VALUES ($1, 'sugestao', 'X', 'Descrição válida aqui')`,
+    [chamadoUserId]
+  );
+
+  await expectFail(
+    db,
+    'CHECK barra status fora dos 5 valores permitidos',
+    `INSERT INTO chamados (user_id, tipo, titulo, descricao, status) VALUES ($1, 'bug', 'X', 'Descrição válida aqui', 'fechado')`,
+    [chamadoUserId]
+  );
+
+  await db.query(`DELETE FROM users WHERE id = $1`, [chamadoUserId]);
+  const chamadoOrfao = await db.query(`SELECT id FROM chamados WHERE id = $1`, [chamadoNovoRow.id]);
+  check(
+    'apagar o usuário cascateia os chamados dele (user_id ON DELETE CASCADE)',
+    chamadoOrfao.rows.length === 0
   );
 
   console.log('\nToggles (chave composta, sem coluna id):');

@@ -23,6 +23,7 @@ import {
   Loader2,
   Siren,
   UserCog,
+  MessageSquareWarning,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -48,6 +49,7 @@ export const SidebarDrawer: React.FC = () => {
     fetchActiveSos,
     setIsBuscaVelejadoresOpen,
     setIsNotificacoesAbertas,
+    setIsChamadosAbertos,
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
@@ -485,6 +487,19 @@ export const SidebarDrawer: React.FC = () => {
           >
             <Bell size={18} className="text-slate-400" />
             <span className="flex-1">Notificações</span>
+          </button>
+
+          {/* Central de chamados — reportar bug/melhoria, mesmo padrão de
+              fechar a gaveta antes de abrir o modal dos dois itens acima. */}
+          <button
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsChamadosAbertos(true);
+            }}
+            className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
+          >
+            <MessageSquareWarning size={18} className="text-slate-400" />
+            <span className="flex-1">Reportar Bug/Melhoria</span>
           </button>
 
           <div className="my-2 border-t border-slate-800 pt-2" />

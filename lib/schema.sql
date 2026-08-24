@@ -973,3 +973,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_downwinds_event
 ALTER TABLE sos_responders
   ADD COLUMN IF NOT EXISTS motivo TEXT NOT NULL DEFAULT 'proximidade'
     CHECK (motivo IN ('proximidade', 'downwind', 'downwind_apoio'));
+
+-- ------------------------------------------------------- central de chamados
+-- Bug/melhoria reportado por qualquer usuário logado, revisado pelo dono
+-- (admin) no painel /admin — NÃO é IA automática, é o Claude Code lendo a
+-- fila quando o dono pedir, mesmo espírito dos documentos de pendência
+-- (docs/PENDENCIAS-*.md), só que estruturado no banco em vez de markdown
+-- solto.
+CREATE TABLE IF NOT EXISTS chamados (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tipo         TEXT NOT NULL CHECK (tipo IN ('bug', 'melhoria')),
+  titulo       TEXT NOT NULL CHECK (char_length(titulo) BETWEEN 3 AND 140),
+  descricao    TEXT NOT NULL CHECK (char_length(descricao) BETWEEN 10 AND 2000),
+  -- Aba/tela em que o usuário estava ao reportar (contexto opcional, ajuda o
+  -- dono/Claude Code a entender o cenário sem precisar perguntar).
+  tela         TEXT,
+  status       TEXT NOT NULL DEFAULT 'novo' CHECK (status IN ('novo', 'em_analise', 'aprovado', 'rejeitado', 'implementado')),
+  -- Anotação do dono/Claude Code ao revisar — nulo até alguém revisar.
+  parecer      TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  atualizado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_chamados_status ON chamados (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chamados_user ON chamados (user_id, created_at DESC);

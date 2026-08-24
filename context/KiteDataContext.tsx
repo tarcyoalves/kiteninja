@@ -166,6 +166,15 @@ interface KiteDataContextType {
   zerarNotificacoesNaoLidas: () => void;
 
   /**
+   * Central de chamados (reportar bug/melhoria) — mesmo contrato de
+   * `isNotificacoesAbertas`: um booleano só, controlado por quem está
+   * montado em `app/page.tsx`, aberto a partir do menu lateral
+   * (`components/SidebarDrawer.tsx`).
+   */
+  isChamadosAbertos: boolean;
+  setIsChamadosAbertos: (open: boolean) => void;
+
+  /**
    * Marketplace. Os anúncios NÃO vivem no contexto: a lista depende de filtros e
    * paginação que só a tela conhece, e duplicar isso aqui criaria duas fontes de
    * verdade. O contexto só carrega um contador que a view observa para recarregar
@@ -315,6 +324,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNotificacoesAbertas, setIsNotificacoesAbertas] = useState(false);
   const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState(0);
   const zerarNotificacoesNaoLidas = useCallback(() => setNotificacoesNaoLidas(0), []);
+  const [isChamadosAbertos, setIsChamadosAbertos] = useState(false);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1034,6 +1044,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsNotificacoesAbertas,
         notificacoesNaoLidas,
         zerarNotificacoesNaoLidas,
+        isChamadosAbertos,
+        setIsChamadosAbertos,
         listingsVersion,
         refreshListings,
         activeTab,
