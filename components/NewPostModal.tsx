@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Camera, MapPin, Wind, Sparkles, Send, Tag, Loader2 } from 'lucide-react';
+import { X, Camera, MapPin, Send, Loader2 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompress';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -20,19 +20,24 @@ export const NewPostModal: React.FC = () => {
   const [photoUrl, setPhotoUrl] = useState('');
   const [fotoErro, setFotoErro] = useState<string | null>(null);
   const [processandoFoto, setProcessandoFoto] = useState(false);
+  const [publicando, setPublicando] = useState(false);
+  const [publicacaoErro, setPublicacaoErro] = useState<string | null>(null);
 
   if (!isNewPostOpen) return null;
 
   const targetSpot = spots.find(s => s.id === selectedSpotId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (publicando || processandoFoto) return;
     if (!user) {
       openAuthModal();
       return;
     }
 
-    addPost({
+    setPublicando(true);
+    setPublicacaoErro(null);
+    const result = await addPost({
       authorName: user.name,
       authorAvatar: user.avatarUrl,
       authorRiderId: user.riderId.split(' ')[0] || '4011',
@@ -51,9 +56,15 @@ export const NewPostModal: React.FC = () => {
       tag,
     });
 
+    setPublicando(false);
+    if (!result.ok) {
+      setPublicacaoErro(result.error || 'Não foi possível publicar. Confira a conexão e tente novamente.');
+      return;
+    }
     setIsNewPostOpen(false);
     setTitle('');
     setContent('');
+    setPhotoUrl('');
   };
 
   const TIPOS_ACEITOS = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -94,8 +105,14 @@ export const NewPostModal: React.FC = () => {
             <h2 className="font-black text-base sm:text-lg text-white">Publicar no Feed de Riders</h2>
           </div>
           <button
-            onClick={() => setIsNewPostOpen(false)}
-            className="p-2 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors min-w-11 min-h-11 flex items-center justify-center"
+            type="button"
+            onClick={() => {
+              if (publicando || processandoFoto) return;
+              setPublicacaoErro(null);
+              setIsNewPostOpen(false);
+            }}
+            disabled={publicando || processandoFoto}
+            className="p-2 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors min-w-11 min-h-11 flex items-center justify-center disabled:opacity-50"
             aria-label="Fechar"
           >
             <X size={18} />
@@ -261,12 +278,18 @@ export const NewPostModal: React.FC = () => {
           </div>
 
           {/* Submit */}
+          {publicacaoErro && (
+            <div role="alert" className="p-3 rounded-xl border border-rose-500/50 bg-rose-950/30 text-rose-200 text-xs font-bold">
+              {publicacaoErro}
+            </div>
+          )}
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 mt-3"
+            disabled={publicando || processandoFoto}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 mt-3 disabled:opacity-60 disabled:cursor-wait"
           >
-            <Send size={16} />
-            <span>Publicar nos Destaques</span>
+            {publicando ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
+            <span>{publicando ? 'Publicando relato...' : 'Publicar na Comunidade'}</span>
           </button>
         </form>
       </div>

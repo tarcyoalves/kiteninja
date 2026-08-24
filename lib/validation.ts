@@ -88,6 +88,23 @@ export function oneOf<T extends string>(
   return raw as T;
 }
 
+/** Valida uma data civil ISO sem normalizar datas impossíveis (ex.: 31/02). */
+export function isIsoDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false;
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return day <= daysInMonth;
+}
+
+/** Horário civil de 24 horas; aceita HH:MM e HH:MM:SS. */
+export function isTime24(value: string): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value);
+}
+
 export function email(body: unknown, field = 'email'): string {
   const value = str(body, field, { max: 254 }).toLowerCase();
   // Validação deliberadamente simples: a verificação real é o envio funcionar.

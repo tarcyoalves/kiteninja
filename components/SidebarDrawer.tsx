@@ -9,7 +9,7 @@ import {
   Megaphone,
   Star,
   Users,
-  AlertTriangle,
+  BookOpen,
   MessageSquare,
   Bell,
   Calculator,
@@ -46,6 +46,8 @@ export const SidebarDrawer: React.FC = () => {
     setSelectedSpot,
     myActiveSos,
     fetchActiveSos,
+    setIsBuscaVelejadoresOpen,
+    setIsNotificacoesAbertas,
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
@@ -383,18 +385,21 @@ export const SidebarDrawer: React.FC = () => {
             </span>
           </button>
 
-          {/* Eventos (Novo) */}
+          {/*
+            Um único destino para a tela que já contém as duas subabas.
+            Antes havia "Eventos" aqui e "Ocorrências" logo abaixo, ambos
+            chamando navigateTo('alertas'). Além da duplicidade, "Eventos"
+            abria a subaba inicial de Ocorrências — o botão não cumpria o nome.
+          */}
           <button
             onClick={() => navigateTo('alertas')}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <div className="flex items-center gap-3.5">
               <Calendar size={18} className="text-rose-400" />
-              <span>Eventos</span>
+              <span>Eventos & Ocorrências</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
-              Novo
-            </span>
+            <ChevronRight size={15} className="text-slate-500" aria-hidden="true" />
           </button>
 
           {/* Anúncios — marketplace de equipamento usado da comunidade */}
@@ -420,22 +425,35 @@ export const SidebarDrawer: React.FC = () => {
             <span className="flex-1">Favoritos</span>
           </button>
 
-          {/* Riders */}
+          {/*
+            Riders não é sinônimo de Destaques: abre a busca/lista de pessoas
+            diretamente. Antes os dois itens chamavam a mesma aba e exibiam a
+            mesma página — duplicidade percebida pelo dono na navegação real.
+          */}
           <button
-            onClick={() => navigateTo('destaques')}
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsBuscaVelejadoresOpen(true);
+            }}
             className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
-            <Users size={18} className="text-slate-400" />
+            <Users size={18} className="text-emerald-400" />
             <span className="flex-1">Riders</span>
           </button>
 
-          {/* Ocorrências */}
+          {/*
+            A tela já existia (`activeTab === 'sessoes'`), mas não havia nenhum
+            botão capaz de chegar nela. Isso tornava o logbook pessoal uma rota
+            órfã e aumentava a impressão de que Destaques/Rides eram a mesma
+            coisa. Aqui ficam explicitamente separados: Riders são pessoas;
+            Meu Logbook são as minhas sessões.
+          */}
           <button
-            onClick={() => navigateTo('alertas')}
+            onClick={() => navigateTo('sessoes')}
             className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
-            <AlertTriangle size={18} className="text-amber-400" />
-            <span className="flex-1">Ocorrências</span>
+            <BookOpen size={18} className="text-cyan-400" />
+            <span className="flex-1">Meu Logbook</span>
           </button>
 
           {/* Chat — badge mostra quantos velejadores estão online de verdade. */}
@@ -457,9 +475,12 @@ export const SidebarDrawer: React.FC = () => {
             )}
           </button>
 
-          {/* Notificações */}
+          {/* A central de notificações é modal, não a tela de ocorrências. */}
           <button
-            onClick={() => navigateTo('alertas')}
+            onClick={() => {
+              setIsSidebarOpen(false);
+              setIsNotificacoesAbertas(true);
+            }}
             className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <Bell size={18} className="text-slate-400" />

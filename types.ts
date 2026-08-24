@@ -154,7 +154,7 @@ export interface SessionLog {
   kiteSizeM2: number;
   boardModel?: string;
   avgWindKnots: number;
-  maxGustKnots: number;
+  maxGustKnots?: number;
   windDirection: string;
   tideCondition: 'Seca' | 'Enchendo' | 'Cheia' | 'Vazando';
   waterCondition: string;

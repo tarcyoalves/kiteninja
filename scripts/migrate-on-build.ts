@@ -9,25 +9,21 @@
  * adicionar a migração ao pipeline de deploy (build step da Vercel) para este
  * tipo de esquecimento parar de ser possível." É isto aqui.
  *
- * DESENHO DEFENSIVO — NUNCA DERRUBA O BUILD, em nenhuma circunstância. O
- * ambiente de agente que desenvolve este repo tem acesso de rede bloqueado
- * para o host do Neon (política do ambiente — confirmado tentando conectar:
- * "connect_rejected... policy denial", ver /root/.ccr/README.md), então este
- * script nunca roda de verdade contra produção a partir dali, só é validado
- * localmente contra PGlite (scripts/verify-sql.ts). Se o ambiente de build da
- * Vercel também não conseguir aplicar a migração por qualquer motivo
- * (DATABASE_URL ausente nesta fase, rede indisponível, banco suspenso por
- * inatividade), este script REGISTRA o problema e SAI COM SUCESSO — nunca
- * falha o processo. Travar o deploy inteiro por causa de uma migração que não
- * rodou seria pior que o problema original: uma coluna faltando quebra UMA
- * feature; um build que nunca mais publica quebra o app inteiro para todo
- * mundo. Por ser idempotente, rodar de novo no próximo deploy sozinho
- * "cicatriza" uma falha transitória — sem precisar de ninguém lembrando.
+ * DESENHO DEFENSIVO — DATABASE_URL ausente faz a etapa ser pulada (ambientes
+ * de análise e builds sem banco continuam funcionando). Porém, se uma URL foi
+ * fornecida e uma instrução falhar, o build FALHA: publicar código que depende
+ * de coluna/constraint ausente repete exatamente o incidente que este script
+ * existe para prevenir. O schema é idempotente, então uma falha transitória
+ * pode ser retentada no próximo build sem desfazer dados.
+ *
+ * Para migração, prefere DATABASE_URL_UNPOOLED (conexão direta). A aplicação
+ * continua usando DATABASE_URL pooled no runtime serverless.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { neon } from '@neondatabase/serverless';
 import { loadEnv } from './load-env';
+import { splitSqlStatements } from '../lib/splitSqlStatements';
 
 /**
  * Sem tipar o parâmetro como `ReturnType<typeof neon>`: os genéricos default
@@ -84,39 +80,33 @@ async function dedupDownwindEventId(sql: SqlClient): Promise<void> {
 
 async function aplicarSchema(sql: SqlClient): Promise<void> {
   const schema = readFileSync(join(process.cwd(), 'lib', 'schema.sql'), 'utf8');
-  // Mesma regra de scripts/migrate.ts: remove comentários de linha antes de
-  // dividir por ';'. O schema não usa PL/pgSQL com ';' interno, então este
-  // split simples é seguro — não trocar por um bloco DO/BEGIN sem revisar
-  // este split também.
-  const withoutComments = schema.replace(/^--.*$/gm, '');
-  const statements = withoutComments
-    .split(/;\s*$/m)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  // O schema contém blocos PL/pgSQL `DO $$ ... $$`; o separador respeita
+  // dollar-quotes, strings e comentários. O split antigo por `;` quebrava esses
+  // blocos em várias queries inválidas e mesmo assim anunciava "concluído".
+  const statements = splitSqlStatements(schema);
 
-  let falhas = 0;
+  const failures: Array<{ statement: string; message: string }> = [];
   for (const statement of statements) {
     try {
       await sql.query(statement);
     } catch (err) {
-      // Por instrução, não pelo script inteiro: uma ALTER que falha não pode
-      // impedir as próximas de rodar, e nenhuma delas pode travar o build.
-      falhas++;
-      console.error(
-        '[migrate-on-build] instrução falhou (build continua mesmo assim):',
-        statement.split('\n')[0].slice(0, 100)
-      );
-      console.error(err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : String(err);
+      failures.push({ statement: statement.split('\n')[0].slice(0, 100), message });
+      console.error('[migrate-on-build] instrução falhou:', statement.split('\n')[0].slice(0, 100));
+      console.error(message);
     }
   }
   console.log(
-    `[migrate-on-build] ${statements.length - falhas}/${statements.length} instruções aplicadas.`
+    `[migrate-on-build] ${statements.length - failures.length}/${statements.length} instruções aplicadas.`
   );
+  if (failures.length > 0) {
+    throw new Error(`Migração incompleta: ${failures.length} instrução(ões) falharam.`);
+  }
 }
 
 async function main() {
   loadEnv();
-  const url = process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!url) {
     console.warn(
       '[migrate-on-build] DATABASE_URL ausente nesta fase de build — pulando migração automática.'
@@ -131,8 +121,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  // Última rede de segurança: mesmo um erro que escapou dos catches internos
-  // (ex.: `neon(url)` rejeitando por URL malformada) não pode derrubar
-  // `next build`. Ver o comentário no topo do arquivo.
-  console.error('[migrate-on-build] falha inesperada (build continua mesmo assim):', err);
+  console.error('[migrate-on-build] falha: deploy bloqueado para não publicar schema incompleto.');
+  console.error(err instanceof Error ? err.message : err);
+  process.exitCode = 1;
 });

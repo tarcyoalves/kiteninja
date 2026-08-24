@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { X, Calendar, Clock, Wind, Waves, Star, Compass, Camera, Sparkles, Gauge, ArrowUpCircle, ImagePlus, Loader2, Satellite } from 'lucide-react';
+import { X, Calendar, Clock, Wind, Star, Compass, Camera, Sparkles, Gauge, ImagePlus, Loader2, Satellite } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
@@ -16,7 +16,6 @@ export const SessionLoggerModal: React.FC = () => {
     setIsLoggerOpen,
     spots,
     addSession,
-    convertWind,
     loggerPrefill,
     limparLoggerPrefill,
   } = useKiteData();
@@ -31,7 +30,7 @@ export const SessionLoggerModal: React.FC = () => {
   const [kiteSizeM2, setKiteSizeM2] = useState(9);
   const [boardModel, setBoardModel] = useState('');
   const [avgWindKnots, setAvgWindKnots] = useState(20);
-  const [maxGustKnots, setMaxGustKnots] = useState(26);
+  const [maxGustKnots, setMaxGustKnots] = useState<number | ''>(26);
   const [windDirection, setWindDirection] = useState('ENE');
   const [tideCondition, setTideCondition] = useState<'Seca' | 'Enchendo' | 'Cheia' | 'Vazando'>('Enchendo');
   const [waterCondition, setWaterCondition] = useState('Chop Médio');
@@ -43,6 +42,8 @@ export const SessionLoggerModal: React.FC = () => {
   const [photoUrl, setPhotoUrl] = useState('');
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const [isPublic, setIsPublic] = useState(true);
   // Distância/velocidade máxima vieram de uma sessão real do Modo Navegação
   // (mapa normal), não de digitação manual — controla só o banner informativo
@@ -65,8 +66,12 @@ export const SessionLoggerModal: React.FC = () => {
    * sabe. `limparLoggerPrefill()` evita que uma abertura manual seguinte
    * (botão "+ Velejo" do Header) herde o resumo desta sessão antiga.
    */
+  // O prefill é um evento externo (rastreamento GPS concluído), não estado
+  // derivável durante o render; por isso a sincronização ocorre neste effect.
   useEffect(() => {
     if (!isLoggerOpen || !loggerPrefill) return;
+    // Sincroniza o rascunho entregue pelo rastreador GPS.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDistanceKm(loggerPrefill.distanceKm);
     setMaxSpeedKnots(loggerPrefill.maxSpeedKnots);
     setHighestJumpM('');
@@ -85,6 +90,8 @@ export const SessionLoggerModal: React.FC = () => {
   // junto de dados digitados à mão, que não tem relação nenhuma com ela.
   useEffect(() => {
     if (!isLoggerOpen) {
+      // Limpa dados medidos que não podem vazar para a próxima abertura manual.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrefilledFromGps(false);
       setTrilhaReduzida([]);
     }
@@ -94,39 +101,77 @@ export const SessionLoggerModal: React.FC = () => {
 
   const targetSpot = spots.find(s => s.id === selectedSpotId);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving || isCompressingPhoto) return;
     const finalSpotName = selectedSpotId === 'outro' ? (customSpotName || 'Spot Customizado') : (targetSpot?.name || 'Spot');
     const finalSpotLocation = selectedSpotId === 'outro' ? 'Brasil' : (targetSpot?.location || 'Litoral');
 
-    addSession({
+    setIsSaving(true);
+    setSaveError('');
+    const result = await addSession({
       userId: user?.id || 'user_guest',
       userName: user?.name || 'Velejador Rider',
       userAvatar: user?.avatarUrl,
       spotId: selectedSpotId,
       spotName: finalSpotName,
       spotLocation: finalSpotLocation,
-      date: new Date(date + 'T12:00:00').toLocaleDateString('pt-BR'),
+      // A API grava em coluna DATE e exige ISO `YYYY-MM-DD`. A versão anterior
+      // convertia para `dd/mm/aaaa` antes do POST; esse texto depende do
+      // DateStyle do Postgres e normalmente falha com 500.
+      date,
       startTime,
       durationMinutes: Number(durationMinutes),
       discipline,
       kiteSizeM2: Number(kiteSizeM2),
       boardModel: boardModel || undefined,
       avgWindKnots: Number(avgWindKnots),
-      maxGustKnots: Number(maxGustKnots),
+      maxGustKnots: maxGustKnots === '' ? undefined : Number(maxGustKnots),
       windDirection,
       tideCondition,
       waterCondition,
       rating,
-      distanceKm: distanceKm ? Number(distanceKm) : undefined,
-      maxSpeedKnots: maxSpeedKnots ? Number(maxSpeedKnots) : undefined,
-      highestJumpM: highestJumpM ? Number(highestJumpM) : undefined,
+      distanceKm: distanceKm === '' ? undefined : Number(distanceKm),
+      maxSpeedKnots: maxSpeedKnots === '' ? undefined : Number(maxSpeedKnots),
+      highestJumpM: highestJumpM === '' ? undefined : Number(highestJumpM),
       notes: notes || undefined,
       photoUrl: photoUrl || undefined,
       isPublic,
       trilhaReduzida: trilhaReduzida.length > 0 ? trilhaReduzida : undefined,
     });
 
+    setIsSaving(false);
+    if (!result.ok) {
+      setSaveError(result.error || 'Não foi possível salvar o velejo. Confira a conexão e tente novamente.');
+      return;
+    }
+
+    // Limpa somente após confirmação do servidor. Em falha, o formulário
+    // permanece intacto para o velejador corrigir ou tentar novamente.
+    setSelectedSpotId(spots[0]?.id || 'ponta-do-mel');
+    setCustomSpotName('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setStartTime('15:30');
+    setDurationMinutes(90);
+    setDiscipline('Kitesurf Twintip');
+    setKiteSizeM2(9);
+    setBoardModel('');
+    setAvgWindKnots(20);
+    setMaxGustKnots(26);
+    setWindDirection('ENE');
+    setTideCondition('Enchendo');
+    setWaterCondition('Chop Médio');
+    setRating(5);
+    setDistanceKm(28.4);
+    setMaxSpeedKnots(26.8);
+    setHighestJumpM(9.2);
+    setNotes('');
+    setPhotoUrl('');
+    setPhotoError('');
+    setSaveError('');
+    setIsPublic(true);
+    setPrefilledFromGps(false);
+    setTrilhaReduzida([]);
     setIsLoggerOpen(false);
   };
 
@@ -167,8 +212,15 @@ export const SessionLoggerModal: React.FC = () => {
             <h2 className="font-black text-base sm:text-lg text-slate-950">Registrar Velejo no Logbook</h2>
           </div>
           <button
-            onClick={() => setIsLoggerOpen(false)}
-            className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors"
+            type="button"
+            onClick={() => {
+              if (isSaving || isCompressingPhoto) return;
+              setSaveError('');
+              setIsLoggerOpen(false);
+            }}
+            disabled={isSaving || isCompressingPhoto}
+            className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors disabled:opacity-50"
+            aria-label="Fechar"
           >
             <X size={18} />
           </button>
@@ -287,6 +339,21 @@ export const SessionLoggerModal: React.FC = () => {
             </div>
           </div>
 
+          <div>
+            <label htmlFor="session-board-model" className="block font-bold text-slate-300 mb-1">
+              Modelo da prancha (opcional)
+            </label>
+            <input
+              id="session-board-model"
+              type="text"
+              value={boardModel}
+              onChange={e => setBoardModel(e.target.value)}
+              maxLength={100}
+              placeholder="Ex.: Duotone Jaime 136"
+              className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white placeholder:text-slate-500 focus:outline-hidden focus:border-cyan-400"
+            />
+          </div>
+
           {/* Wind & Tide Conditions Recorded */}
           <div className="p-3.5 bg-[#1E293B] rounded-2xl border border-slate-700/80 space-y-2.5">
             <h4 className="font-black text-xs text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -309,7 +376,7 @@ export const SessionLoggerModal: React.FC = () => {
                 <input
                   type="number"
                   value={maxGustKnots}
-                  onChange={e => setMaxGustKnots(Number(e.target.value))}
+                  onChange={e => setMaxGustKnots(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 font-black text-sm"
                 />
               </div>
@@ -334,7 +401,7 @@ export const SessionLoggerModal: React.FC = () => {
                 <label className="block text-slate-400 mb-0.5">Estado da Maré</label>
                 <select
                   value={tideCondition}
-                  onChange={e => setTideCondition(e.target.value as any)}
+                  onChange={e => setTideCondition(e.target.value as 'Seca' | 'Enchendo' | 'Cheia' | 'Vazando')}
                   className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-white text-xs"
                 >
                   <option value="Enchendo">Enchendo ↗</option>
@@ -451,6 +518,35 @@ export const SessionLoggerModal: React.FC = () => {
             />
           </div>
 
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublic}
+            onClick={() => setIsPublic((value) => !value)}
+            className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-[#1E293B] border border-slate-700 text-left"
+          >
+            <span>
+              <span className="block font-bold text-slate-200">Publicar na Comunidade</span>
+              <span className="block text-[10px] text-slate-400 mt-0.5">
+                {isPublic
+                  ? 'O Ride aparecerá para outros velejadores.'
+                  : 'O Ride ficará visível somente no seu Logbook.'}
+              </span>
+            </span>
+            <span
+              aria-hidden="true"
+              className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+                isPublic ? 'bg-cyan-500' : 'bg-slate-700'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
+                  isPublic ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </span>
+          </button>
+
           {/* Foto real do velejo (opcional) */}
           <div>
             <label htmlFor="session-photo-input" className="block font-bold text-slate-300 mb-1 flex items-center gap-1.5">
@@ -508,12 +604,18 @@ export const SessionLoggerModal: React.FC = () => {
           </div>
 
           {/* Submit */}
+          {saveError && (
+            <div role="alert" className="p-3 rounded-xl border border-rose-500/50 bg-rose-950/30 text-rose-200 text-xs font-bold">
+              {saveError}
+            </div>
+          )}
           <button
             type="submit"
-            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 mt-4"
+            disabled={isSaving || isCompressingPhoto}
+            className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 mt-4 disabled:opacity-60 disabled:cursor-wait"
           >
-            <Sparkles size={16} />
-            <span>Salvar no Meu Histórico de Velejos</span>
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+            <span>{isSaving ? 'Salvando velejo...' : 'Salvar no Meu Histórico de Velejos'}</span>
           </button>
         </form>
       </div>

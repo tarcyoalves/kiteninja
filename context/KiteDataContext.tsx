@@ -34,12 +34,16 @@ interface KiteDataContextType {
   setSelectedStateFilter: (state: string) => void;
   // Sessions (Logbook)
   sessions: SessionLog[];
-  addSession: (session: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>) => void;
+  addSession: (
+    session: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>
+  ) => Promise<{ ok: boolean; error?: string }>;
   deleteSession: (sessionId: string) => void;
 
   // Community Feed
   posts: CommunityPost[];
-  addPost: (post: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'shares'>) => void;
+  addPost: (
+    post: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'shares'>
+  ) => Promise<{ ok: boolean; error?: string }>;
   toggleLikePost: (postId: string) => void;
   // userName não é usado: o autor do comentário vem da sessão no servidor.
   addComment: (postId: string, text: string, userName: string) => void;
@@ -700,46 +704,53 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { value: Math.round(knots), unitStr: 'nós' };
   };
 
-  const addSession = (sessionData: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>) => {
+  const addSession = async (
+    sessionData: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>
+  ): Promise<{ ok: boolean; error?: string }> => {
     // spotId só é aceito pela rota se for o UUID real do banco; "outro"/vazio
     // vira null e a sessão fica com nome/local livres.
     const spotId = sessionData.spotId && UUID_RE.test(sessionData.spotId) ? sessionData.spotId : null;
 
-    api<SessionLog>('/api/sessions', {
-      method: 'POST',
-      body: JSON.stringify({
-        spotId,
-        spotName: sessionData.spotName,
-        spotLocation: sessionData.spotLocation,
-        date: sessionData.date,
-        startTime: sessionData.startTime,
-        durationMinutes: sessionData.durationMinutes,
-        discipline: sessionData.discipline,
-        kiteSizeM2: sessionData.kiteSizeM2,
-        boardModel: sessionData.boardModel,
-        avgWindKnots: sessionData.avgWindKnots,
-        maxGustKnots: sessionData.maxGustKnots,
-        windDirection: sessionData.windDirection,
-        tideCondition: sessionData.tideCondition,
-        waterCondition: sessionData.waterCondition,
-        rating: sessionData.rating,
-        distanceKm: sessionData.distanceKm,
-        maxSpeedKnots: sessionData.maxSpeedKnots,
-        highestJumpM: sessionData.highestJumpM,
-        notes: sessionData.notes,
-        photoUrl: sessionData.photoUrl,
-        isPublic: sessionData.isPublic,
-        trilhaReduzida: sessionData.trilhaReduzida,
-      }),
-    })
-      .then((created) => {
-        setSessions((prev) => [{ ...created, likesCount: 0, commentsCount: 0 } as SessionLog, ...prev]);
-        if (sessionData.isPublic) loadFeedAndEvents();
-      })
-      .catch(() => {
-        // A UI já fechou o modal ao chamar addSession; sem toast de erro aqui
-        // ainda, o próximo refresh reflete o estado real do servidor.
+    try {
+      const created = await api<SessionLog>('/api/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          spotId,
+          spotName: sessionData.spotName,
+          spotLocation: sessionData.spotLocation,
+          date: sessionData.date,
+          startTime: sessionData.startTime,
+          durationMinutes: sessionData.durationMinutes,
+          discipline: sessionData.discipline,
+          kiteSizeM2: sessionData.kiteSizeM2,
+          boardModel: sessionData.boardModel,
+          avgWindKnots: sessionData.avgWindKnots,
+          maxGustKnots: sessionData.maxGustKnots,
+          windDirection: sessionData.windDirection,
+          tideCondition: sessionData.tideCondition,
+          waterCondition: sessionData.waterCondition,
+          rating: sessionData.rating,
+          distanceKm: sessionData.distanceKm,
+          maxSpeedKnots: sessionData.maxSpeedKnots,
+          highestJumpM: sessionData.highestJumpM,
+          notes: sessionData.notes,
+          photoUrl: sessionData.photoUrl,
+          isPublic: sessionData.isPublic,
+          trilhaReduzida: sessionData.trilhaReduzida,
+        }),
       });
+      setSessions((prev) => [{ ...created, likesCount: 0, commentsCount: 0 } as SessionLog, ...prev]);
+      if (sessionData.isPublic) loadFeedAndEvents();
+      return { ok: true };
+    } catch (err) {
+      // Não feche o formulário nem apague o que foi digitado. Em conexão ruim
+      // no spot, dizer "salvo" sem confirmação do servidor perde a sessão em
+      // silêncio e destrói a confiança no Logbook.
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Não foi possível salvar o velejo.',
+      };
+    }
   };
 
   const deleteSession = (sessionId: string) => {
@@ -749,23 +760,32 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     });
   };
 
-  const addPost = (postData: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'shares'>) => {
-    api<{ id: string }>('/api/posts', {
-      method: 'POST',
-      body: JSON.stringify({
-        title: postData.title,
-        content: postData.content,
-        spotName: postData.spotName,
-        spotLocation: postData.spotLocation,
-        photoUrl: postData.photoUrl,
-        windKnots: postData.windReport?.knots,
-        windKiteUsed: postData.windReport?.kiteUsed,
-        windCondition: postData.windReport?.condition,
-        tag: postData.tag,
-      }),
-    })
-      .then(() => loadFeedAndEvents())
-      .catch(() => {});
+  const addPost = async (
+    postData: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'shares'>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await api<{ id: string }>('/api/posts', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: postData.title,
+          content: postData.content,
+          spotName: postData.spotName,
+          spotLocation: postData.spotLocation,
+          photoUrl: postData.photoUrl,
+          windKnots: postData.windReport?.knots,
+          windKiteUsed: postData.windReport?.kiteUsed,
+          windCondition: postData.windReport?.condition,
+          tag: postData.tag,
+        }),
+      });
+      await loadFeedAndEvents();
+      return { ok: true };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Não foi possível publicar o relato.',
+      };
+    }
   };
 
   const toggleLikePost = (postId: string) => {

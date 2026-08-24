@@ -9,6 +9,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
+import { splitSqlStatements } from '../lib/splitSqlStatements';
 
 let passed = 0;
 let failed = 0;
@@ -63,10 +64,15 @@ async function main() {
   console.log('Schema:');
   const schema = readFileSync(join(process.cwd(), 'lib', 'schema.sql'), 'utf8');
   try {
-    await db.exec(schema);
-    check('lib/schema.sql aplica sem erro', true);
+    const statements = splitSqlStatements(schema);
+    for (const statement of statements) await db.exec(statement);
+    check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', true);
+    check(
+      'separador preserva os 2 blocos DO $$ do schema como instruções inteiras',
+      statements.filter((statement) => statement.trimStart().startsWith('DO $$')).length === 2
+    );
   } catch (err) {
-    check('lib/schema.sql aplica sem erro', false, err instanceof Error ? err.message : '');
+    check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', false, err instanceof Error ? err.message : '');
     console.log('\nSchema inválido, abortando.');
     process.exit(1);
   }
@@ -182,6 +188,42 @@ async function main() {
     `INSERT INTO sos_responders (sos_id, user_id, state) VALUES (gen_random_uuid(), $1, 'voando')`,
     [riderA]
   );
+
+  // Réplica da instrução única de POST /api/sessions: se o post automático
+  // falhar, o INSERT da sessão inteira volta junto — não sobra Ride órfão para
+  // duplicar quando o cliente retentar.
+  const sessaoAtomica = await expectOk(
+    db,
+    'criação atômica de Ride público + post automático (CTE da rota)',
+    `WITH nova_sessao AS (
+       INSERT INTO sessions_log (
+         user_id, spot_id, spot_name, spot_location, date, start_time,
+         duration_minutes, discipline, kite_size_m2, board_model,
+         avg_wind_knots, max_gust_knots, wind_direction, tide_condition,
+         water_condition, rating, distance_km, max_speed_knots, highest_jump_m,
+         notes, photo_url, is_public, trilha_reduzida, lat_inicial, lng_inicial
+       ) VALUES (
+         $1, NULL, 'Spot Atômico', 'RN', '2026-08-23', '15:30',
+         90, 'Kitesurf Twintip', 9, NULL,
+         20, NULL, NULL, NULL,
+         NULL, 5, NULL, NULL, NULL,
+         'teste atômico', NULL, TRUE, NULL::jsonb, NULL, NULL
+       ) RETURNING *
+     ), post_automatico AS (
+       INSERT INTO posts (user_id, session_id, title, content, spot_name, spot_location)
+       SELECT $1, ns.id, 'Ride atômico', 'teste', 'Spot Atômico', 'RN'
+       FROM nova_sessao ns WHERE TRUE = TRUE RETURNING id
+     )
+     SELECT ns.* FROM nova_sessao ns LEFT JOIN post_automatico pa ON TRUE`,
+    [riderA]
+  );
+  const sessaoAtomicaId = String(sessaoAtomica[0]?.id ?? '');
+  const postAtomico = await db.query(
+    `SELECT id FROM posts WHERE session_id = $1`,
+    [sessaoAtomicaId]
+  );
+  check('Ride público e post automático nascem vinculados na mesma instrução', postAtomico.rows.length === 1);
+  await db.query(`DELETE FROM sessions_log WHERE id = $1`, [sessaoAtomicaId]);
 
   // ------------------------------------------- queries reais das rotas
   console.log('\nQueries das rotas de auth:');

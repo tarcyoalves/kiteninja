@@ -6,7 +6,39 @@
  * de array do perfil (ex: disciplines) já tinham antes.
  */
 import { describe, expect, it } from 'vitest';
-import { clampQuiverBoards, clampQuiverKites } from './validation';
+import { clampQuiverBoards, clampQuiverKites, isIsoDate, isTime24 } from './validation';
+
+/** O Logbook grava em DATE/TIME no Postgres; esses validadores impedem que
+ * formato local ou data impossível chegue à query e vire erro 500. */
+describe('isIsoDate', () => {
+  it('aceita data civil ISO válida e ano bissexto', () => {
+    expect(isIsoDate('2026-08-23')).toBe(true);
+    expect(isIsoDate('2024-02-29')).toBe(true);
+  });
+
+  it('rejeita formato brasileiro, formato parcial e datas impossíveis', () => {
+    expect(isIsoDate('23/08/2026')).toBe(false);
+    expect(isIsoDate('2026-8-3')).toBe(false);
+    expect(isIsoDate('2026-02-29')).toBe(false);
+    expect(isIsoDate('2026-04-31')).toBe(false);
+    expect(isIsoDate('2026-13-01')).toBe(false);
+    expect(isIsoDate('0000-01-01')).toBe(false);
+  });
+});
+
+describe('isTime24', () => {
+  it('aceita HH:MM e HH:MM:SS válidos', () => {
+    expect(isTime24('00:00')).toBe(true);
+    expect(isTime24('23:59')).toBe(true);
+    expect(isTime24('15:30:45')).toBe(true);
+  });
+
+  it('rejeita hora fora da faixa ou sem zero inicial', () => {
+    expect(isTime24('24:00')).toBe(false);
+    expect(isTime24('12:60')).toBe(false);
+    expect(isTime24('9:30')).toBe(false);
+  });
+});
 
 describe('clampQuiverKites', () => {
   it('mantém tamanhos dentro da faixa real de kites (3 a 21 m²)', () => {

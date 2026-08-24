@@ -473,8 +473,13 @@ export const MarketplaceView: React.FC = () => {
         </>
       )}
 
-      {/* Botão flutuante Anunciar */}
-      <div className="fixed bottom-20 left-0 right-0 z-20 flex justify-center pointer-events-none">
+      {/*
+        Botão flutuante Anunciar. `bottom-20` não incluía a safe-area e ficava
+        por cima da pílula de navegação no iPhone instalado. Usa o mesmo
+        contrato dos outros FABs: --nav-h já soma altura, gap e safe-area uma
+        única vez (app/globals.css).
+      */}
+      <div className="fixed publish-fab-bottom left-0 right-0 z-20 flex justify-center pointer-events-none">
         <button
           type="button"
           onClick={() => setIsNewListingOpen(true)}

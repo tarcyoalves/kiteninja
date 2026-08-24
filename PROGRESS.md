@@ -4,6 +4,61 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
+## Atualização — 23/08/2026 (varredura funcional e de navegação)
+
+Varredura executada sobre chat/SOS, navegação lateral, Comunidade, Marketplace,
+Logbook e pipeline de banco. Resultado desta rodada:
+
+- **Navegação sem destinos duplicados:** `Eventos` e `Ocorrências`, que abriam a
+  mesma tela, viraram um único item `Eventos & Ocorrências`; `Riders` abre a
+  busca real de velejadores; `Meu Logbook` dá acesso à tela de sessões que antes
+  estava órfã; `Notificações` abre a central correta, não a aba de ocorrências.
+- **Rides e Comunidade separados:** `MarketplaceView` chama os anúncios de
+  `Rides` somente dentro do marketplace; `Novo Relato` publica na Comunidade.
+- **Salvar/publicar não mente mais:** `SessionLoggerModal` e `NewPostModal`
+  aguardam a API, bloqueiam duplo toque, mostram erro e preservam o formulário
+  quando há falha. Antes fechavam imediatamente e apagavam tudo mesmo com erro.
+  Após sucesso, o formulário do Logbook é limpo para não reaproveitar dados do
+  Ride anterior ao abrir novamente.
+- **Logbook voltou a gravar:** o formulário enviava data brasileira
+  `dd/mm/aaaa` para uma coluna `DATE`; agora envia ISO `AAAA-MM-DD`. A API valida
+  data civil real e hora antes do SQL. Valores numéricos opcionais iguais a zero
+  não viram mais `NULL`, nem somem na resposta. Rajada vazia permanece ausente.
+  Modelo da prancha e privacidade agora têm controles visíveis: um Ride privado
+  fica só no Logbook; um público também gera publicação na Comunidade.
+- **Sessão + post público atômicos:** uma única CTE cria o Ride e seu post. Antes,
+  falha na segunda query deixava sessão gravada com resposta de erro e a tentativa
+  seguinte podia duplicar o Ride.
+- **Pipeline de migração corrigido:** o separador antigo quebrava todo bloco
+  PostgreSQL `DO $$ ... $$` em várias queries inválidas e ainda anunciava
+  sucesso. `lib/splitSqlStatements.ts` agora respeita strings, comentários e
+  dollar-quotes; `migrate.ts`, `migrate-on-build.ts` e `verify-sql.ts` usam a
+  mesma implementação. Com `DATABASE_URL` presente, migração incompleta bloqueia
+  o deploy em vez de publicar código contra schema parcial. Migração prefere a
+  URL direta (`DATABASE_URL_UNPOOLED`) e o app mantém a pooled no runtime.
+- **Build local multiplataforma:** `package.json` usa `&&` em vez de `;`; o
+  `npm run build` oficial funciona tanto no Windows quanto na Vercel.
+- **SOS/UI:** gatilho permanece no menu do avatar; não há botão flutuante sobre o
+  chat. `Diagnóstico de tela` permanece removido do menu.
+
+Validação final executada nesta rodada:
+
+| Portão | Resultado |
+|---|---|
+| `npm run typecheck` | limpo |
+| `npm run test` | **672 testes / 38 arquivos, 0 falhas** |
+| `npm run test:sql` | **227 checagens PGlite, 0 falhas** |
+| `npx tsx scripts/verify-sos.ts` | **53 cenários adversariais, 0 falhas** |
+| `npm run test:db` | **31 checagens Neon online, 0 falhas; dados temporários removidos** |
+| `npm run build` | **110/110 migrações + Next 16.3.1, 34 páginas, verde** |
+| Neon online | migração idempotente **110/110**, 0 falhas |
+| Preview móvel 375×812 | login carregou, sem erro de servidor/rede; fluxo autenticado não exercitado por falta de sessão no preview |
+
+O `npm run lint` global ainda acusa dívida anterior (regras novas do React 19,
+`no-unused-vars` e `<img>` espalhados por dezenas de arquivos). Não é regressão
+desta rodada; TypeScript, testes, SQL e build estão verdes. Não anunciar como
+"lint limpo" até uma tarefa específica quitar essa dívida.
+
 ## Status (14/08/2026)
 
 | # | Tarefa | Estado |

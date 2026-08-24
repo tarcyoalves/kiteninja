@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
-import { bool, num, oneOf, str } from '@/lib/validation';
+import { requireUser, HttpError } from '@/lib/auth';
+import { bool, isIsoDate, isTime24, num, oneOf, str } from '@/lib/validation';
 import { validarTrilhaReduzida } from '@/lib/trilhaSessao';
 import type { Discipline } from '@/types';
 
@@ -94,14 +94,14 @@ export async function GET() {
           kiteSizeM2: Number(r.kite_size_m2),
           boardModel: r.board_model ? String(r.board_model) : undefined,
           avgWindKnots: Number(r.avg_wind_knots),
-          maxGustKnots: r.max_gust_knots ? Number(r.max_gust_knots) : undefined,
+          maxGustKnots: r.max_gust_knots !== null ? Number(r.max_gust_knots) : undefined,
           windDirection: r.wind_direction ? String(r.wind_direction) : undefined,
           tideCondition: r.tide_condition ? String(r.tide_condition) : undefined,
           waterCondition: r.water_condition ? String(r.water_condition) : undefined,
           rating: Number(r.rating),
-          distanceKm: r.distance_km ? Number(r.distance_km) : undefined,
-          maxSpeedKnots: r.max_speed_knots ? Number(r.max_speed_knots) : undefined,
-          highestJumpM: r.highest_jump_m ? Number(r.highest_jump_m) : undefined,
+          distanceKm: r.distance_km !== null ? Number(r.distance_km) : undefined,
+          maxSpeedKnots: r.max_speed_knots !== null ? Number(r.max_speed_knots) : undefined,
+          highestJumpM: r.highest_jump_m !== null ? Number(r.highest_jump_m) : undefined,
           notes: r.notes ? String(r.notes) : undefined,
           photoUrl: r.photo_url ? String(r.photo_url) : undefined,
           isPublic: Boolean(r.is_public),
@@ -133,7 +133,16 @@ export async function POST(request: Request) {
     const spotName = str(body, 'spotName', { max: 200 });
     const spotLocation = str(body, 'spotLocation', { max: 200 });
     const date = str(body, 'date', { max: 10 });
-    const startTime = str(body, 'startTime', { max: 10 });
+    const startTime = str(body, 'startTime', { max: 8 });
+    // Valide antes da query: texto de calendário local (`23/08/2026`) numa
+    // coluna DATE depende do DateStyle do Postgres e virava erro interno 500.
+    // O contrato é o mesmo dos inputs HTML date/time e não varia por locale.
+    if (!isIsoDate(date)) {
+      throw new HttpError(400, 'Data inválida. Use o formato AAAA-MM-DD.');
+    }
+    if (!isTime24(startTime)) {
+      throw new HttpError(400, 'Hora inicial inválida. Use o formato HH:MM.');
+    }
     const durationMinutes = num(body, 'durationMinutes', { min: 1, max: 1440 });
     const discipline = oneOf<Discipline>(body, 'discipline', DISCIPLINES as unknown as readonly Discipline[]);
     const kiteSizeM2 = num(body, 'kiteSizeM2', { min: 1, max: 25 });
@@ -167,39 +176,46 @@ export async function POST(request: Request) {
     const latInicial = trilhaReduzida ? trilhaReduzida[0][0] : null;
     const lngInicial = trilhaReduzida ? trilhaReduzida[0][1] : null;
 
+    // Sessão e post automático precisam nascer na MESMA instrução SQL. Antes,
+    // a sessão era gravada primeiro e o post numa segunda query: se a segunda
+    // falhasse, a API devolvia erro embora o Ride já existisse; tentar novamente
+    // duplicava a sessão no Logbook.
+    const title = `Velejo no spot ${spotName}`;
+    const content = notes
+      ? notes
+      : `Sessão concluída em ${spotLocation}! ${durationMinutes} minutos de velejo com pipa ${kiteSizeM2}m² e vento de ${avgWindKnots} nós.`;
+
     const inserted = await sql`
-      INSERT INTO sessions_log (
-        user_id, spot_id, spot_name, spot_location, date, start_time,
-        duration_minutes, discipline, kite_size_m2, board_model,
-        avg_wind_knots, max_gust_knots, wind_direction, tide_condition,
-        water_condition, rating, distance_km, max_speed_knots, highest_jump_m,
-        notes, photo_url, is_public, trilha_reduzida, lat_inicial, lng_inicial
-      ) VALUES (
-        ${user.id}, ${spotId || null}, ${spotName}, ${spotLocation}, ${date}, ${startTime},
-        ${durationMinutes}, ${discipline}, ${kiteSizeM2}, ${boardModel || null},
-        ${avgWindKnots}, ${maxGustKnots || null}, ${windDirection || null}, ${tideCondition || null},
-        ${waterCondition || null}, ${rating}, ${distanceKm || null}, ${maxSpeedKnots || null},
-        ${highestJumpM || null}, ${notes || null}, ${photoUrl || null}, ${isPublic},
-        ${trilhaReduzida ? JSON.stringify(trilhaReduzida) : null}::jsonb, ${latInicial}, ${lngInicial}
+      WITH nova_sessao AS (
+        INSERT INTO sessions_log (
+          user_id, spot_id, spot_name, spot_location, date, start_time,
+          duration_minutes, discipline, kite_size_m2, board_model,
+          avg_wind_knots, max_gust_knots, wind_direction, tide_condition,
+          water_condition, rating, distance_km, max_speed_knots, highest_jump_m,
+          notes, photo_url, is_public, trilha_reduzida, lat_inicial, lng_inicial
+        ) VALUES (
+          ${user.id}, ${spotId || null}, ${spotName}, ${spotLocation}, ${date}, ${startTime},
+          ${durationMinutes}, ${discipline}, ${kiteSizeM2}, ${boardModel || null},
+          ${avgWindKnots}, ${maxGustKnots}, ${windDirection || null}, ${tideCondition || null},
+          ${waterCondition || null}, ${rating}, ${distanceKm}, ${maxSpeedKnots},
+          ${highestJumpM}, ${notes || null}, ${photoUrl || null}, ${isPublic},
+          ${trilhaReduzida ? JSON.stringify(trilhaReduzida) : null}::jsonb, ${latInicial}, ${lngInicial}
+        )
+        RETURNING *
+      ), post_automatico AS (
+        INSERT INTO posts (user_id, session_id, title, content, spot_name, spot_location)
+        SELECT ${user.id}, ns.id, ${title}, ${content}, ${spotName}, ${spotLocation}
+        FROM nova_sessao ns
+        WHERE ${isPublic} = TRUE
+        RETURNING id
       )
-      RETURNING *
+      SELECT ns.*
+      FROM nova_sessao ns
+      LEFT JOIN post_automatico pa ON TRUE
     `;
 
     const sessionRow = inserted[0] as Record<string, unknown>;
     const sessionId = String(sessionRow.id);
-
-    // If public, create an auto-post in the feed
-    if (isPublic) {
-      const title = `Velejo no spot ${spotName}`;
-      const content = notes
-        ? notes
-        : `Sessão concluída em ${spotLocation}! ${durationMinutes} minutos de velejo com pipa ${kiteSizeM2}m² e vento de ${avgWindKnots} nós.`;
-
-      await sql`
-        INSERT INTO posts (user_id, session_id, title, content, spot_name, spot_location)
-        VALUES (${user.id}, ${sessionId}, ${title}, ${content}, ${spotName}, ${spotLocation})
-      `;
-    }
 
     return {
       id: sessionId,
