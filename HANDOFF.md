@@ -1,5 +1,10 @@
 # HANDOFF — KiteNinja
 
+> **Atualização 2026-08-23:** o estado atual está em
+> [`HANDOFF-2026-08-23.md`](./HANDOFF-2026-08-23.md) — leia-o PRIMEIRO. Corrige o
+> login (migração faltando no Neon), tira o botão SOS de cima do chat e refaz a
+> escalada do SOS, que não alcançava alertas sem vizinhos online.
+>
 > **Atualização 2026-08-19:** trabalho recente e a pendência de publicação estão em
 > [`HANDOFF-2026-08-19.md`](./HANDOFF-2026-08-19.md). Leia-o primeiro — há um fix do
 > teclado no iOS pronto (commit `eb30ce9`) esperando a cota de deploy da Vercel resetar.

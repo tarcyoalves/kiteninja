@@ -27,6 +27,23 @@ const PUBLICAS: Record<string, string> = {
   'invites/accept/route.ts': 'cria a conta a partir do convite',
   'intro-video/route.ts':
     'a abertura toca antes do login; só devolve a URL de um arquivo em storage público, nada do usuário',
+  'downwind/convite/[token]/entrar/route.ts':
+    'onboarding do link de 12h para apoio em terra: é o caminho de quem AINDA NÃO tem conta, então não pode exigir sessão. Escopado a um downwind e 12h — a conta criada leva downwind_guest_of, e requireUser() rejeita guestDownwindId por padrão no resto do app. Passou a constar aqui quando o teste parou de ler comentários: antes, a única razão pela qual esta rota satisfazia a guarda era o texto do próprio comentário mencionar requireUser(), não uma chamada real.',
+};
+
+/**
+ * Rotas de máquina (cron/webhook): não têm sessão de usuário porque quem chama
+ * é o agendador, não uma pessoa. NÃO são públicas — autenticam por segredo
+ * compartilhado. Ficam numa categoria separada de propósito: se entrassem em
+ * PUBLICAS, um endpoint que dispara push em massa passaria a constar como
+ * "acessível sem autenticação", o que é falso e perigoso de documentar errado.
+ *
+ * O teste 'rotas de máquina exigem segredo e falham fechado' abaixo garante
+ * que cada uma valide o segredo E recuse quando ele não está configurado.
+ */
+const MAQUINA: Record<string, string> = {
+  'cron/sos-escalada/route.ts':
+    'varredura periódica de escaladas de SOS; chamada pelo Cron Job da Vercel com Authorization: Bearer $CRON_SECRET',
 };
 
 function listarRotas(dir: string): string[] {
@@ -42,10 +59,35 @@ function listarRotas(dir: string): string[] {
   return out;
 }
 
-const rotas = listarRotas(API_DIR).map((full) => ({
-  rel: relative(API_DIR, full).split('\\').join('/'),
-  src: readFileSync(full, 'utf8'),
-}));
+/**
+ * Remove comentários antes de auditar SQL.
+ *
+ * Sem isto o teste analisa prosa: um comentário explicando "o UPDATE é
+ * condicionado ao raio lido" era contado como mutação real e cobrava um
+ * `WHERE id = ${...}` que não existe — falso positivo que empurra o autor a
+ * apagar a explicação para o teste passar. Um guarda de segurança que pune
+ * documentação treina o hábito errado.
+ *
+ * As strings de template SQL não são afetadas: `--` e `/* *\/` dentro de uma
+ * query são sintaxe de comentário do próprio Postgres, então removê-los aqui
+ * não altera o que o teste precisa enxergar (tabela, verbo e WHERE).
+ */
+function semComentarios(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ') // bloco /* ... */
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1') // linha // ... (preserva http://)
+    .replace(/^\s*--[^\n]*$/gm, ''); // comentário SQL em linha própria
+}
+
+const rotas = listarRotas(API_DIR).map((full) => {
+  const bruto = readFileSync(full, 'utf8');
+  return {
+    rel: relative(API_DIR, full).split('\\').join('/'),
+    src: semComentarios(bruto),
+    /** Fonte original, para checagens que precisam ver comentários. */
+    bruto,
+  };
+});
 
 describe('autorização das rotas de API', () => {
   it('encontrou rotas para auditar', () => {
@@ -54,11 +96,37 @@ describe('autorização das rotas de API', () => {
 
   it('toda rota exige sessão, exceto as públicas declaradas', () => {
     const desprotegidas = rotas
-      .filter((r) => !(r.rel in PUBLICAS))
+      .filter((r) => !(r.rel in PUBLICAS) && !(r.rel in MAQUINA))
       .filter((r) => !/requireUser|requireAdmin|getSessionUser/.test(r.src))
       .map((r) => r.rel);
 
     expect(desprotegidas).toEqual([]);
+  });
+
+  it('rotas de máquina exigem segredo e falham fechado', () => {
+    // Uma rota de cron que dispara push é alvo óbvio de abuso: chamada em loop
+    // gera rajada de notificação. Duas exigências, as duas verificadas aqui:
+    //   1. compara o header Authorization com o segredo do ambiente;
+    //   2. se o segredo NÃO estiver configurado, recusa — em vez de liberar.
+    // O caso 2 é o que costuma passar batido: variável esquecida no deploy
+    // transformaria o endpoint em porta aberta.
+    for (const [rel] of Object.entries(MAQUINA)) {
+      const rota = rotas.find((r) => r.rel === rel);
+      expect(rota, `${rel} está declarada como rota de máquina mas não existe`).toBeTruthy();
+      const src = rota!.src;
+
+      expect(/CRON_SECRET/.test(src), `${rel} deve ler CRON_SECRET`).toBe(true);
+      expect(
+        /authorization|Authorization/.test(src),
+        `${rel} deve validar o header Authorization`
+      ).toBe(true);
+      // Guarda de fail-closed: precisa existir um caminho de erro para segredo
+      // ausente antes de qualquer trabalho.
+      expect(
+        /if\s*\(\s*!\s*segredo\s*\)|if\s*\(\s*!\s*process\.env\.CRON_SECRET\s*\)/.test(src),
+        `${rel} deve recusar quando CRON_SECRET não está configurada (fail-closed)`
+      ).toBe(true);
+    }
   });
 
   it('as rotas públicas declaradas ainda existem', () => {
@@ -139,8 +207,11 @@ describe('autorização das rotas de API', () => {
       'resolver alerta é ação de moderação; a rota exige requireAdmin',
     'chat/messages/[id]/route.ts::DELETE FROM chat_messages':
       'moderação de sala pública: o ramo sem filtro é alcançável apenas com role admin, e o ramo do autor comum filtra por user_id',
-    'sos/active/route.ts::UPDATE sos_alerts':
-      'escalada preguiçosa de raio: sistema amplia a busca para novos socorristas sem expor dados privados',
+    // A escalada de raio saiu de sos/active/route.ts para lib/sosEscalada.ts
+    // (motor único, chamado pelo cron E pelo poll). Não há mais UPDATE nessa
+    // rota, então a entrada deixou de existir aqui — o teste
+    // 'exceções declaradas ainda correspondem ao código' abaixo garante que
+    // ninguém deixe justificativa órfã apontando para mutação que já morreu.
     'sos/[id]/respond/route.ts::UPDATE sos_alerts':
       'socorrista a caminho: muda status de ativo para em_atendimento para cessar a escalada',
     'sos/[id]/route.ts::UPDATE sos_alerts':
@@ -151,10 +222,11 @@ describe('autorização das rotas de API', () => {
       'rollback manual de criação de downwind: desfaz o evento que a própria requisição acabou de criar, pelo id retornado, se downwinds/downwind_participantes falhar depois',
     'downwind/[id]/status/route.ts::UPDATE downwinds':
       'muda o status de UM downwind (WHERE id = ${id}), não dado de usuário; autorizado antes da query por lib/downwindAcesso.ts (podeIniciarDownwind/podeCancelarDownwind/podeEncerrarDownwindComoUsuario)',
-    'downwind/[id]/status/route.ts::DELETE FROM downwind_posicoes':
-      'purga preguiçosa de trilha de downwinds já encerrados/cancelados há mais de 7 dias (retenção, não dado ativo) — só roda depois que o encerramento, já autorizado, foi confirmado',
-    'downwind/[id]/status/route.ts::DELETE FROM users':
-      'purga preguiçosa das contas-convidadas do link de 12h (downwind_guest_of IS NOT NULL) com mais de 2 dias — nunca atinge conta normal (a coluna é NULL para todas), e não é dado de OUTRO usuário sendo apagado por alguém: é lixo de sessão descartável cuja janela de acesso real já fechou',
+    // As duas purgas abaixo saíram desta rota para lib/downwindDb.ts
+    // (`resumirEPurgar`), chamada por status/route.ts e por
+    // participantes/[userId]/route.ts após o encerramento já autorizado.
+    // Como não são mais SQL nesta rota, as entradas saíram daqui; a
+    // justificativa vive junto do código, em resumirEPurgar.
     'events/[id]/route.ts::DELETE FROM downwinds':
       'apaga UM downwind (WHERE id = ${downwindId}) vinculado ao evento que está sendo apagado; autorizado antes por canModerate ou pelo criado_por do próprio downwind',
     'events/[id]/route.ts::DELETE FROM events':
@@ -186,6 +258,29 @@ describe('autorização das rotas de API', () => {
       }
     }
     expect(falhas).toEqual([]);
+  });
+
+  it('exceções declaradas ainda correspondem ao código', () => {
+    // Justificativa órfã é dívida perigosa: descreve uma mutação que não existe
+    // mais e, pior, deixa a porta pré-aberta para uma futura mutação com o
+    // mesmo nome entrar sem revisão. Encontrado de verdade ao mover a escalada
+    // para lib/sosEscalada.ts — a entrada de sos/active continuou "válida"
+    // apontando para código que havia saído da rota.
+    const orfas: string[] = [];
+    for (const chave of Object.keys(MUTACOES_JUSTIFICADAS)) {
+      const [rel, verbo] = chave.split('::');
+      const rota = rotas.find((r) => r.rel === rel);
+      if (!rota) {
+        orfas.push(`${chave} (rota não existe)`);
+        continue;
+      }
+      // O verbo declarado precisa aparecer no código real (sem comentários).
+      const alvo = verbo.replace(/\s+/g, '\\s+');
+      if (!new RegExp(alvo).test(rota.src)) {
+        orfas.push(`${chave} (mutação não existe mais)`);
+      }
+    }
+    expect(orfas).toEqual([]);
   });
 
   /**
@@ -292,6 +387,7 @@ import {
   canOrganizeDownwind,
   canResolveAlert,
   canResolveSos,
+  podeResponderSos,
 } from './authz';
 
 describe('matriz RBAC (lib/authz.ts)', () => {
@@ -379,6 +475,76 @@ describe('matriz RBAC (lib/authz.ts)', () => {
     expect(canResolveSos(rider, 'u-rider')).toBe(true);
     expect(canResolveSos(rider, 'u-other')).toBe(false);
     expect(canResolveSos(instructor, 'u-other')).toBe(false);
+  });
+});
+
+// P0-2 da auditoria de 2026-08-23: `respond` não tinha autorização nenhuma.
+// Estes testes fixam a regra de negócio descrita em docs/MAQUINA-ESTADOS-SOS.md.
+describe('podeResponderSos — autorização de socorrista', () => {
+  const AUTOR = 'u-autor';
+  const rider = { id: 'u-rider', role: 'rider' as const };
+  const moderator = { id: 'u-mod', role: 'moderator' as const };
+  const admin = { id: 'u-admin', role: 'admin' as const };
+
+  const base = {
+    sosAuthorId: AUTOR,
+    statusSos: 'ativo' as const,
+    foiNotificado: false,
+    dentroDoRaio: false,
+  };
+
+  it('RECUSA o atacante: rider aleatório, sem notificação e fora do raio', () => {
+    // Este é exatamente o furo do P0-2: essa chamada passava e dava ao
+    // atacante a coordenada exata do acidentado (via canSeePos), além de
+    // permitir congelar a escalada mandando 'a_caminho'.
+    const r = podeResponderSos({ ...base, user: rider });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toBe('nao_elegivel');
+  });
+
+  it('autoriza quem o sistema notificou (caminho normal)', () => {
+    expect(podeResponderSos({ ...base, user: rider, foiNotificado: true }).ok).toBe(true);
+  });
+
+  it('autoriza quem está comprovadamente dentro do raio (chegou depois do disparo)', () => {
+    expect(podeResponderSos({ ...base, user: rider, dentroDoRaio: true }).ok).toBe(true);
+  });
+
+  it('autoriza moderação e admin mesmo sem notificação e fora do raio', () => {
+    expect(podeResponderSos({ ...base, user: moderator }).ok).toBe(true);
+    expect(podeResponderSos({ ...base, user: admin }).ok).toBe(true);
+  });
+
+  it('recusa o próprio autor do SOS, ainda que notificado ou dentro do raio', () => {
+    const autor = { id: AUTOR, role: 'rider' as const };
+    for (const extra of [{}, { foiNotificado: true }, { dentroDoRaio: true }]) {
+      const r = podeResponderSos({ ...base, ...extra, user: autor });
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.motivo).toBe('autor_do_sos');
+    }
+  });
+
+  it('recusa qualquer resposta em SOS terminal, inclusive de moderador e notificado', () => {
+    for (const statusSos of ['resolvido', 'cancelado', 'falso_alarme'] as const) {
+      for (const user of [rider, moderator, admin]) {
+        const r = podeResponderSos({ ...base, statusSos, user, foiNotificado: true });
+        expect(r.ok).toBe(false);
+        if (!r.ok) expect(r.motivo).toBe('sos_terminal');
+      }
+    }
+  });
+
+  it('permite responder a SOS em_atendimento (mais de um socorrista é bem-vindo)', () => {
+    expect(
+      podeResponderSos({ ...base, statusSos: 'em_atendimento', user: rider, foiNotificado: true }).ok
+    ).toBe(true);
+  });
+
+  it('estado terminal tem precedência sobre a checagem de autor', () => {
+    const autor = { id: AUTOR, role: 'rider' as const };
+    const r = podeResponderSos({ ...base, statusSos: 'resolvido', user: autor });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.motivo).toBe('sos_terminal');
   });
 });
 

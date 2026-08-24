@@ -2,9 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
-import { deveEscalar, proximoRaio, textoDoAlerta } from '@/lib/sos';
-import { selectSosCandidates } from '@/lib/sosCandidates';
-import { sendPushToUsers } from '@/lib/push';
+import { escalarUmSos } from '@/lib/sosEscalada';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,76 +60,62 @@ export async function GET() {
 
       const temResponsavel = responders.some(resp => resp.state === 'a_caminho' || resp.state === 'no_local');
 
-      // Escalada preguiçosa — a Vercel não tem processo em background e o cron do plano gratuito não existe. 
-      // Como quem está online consulta a cada poucos segundos, a escalada acontece naturalmente pela consulta de qualquer usuário online.
-      if (deveEscalar({
-        raioKm: radiusKm,
-        criadoEm: new Date(String(row.created_at)),
-        escaladoEm: escalatedAt,
-        agora: new Date(),
-        temResponsavel,
-        // 'em_atendimento' nunca escala, mesmo se o responsável recuar depois
-        // (ver comentário em lib/sos.ts).
-        statusAtual: String(row.status) as 'ativo' | 'em_atendimento'
-      })) {
-        const nextRadius = proximoRaio(radiusKm);
-        if (nextRadius !== null) {
-          await sql`
-            UPDATE sos_alerts
-            SET radius_km = ${nextRadius}, escalated_at = NOW()
-            WHERE id = ${sosId}
-          `;
-          radiusKm = nextRadius;
+      /**
+       * Escalada preguiçosa — mantida, mas agora é só UM dos dois gatilhos.
+       *
+       * O motor real vive em lib/sosEscalada.ts e também roda pelo cron
+       * (/api/cron/sos-escalada), porque este caminho aqui tem um limite
+       * estrutural: a consulta acima lista apenas os SOS que ESTE usuário pode
+       * ver. Um pedido de socorro cujos vizinhos estão todos com o app fechado
+       * nunca seria varrido por ninguém — exatamente o caso em que ampliar o
+       * raio é vital.
+       *
+       * As duas vias chamam a mesma função idempotente (o UPDATE é condicionado
+       * ao raio lido), então rodar as duas ao mesmo tempo não escala em dobro.
+       * Comprovado em scripts/verify-sos.ts, seção 3.
+       *
+       * Falha na escalada não pode esconder o SOS da tela: em try/catch, mesmo
+       * princípio já usado acima para a gravação de presença.
+       */
+      try {
+        const resultado = await escalarUmSos({
+          id: sosId,
+          userId: sosUserId,
+          authorName: String(row.author_name),
+          lat,
+          lng,
+          spotName: null,
+          status: String(row.status),
+          radiusKm,
+          createdAt: new Date(String(row.created_at)),
+          escalatedAt,
+          temResponsavel,
+          jaNotificados: new Set(responders.map(rr => rr.userId)),
+        });
+
+        if (resultado) {
+          radiusKm = resultado.raioNovo;
           escalatedAt = new Date();
-
-          if (lat !== null && lng !== null) {
-            const existingResponders = new Set(responders.map(rr => rr.userId));
-
-            // Mesma seleção de candidatos do disparo inicial (posição real
-            // ou fallback pelo spot) — ver lib/sosCandidates.ts.
-            const newCandidatos = await selectSosCandidates({
-              excludeUserId: sosUserId,
-              origin: { lat, lng },
-              radiusKm,
-              alreadyNotified: existingResponders,
+          // Recarrega os socorristas: a escalada acabou de inserir os novos
+          // notificados, e a resposta precisa refletir o estado real.
+          const atualizados = await sql`
+            SELECT user_id, state, lat, lng, responded_at
+            FROM sos_responders
+            WHERE sos_id = ${sosId}
+          `;
+          responders.length = 0;
+          for (const rr of atualizados) {
+            responders.push({
+              userId: String(rr.user_id),
+              state: String(rr.state),
+              lat: rr.lat ? Number(rr.lat) : null,
+              lng: rr.lng ? Number(rr.lng) : null,
+              respondedAt: rr.responded_at ? String(rr.responded_at) : new Date().toISOString(),
             });
-
-            // ON CONFLICT: na escalada o risco é maior, porque o mesmo
-            // velejador pode reaparecer entre os candidatos do raio ampliado.
-            // Sem isso a violação de PK derruba a escalada inteira.
-            for (const c of newCandidatos) {
-              await sql`
-                INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
-                VALUES (${sosId}, ${c.userId}, 'notificado', ${c.dist})
-                ON CONFLICT (sos_id, user_id) DO NOTHING
-              `;
-              responders.push({
-                userId: c.userId,
-                state: 'notificado',
-                lat: null,
-                lng: null,
-                respondedAt: new Date().toISOString()
-              });
-
-              try {
-                const txt = textoDoAlerta({
-                  nome: String(row.author_name),
-                  distanciaKm: c.dist,
-                  spotNome: null,
-                  temCoordenada: true
-                });
-                await sendPushToUsers([c.userId], {
-                  title: txt.titulo,
-                  body: txt.corpo,
-                  requireInteraction: true,
-                  url: `/?tab=mapa&sos=${sosId}`,
-                });
-              } catch (err) {
-                console.error('[sos] Push falhou na escalada', err);
-              }
-            }
           }
         }
+      } catch (err) {
+        console.error('[sos] escalada preguiçosa falhou (alerta segue visível)', err);
       }
 
       // PRIVACY: Posições do acidentado e socorristas são sensíveis, 

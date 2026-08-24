@@ -33,15 +33,32 @@ export function deveEscalar(args: {
   agora: Date;
   temResponsavel: boolean;
   /**
-   * Status atual do alerta. Um SOS que já virou 'em_atendimento' não deve
-   * voltar a escalar mesmo que o responsável que assumiu depois marque
-   * 'nao_posso' e temResponsavel volte a false — ampliar o raio depois de já
-   * ter havido resgate assumido só gera pânico e notificações desnecessárias.
+   * Status atual do alerta.
+   *
+   * Estados terminais ('resolvido', 'cancelado', 'falso_alarme') nunca
+   * escalam: um humano autorizado já encerrou o pedido.
+   *
+   * 'em_atendimento' PODE voltar a escalar — mudança de 2026-08-23, ver
+   * docs/MAQUINA-ESTADOS-SOS.md. Antes bastava um socorrista marcar
+   * 'a_caminho' e depois desistir para o SOS ficar congelado em 5 km para
+   * sempre; no cenário de abandono (aceita, marca a caminho, some) o
+   * velejador ficava sem socorro e sem escalada. Quem decide agora é
+   * `temResponsavel`: se não há mais ninguém a caminho, a busca continua,
+   * independente do status.
+   *
+   * O motivo original daquele congelamento era real — evitar rajada de push
+   * quando alguém alterna a_caminho/nao_posso. Isso é resolvido gravando
+   * `escalated_at = NOW()` na volta para 'ativo': o relógio reinicia e o SOS
+   * espera um estágio inteiro antes de ampliar o raio, em vez de escalar na
+   * hora. Recuperação sem tempestade de notificações.
+   *
    * Opcional e default 'ativo' para não quebrar quem já chama sem esse campo.
    */
   statusAtual?: 'ativo' | 'em_atendimento' | 'resolvido' | 'cancelado' | 'falso_alarme';
 }): boolean {
-  if (args.statusAtual && args.statusAtual !== 'ativo') return false;
+  if (args.statusAtual === 'resolvido' || args.statusAtual === 'cancelado' || args.statusAtual === 'falso_alarme') {
+    return false;
+  }
   if (args.temResponsavel) return false;
 
   const estagio = ESTAGIOS_RAIO.find(e => e.raioKm === args.raioKm);

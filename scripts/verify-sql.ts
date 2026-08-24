@@ -1210,6 +1210,22 @@ async function main() {
   );
   check('SOS sem coordenada tem 1 linha', sosNullCoords.length === 1);
 
+  // Unicidade de SOS aberto (P0-6): com o SOS acima ainda ativo, um segundo
+  // do mesmo usuário tem de ser recusado pelo banco. Era aqui que a duplicata
+  // nascia — check-then-insert sem constraint, duas requisições concorrentes.
+  await expectFail(
+    db,
+    'segundo SOS aberto do mesmo usuário é recusado (uniq_sos_aberto_por_usuario)',
+    `INSERT INTO sos_alerts (user_id, status, radius_km) VALUES ($1, 'ativo', 5)`,
+    [riderA]
+  );
+
+  // Encerra o primeiro para poder seguir com o SOS completo do mesmo rider —
+  // é exatamente o fluxo real: socorro concluído, pode pedir de novo.
+  await db.query(`UPDATE sos_alerts SET status = 'resolvido', resolved_at = NOW() WHERE id = $1`, [
+    (sosNullCoords[0] as { id: string }).id,
+  ]);
+
   const sosComCoords = await db.query<{ id: string }>(
     `INSERT INTO sos_alerts (user_id, lat, lng, accuracy_m, spot_id, message, status, radius_km)
      VALUES ($1, -4.9572, -36.8833, 15.5, 'ponta-do-mel', 'prancha quebrada', 'ativo', 5) RETURNING id`,

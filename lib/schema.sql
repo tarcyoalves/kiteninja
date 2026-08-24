@@ -574,6 +574,87 @@ CREATE INDEX IF NOT EXISTS idx_sos_active
 CREATE INDEX IF NOT EXISTS idx_sos_user
   ON sos_alerts (user_id, created_at DESC);
 
+-- ---------------------------------------------------------------------------
+-- P0-6 (docs/AUDITORIA-2026-08-23.md): um usuário só pode ter UM SOS aberto.
+--
+-- A rota fazia check-then-insert (SELECT, depois INSERT) sem transação nem
+-- constraint. Duas requisições concorrentes liam "não existe" e as duas
+-- inseriam — duplicata comprovada por execução em Postgres real. Resultado:
+-- socorristas recebiam dois push do mesmo afogamento, dois raios escalavam em
+-- paralelo, e resolver um deixava o outro ativo.
+--
+-- Validação no app não resolve corrida; só o banco resolve. O índice é
+-- PARCIAL de propósito: vale para 'ativo'/'em_atendimento', e deixa o
+-- histórico de encerrados crescer à vontade. Um velejador que já foi
+-- socorrido pode (e deve) poder pedir socorro de novo.
+--
+-- IMPACTO EM DADOS EXISTENTES: se a produção já tiver duplicatas, o
+-- CREATE UNIQUE INDEX falharia e derrubaria a migração inteira. O bloco abaixo
+-- encerra as duplicatas ANTES, preservando a mais antiga — que é a que tem os
+-- socorristas já notificados vinculados. Nada é apagado: as excedentes viram
+-- 'resolvido' com nota de auditoria, e continuam no histórico.
+DO $$
+DECLARE
+  fechadas INT;
+BEGIN
+  WITH ranqueado AS (
+    SELECT id,
+           ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at ASC) AS pos
+    FROM sos_alerts
+    WHERE status IN ('ativo', 'em_atendimento')
+  )
+  UPDATE sos_alerts a
+  SET status = 'resolvido',
+      resolved_at = NOW(),
+      resolution_note = COALESCE(a.resolution_note || ' | ', '')
+        || 'encerrado na migração de unicidade (duplicata de SOS aberto)'
+  FROM ranqueado r
+  WHERE a.id = r.id AND r.pos > 1;
+
+  GET DIAGNOSTICS fechadas = ROW_COUNT;
+  IF fechadas > 0 THEN
+    RAISE NOTICE 'unicidade de SOS: % duplicata(s) encerrada(s)', fechadas;
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_sos_aberto_por_usuario
+  ON sos_alerts (user_id)
+  WHERE status IN ('ativo', 'em_atendimento');
+
+-- O raio só pode ser um dos estágios de ESTAGIOS_RAIO (lib/sos.ts). Sem isto,
+-- um UPDATE com raio arbitrário passava e a escalada perdia o referencial:
+-- `proximoRaio` devolve null para um raio desconhecido, então o SOS parava de
+-- escalar em silêncio.
+--
+-- IMPACTO: adicionar CHECK a tabela existente valida as linhas atuais e falha
+-- se alguma violar. Normalizamos para o estágio válido mais próximo antes, e
+-- só então criamos a constraint — se ela já existir, não faz nada.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'sos_alerts_radius_estagio'
+  ) THEN
+    UPDATE sos_alerts SET radius_km = CASE
+      WHEN radius_km <= 5  THEN 5
+      WHEN radius_km <= 15 THEN 15
+      ELSE 50
+    END
+    WHERE radius_km NOT IN (5, 15, 50);
+
+    ALTER TABLE sos_alerts
+      ADD CONSTRAINT sos_alerts_radius_estagio CHECK (radius_km IN (5, 15, 50));
+  END IF;
+END $$;
+
+-- Consulta do cron de escalada: varre só o que está aberto, ordenado pelo mais
+-- antigo sem escalar. Sem este índice o job faria seq scan na tabela inteira a
+-- cada minuto.
+CREATE INDEX IF NOT EXISTS idx_sos_escalada
+  ON sos_alerts (COALESCE(escalated_at, created_at))
+  WHERE status IN ('ativo', 'em_atendimento');
+
+-- (o índice de responsável vivo fica logo após CREATE TABLE sos_responders)
+
 -- Quem viu e quem vai. PK composta sem coluna id — mesmo padrão de favorites,
 -- post_likes e event_registrations: a existência da linha é o estado.
 CREATE TABLE IF NOT EXISTS sos_responders (
@@ -591,6 +672,13 @@ CREATE TABLE IF NOT EXISTS sos_responders (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sos_responders_sos ON sos_responders (sos_id);
+
+-- Contagem de responsável vivo (a_caminho/no_local): roda em cada resposta de
+-- socorrista e em cada ciclo do cron de escalada. É o que decide se o SOS
+-- continua procurando socorro — ver docs/MAQUINA-ESTADOS-SOS.md.
+CREATE INDEX IF NOT EXISTS idx_sos_responders_vivos
+  ON sos_responders (sos_id)
+  WHERE state IN ('a_caminho', 'no_local');
 
 -- Inscrições de Web Push (VAPID). Cada navegador/dispositivo gera um endpoint
 -- único; endpoint UNIQUE evita duplicar a mesma inscrição a cada reload ou

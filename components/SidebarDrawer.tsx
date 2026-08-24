@@ -29,7 +29,6 @@ import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
-import { DiagTela } from './DiagTela';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -681,9 +680,11 @@ export const SidebarDrawer: React.FC = () => {
               <span>Painel do Admin</span>
             </a>
           )}
-          {/* Números reais da tela do aparelho, para caçar a tarja do rodapé
-              sem chutar unidade de altura. Some quando o bug morrer. */}
-          {isAdmin && <DiagTela />}
+          {/* O painel "Diagnóstico de tela" (components/DiagTela.tsx) foi
+              removido junto com o bug que ele existia para caçar: a tarja do
+              rodapé e o vão do teclado, hoje resolvidos por --bottom-nav-height
+              e lib/keyboardInset.ts. O próprio código pedia isso ("some quando
+              o bug morrer"). Se voltar a fazer falta, está no histórico do git. */}
 
           {user && (
             <button

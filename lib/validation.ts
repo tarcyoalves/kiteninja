@@ -47,6 +47,27 @@ export function num(
   return value;
 }
 
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+/**
+ * Extrai um UUID obrigatório.
+ *
+ * Sem isto, um id malformado vindo da URL chega cru no Postgres e o cast
+ * `invalid input syntax for type uuid` sobe como 500 — barulho de erro
+ * interno para o que é claramente um pedido inválido (400).
+ *
+ * Normaliza para minúsculas: o Postgres compara UUID por valor, mas o texto
+ * normalizado evita divergência quando o id é usado para montar chave de
+ * idempotência ou nome de sala.
+ */
+export function uuid(body: unknown, field: string): string {
+  const raw = (body as Record<string, unknown> | null)?.[field];
+  if (typeof raw !== 'string' || !UUID_RE.test(raw)) {
+    throw new HttpError(400, `Campo ${field} deve ser um UUID válido.`);
+  }
+  return raw.toLowerCase();
+}
+
 export function bool(body: unknown, field: string, fallback = false): boolean {
   const raw = (body as Record<string, unknown> | null)?.[field];
   if (raw === undefined || raw === null) return fallback;

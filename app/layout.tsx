@@ -62,8 +62,9 @@ export const metadata: Metadata = {
      * O que o iOS faz de verdade: dimensiona a janela como *tela menos a
      * altura da barra de status*, mas posiciona essa janela em y=0 — então a
      * diferença sobra como uma faixa no RODAPÉ, fora da página. Medido no
-     * aparelho do dono (iPhone 16 Pro Max) com o diagnóstico de
-     * components/DiagTela.tsx:
+     * aparelho do dono (iPhone 16 Pro Max) com o painel de diagnóstico que
+     * existia em components/DiagTela.tsx (removido depois que o bug morreu;
+     * está no histórico do git se precisar medir de novo):
      *
      *   screen.height ............ 956px
      *   window.innerHeight ....... 894px

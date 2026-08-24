@@ -57,10 +57,15 @@ describe('deveEscalar', () => {
     expect(result2).toBe(true);
   });
 
-  it('nunca escala um SOS já em_atendimento, mesmo com temResponsavel false e prazo vencido', () => {
-    // Cenário real: alguém confirmou "a caminho" (status virou em_atendimento),
-    // depois mudou para "não posso" — temResponsavel volta a false, mas o
-    // alerta não pode voltar a escalar por causa disso (bug já visto em produção).
+  // MUDANÇA DE REGRA (2026-08-23) — ver docs/MAQUINA-ESTADOS-SOS.md.
+  // Este teste antes afirmava o contrário: que 'em_atendimento' NUNCA volta a
+  // escalar. Aquela regra criava o cenário de abandono: socorrista marca
+  // 'a_caminho', desiste (ou simplesmente some), e o SOS fica congelado em
+  // 5 km para sempre — velejador sem socorro e sem escalada.
+  // Quem manda agora é `temResponsavel`. O antiflapping que justificava o
+  // congelamento é feito reiniciando `escalated_at` na volta para 'ativo'
+  // (ver app/api/sos/[id]/respond/route.ts), não travando a busca.
+  it('volta a escalar um SOS em_atendimento abandonado (sem responsável vivo) com prazo vencido', () => {
     const criadoEm = new Date('2024-01-01T12:00:00Z'); // 10 mins atrás, prazo vencido
     const result = deveEscalar({
       raioKm: 5,
@@ -70,7 +75,46 @@ describe('deveEscalar', () => {
       temResponsavel: false,
       statusAtual: 'em_atendimento',
     });
+    expect(result).toBe(true);
+  });
+
+  it('não escala em_atendimento enquanto houver responsável vivo', () => {
+    const criadoEm = new Date('2024-01-01T12:00:00Z');
+    const result = deveEscalar({
+      raioKm: 5,
+      criadoEm,
+      escaladoEm: null,
+      agora,
+      temResponsavel: true,
+      statusAtual: 'em_atendimento',
+    });
     expect(result).toBe(false);
+  });
+
+  it('nunca escala um SOS em estado terminal, mesmo sem responsável e com prazo vencido', () => {
+    const criadoEm = new Date('2024-01-01T12:00:00Z');
+    for (const statusAtual of ['resolvido', 'cancelado', 'falso_alarme'] as const) {
+      expect(
+        deveEscalar({ raioKm: 5, criadoEm, escaladoEm: null, agora, temResponsavel: false, statusAtual })
+      ).toBe(false);
+    }
+  });
+
+  it('o reinício do relógio na volta para ativo evita escalada instantânea (antiflapping)', () => {
+    // Socorrista desistiu agora: respond grava escalated_at = NOW().
+    // Mesmo com o SOS criado há muito tempo, precisa esperar o estágio inteiro.
+    const criadoEm = new Date('2024-01-01T12:00:00Z'); // 10 min atrás
+    const acabouDeDesistir = new Date(agora.getTime() - 1000); // 1s atrás
+
+    expect(
+      deveEscalar({ raioKm: 5, criadoEm, escaladoEm: acabouDeDesistir, agora, temResponsavel: false, statusAtual: 'ativo' })
+    ).toBe(false);
+
+    // Passados os 2 min do estágio, escala.
+    const desistiuHaDoisMin = new Date(agora.getTime() - 2 * 60 * 1000);
+    expect(
+      deveEscalar({ raioKm: 5, criadoEm, escaladoEm: desistiuHaDoisMin, agora, temResponsavel: false, statusAtual: 'ativo' })
+    ).toBe(true);
   });
 
   it('escala normalmente quando statusAtual é ativo (ou omitido)', () => {
