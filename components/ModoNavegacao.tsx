@@ -6,6 +6,7 @@ import { estadoSinal } from '../lib/downwind';
 import { useWakeLock } from '../lib/useWakeLock';
 import { useTrilhaSessao } from '../lib/useTrilhaSessao';
 import { useSosHold } from '../lib/useSosHold';
+import { NUMEROS_PRIORITARIOS } from '../lib/emergencia';
 import { useKiteData } from '../context/KiteDataContext';
 import { DownwindChat } from './DownwindChat';
 import type { PontoTrilha } from '../lib/trilhaDownwind';
@@ -535,23 +536,22 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
                 <span className="max-w-[220px] text-center text-[10px] leading-snug text-rose-300">
                   {sos.error}
                 </span>
+                {/* stopPropagation: esta tela usa gesto de deslizar para
+                    desbloquear, e sem isso o toque no número viraria arrasto.
+                    Números de lib/emergencia.ts (fonte única). */}
                 <div className="flex items-center gap-3">
-                  <a
-                    href="tel:193"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 text-[10px] font-bold text-rose-300"
-                  >
-                    <Phone size={11} />
-                    193
-                  </a>
-                  <a
-                    href="tel:185"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    className="flex items-center gap-1 text-[10px] font-bold text-amber-300"
-                  >
-                    <Phone size={11} />
-                    185
-                  </a>
+                  {NUMEROS_PRIORITARIOS.map((n) => (
+                    <a
+                      key={n.numero}
+                      href={`tel:${n.numero}`}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      className={`flex items-center gap-1 text-[10px] font-bold ${n.corTexto}`}
+                      aria-label={`Ligar para ${n.nome}, ${n.numero}`}
+                    >
+                      <Phone size={11} aria-hidden="true" />
+                      {n.numero}
+                    </a>
+                  ))}
                 </div>
               </div>
             )}

@@ -18,12 +18,23 @@ export async function GET() {
       console.error('[sos] presença não gravada ao listar ativos', err);
     }
 
+    /**
+     * `accuracy_m` e o nome do spot entram no SELECT porque o contrato
+     * (SosAlertData) sempre os declarou e a consulta não os trazia. O efeito
+     * visível era grave: `temCoordenada` chegava `undefined` no
+     * SosIncomingAlert, que por isso exibia "Posição não confirmada" em TODO
+     * alerta recebido — inclusive nos que tinham GPS preciso — e escondia o
+     * botão "Ver no mapa" justamente quando havia mapa para ver.
+     */
     const alertRows = await sql`
-      SELECT DISTINCT sa.id, sa.user_id, sa.lat, sa.lng, sa.spot_id, sa.status, 
+      SELECT DISTINCT sa.id, sa.user_id, sa.lat, sa.lng, sa.spot_id, sa.status,
              sa.radius_km, sa.created_at, sa.escalated_at, sa.message,
-             u.name as author_name
+             sa.accuracy_m,
+             u.name as author_name,
+             sp.name as spot_name
       FROM sos_alerts sa
       JOIN users u ON u.id = sa.user_id
+      LEFT JOIN spots sp ON sp.id = sa.spot_id
       LEFT JOIN sos_responders sr ON sr.sos_id = sa.id
       -- 'em_atendimento' entra na listagem: um socorrista confirmar "a
       -- caminho" não pode fazer o alerta sumir da tela de ninguém, nem da
@@ -44,19 +55,33 @@ export async function GET() {
       const lat = row.lat ? Number(row.lat) : null;
       const lng = row.lng ? Number(row.lng) : null;
       
+      /**
+       * `name` e `distance_km` entram no SELECT porque o contrato
+       * (SosResponderData em context/KiteDataContext.tsx) sempre os declarou, mas
+       * a consulta nunca os trazia: o painel do acidentado exibia socorrista sem
+       * nome e nunca mostrava distância. `motivo` é novo — diz se a pessoa veio
+       * por proximidade ou do downwind.
+       */
       const responderRows = await sql`
-        SELECT user_id, state, lat, lng, responded_at
-        FROM sos_responders
-        WHERE sos_id = ${sosId}
+        SELECT sr.user_id, sr.state, sr.lat, sr.lng, sr.responded_at,
+               sr.distance_km, sr.motivo, u.name AS responder_name
+        FROM sos_responders sr
+        JOIN users u ON u.id = sr.user_id
+        WHERE sr.sos_id = ${sosId}
       `;
-      
-      const responders = responderRows.map(rr => ({
+
+      const mapResponder = (rr: Record<string, unknown>) => ({
         userId: String(rr.user_id),
+        name: String(rr.responder_name),
         state: String(rr.state),
+        distanceKm: rr.distance_km === null || rr.distance_km === undefined ? null : Number(rr.distance_km),
+        motivo: rr.motivo ? String(rr.motivo) : 'proximidade',
         lat: rr.lat ? Number(rr.lat) : null,
         lng: rr.lng ? Number(rr.lng) : null,
-        respondedAt: String(rr.responded_at)
-      }));
+        respondedAt: rr.responded_at ? String(rr.responded_at) : new Date().toISOString(),
+      });
+
+      const responders = responderRows.map(rr => mapResponder(rr as Record<string, unknown>));
 
       const temResponsavel = responders.some(resp => resp.state === 'a_caminho' || resp.state === 'no_local');
 
@@ -99,19 +124,15 @@ export async function GET() {
           // Recarrega os socorristas: a escalada acabou de inserir os novos
           // notificados, e a resposta precisa refletir o estado real.
           const atualizados = await sql`
-            SELECT user_id, state, lat, lng, responded_at
-            FROM sos_responders
-            WHERE sos_id = ${sosId}
+            SELECT sr.user_id, sr.state, sr.lat, sr.lng, sr.responded_at,
+                   sr.distance_km, sr.motivo, u.name AS responder_name
+            FROM sos_responders sr
+            JOIN users u ON u.id = sr.user_id
+            WHERE sr.sos_id = ${sosId}
           `;
           responders.length = 0;
           for (const rr of atualizados) {
-            responders.push({
-              userId: String(rr.user_id),
-              state: String(rr.state),
-              lat: rr.lat ? Number(rr.lat) : null,
-              lng: rr.lng ? Number(rr.lng) : null,
-              respondedAt: rr.responded_at ? String(rr.responded_at) : new Date().toISOString(),
-            });
+            responders.push(mapResponder(rr as Record<string, unknown>));
           }
         }
       } catch (err) {
@@ -125,6 +146,15 @@ export async function GET() {
       const isMod = user.role === 'admin' || user.role === 'moderator';
       const canSeePos = isResponder || isAuthor || isMod;
 
+      /**
+       * `temCoordenada` reflete se o PEDIDO tem posição, não se ESTE usuário
+       * pode vê-la: um socorrista sem permissão de posição (caso raro) ainda
+       * precisa saber que a coordenada existe. Já `distanceKm` é a distância
+       * medida no momento em que ESTE usuário foi notificado — vem da linha
+       * dele em sos_responders, e é null para o autor (ele é a origem).
+       */
+      const minhaLinha = responders.find(rr => rr.userId === user.id);
+
       mappedAlerts.push({
         id: sosId,
         userId: sosUserId,
@@ -136,10 +166,18 @@ export async function GET() {
         message: row.message ? String(row.message) : null,
         lat: canSeePos ? lat : null,
         lng: canSeePos ? lng : null,
+        accuracyM: row.accuracy_m === null || row.accuracy_m === undefined ? null : Number(row.accuracy_m),
         spotId: row.spot_id ? String(row.spot_id) : null,
+        spotName: row.spot_name ? String(row.spot_name) : null,
+        temCoordenada: lat !== null && lng !== null,
+        distanceKm: minhaLinha ? minhaLinha.distanceKm : null,
+        motivo: minhaLinha ? minhaLinha.motivo : undefined,
         responders: responders.map(rr => ({
           userId: rr.userId,
+          name: rr.name,
           state: rr.state,
+          distanceKm: rr.distanceKm,
+          motivo: rr.motivo,
           lat: canSeePos ? rr.lat : null,
           lng: canSeePos ? rr.lng : null,
           respondedAt: rr.respondedAt

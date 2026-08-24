@@ -100,11 +100,68 @@ Hoje o motor é `lib/sosEscalada.ts`, com duas portas de entrada:
 - `varrerEscaladas()` — varredura **global**, sem filtro por usuário (cron);
 - `escalarUmSos()` — um alerta específico (poll de `/api/sos/active`).
 
-## 5. Como verificar
+## 5. O SOS sem GPS — o segundo silêncio (corrigido em 2026-08-23)
+
+Defeito da mesma família do item 4: falha sem erro, sem log, com o app dizendo
+que deu certo.
+
+A escolha de quem notificar era feita **só por raio geográfico**. Isso exige a
+coordenada do pedinte, obtida por `getCurrentPosition` com timeout de 3s. Quando
+ela não vinha — celular molhado, permissão negada, GPS lento embaixo d'água — o
+SOS era gravado no banco e a lista de candidatos vinha **vazia**. Ninguém era
+avisado. A tela mostrava "pedido enviado" e o velejador esperava um socorro que
+nunca foi acionado.
+
+Hoje `lib/sosCandidates.ts` une **duas fontes independentes**:
+
+| Fonte | Depende de GPS do pedinte? | Filtra por distância? |
+|---|---|---|
+| Proximidade (posição fresca ou spot declarado) | sim | sim, pelo raio atual |
+| Companheiros de downwind `em_andamento` | **não** | **não** |
+
+A segunda existe justamente para sobreviver à ausência de coordenada. E ela não
+filtra distância de propósito: num downwind o grupo se espalha por dezenas de km
+ao longo da costa, então exigir proximidade excluiria exatamente quem combinou
+de navegar junto e sabe que você está na água.
+
+Quem é avisado pelo downwind:
+
+- `estado` em `confirmado` ou `navegando` — está na água;
+- `papel = 'apoio_terra'` **sempre**, mesmo com estado `encerrado`: ele nunca
+  navega, e em resgate real quem está em terra costuma ser quem consegue acionar
+  a autoridade (tem carro, telefone e sabe onde o grupo entrou na água).
+
+Quem **não** é avisado: quem `desistiu`, e todo participante de downwind
+`aberto` (plano futuro, ninguém na água). Ruído em canal de emergência treina as
+pessoas a ignorar o alerta.
+
+O socorrista recebe **por que** foi chamado (`motivo` em `sos_responders`:
+`proximidade`, `downwind`, `downwind_apoio`), porque isso muda a decisão dele.
+Quando não há como medir a distância, ela vem `null` e a UI diz "do SEU
+downwind" em vez de inventar um número — número errado em resgate é pior que
+número nenhum.
+
+## 6. As autoridades nunca ficam atrás do nosso fluxo
+
+`lib/emergencia.ts` é a fonte única dos números (193 Bombeiros, 185 Marinha, 192
+SAMU, 190 Polícia) e da mensagem de WhatsApp para o contato de emergência.
+Antes, 193/185 estavam copiados em cinco arquivos e apareciam **somente quando o
+POST do SOS falhava**.
+
+Dois problemas nisso: um número errado numa das cópias só apareceria numa
+emergência real; e o app escondia a autoridade — que tem barco e mandato — atrás
+de um fluxo nosso que pode falhar. Hoje os botões vivem no menu (Segurança &
+Emergência), sempre acessíveis. `tel:` funciona sem internet, basta sinal de voz.
+
+Quando o POST falha, o texto diz explicitamente que **a comunidade não foi
+avisada** (`TEXTO_FALHA_REDE`). Meia verdade aqui custa vida.
+
+## 7. Como verificar
 
 ```bash
-npx tsx scripts/verify-sos.ts   # 36 checagens adversariais, inclui a escalada
-npx vitest run                  # 648 testes
+npx tsx scripts/verify-sos.ts   # 53 checagens adversariais (escalada, sem-GPS, contrato)
+npx tsx scripts/verify-sql.ts   # 220 checagens de schema e isolamento
+npx vitest run                  # 663 testes
 ```
 
 Em produção, depois de configurar `CRON_SECRET`:
@@ -116,7 +173,7 @@ curl -i https://kiteninja.vercel.app/api/cron/sos-escalada
 
 Não cole o valor do segredo em chat, log ou issue.
 
-## 6. O que ainda não foi provado em produção
+## 8. O que ainda não foi provado em produção
 
 Honestidade sobre os limites da verificação feita:
 

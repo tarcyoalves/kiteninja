@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Compass, Scale, ShieldCheck, UserPlus } from 'lucide-react';
+import { Compass, LifeBuoy, Scale, ShieldCheck, UserPlus } from 'lucide-react';
 import type { Discipline, RiderLevel } from '@/types';
 
 const LEVELS: RiderLevel[] = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'];
@@ -25,6 +25,8 @@ export function AcceptInviteForm({
   const [riderLevel, setRiderLevel] = useState<RiderLevel>('Intermediário');
   const [homeSpot, setHomeSpot] = useState('');
   const [disciplines, setDisciplines] = useState<Discipline[]>(['Kitesurf Twintip']);
+  const [emergencyName, setEmergencyName] = useState('');
+  const [emergencyPhone, setEmergencyPhone] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -61,6 +63,8 @@ export function AcceptInviteForm({
           riderLevel,
           homeSpot,
           disciplines,
+          emergencyContactName: emergencyName.trim(),
+          emergencyContactPhone: emergencyPhone.trim(),
         }),
       });
 
@@ -241,6 +245,68 @@ export function AcceptInviteForm({
                   </button>
                 );
               })}
+            </div>
+          </fieldset>
+
+          {/*
+            Contato de emergência no cadastro, não escondido nas configurações:
+            quem entra num app não volta para preencher campo de segurança, e o
+            SOS pode ser acionado já na primeira sessão. Sem este contato, o
+            painel do acidentado não tem para quem mandar a posição.
+
+            Opcional de propósito — travar a criação da conta aqui empurraria o
+            velejador a digitar um número qualquer para passar da tela, e número
+            falso é pior que campo vazio: parece cobertura e não é.
+          */}
+          <fieldset className="p-3 rounded-2xl bg-rose-500/5 border border-rose-500/25 space-y-3">
+            <legend className="px-1.5 text-xs font-black text-rose-300 flex items-center gap-1.5">
+              <LifeBuoy size={13} aria-hidden="true" />
+              Contato de emergência
+            </legend>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Quem avisamos se você acionar o SOS na água. Você pode deixar em
+              branco agora e preencher depois no menu, em Segurança.
+            </p>
+
+            <div>
+              <label htmlFor="emergencyName" className="block text-xs font-bold text-slate-300 mb-1.5">
+                Nome do contato
+              </label>
+              <input
+                id="emergencyName"
+                type="text"
+                value={emergencyName}
+                onChange={(e) => setEmergencyName(e.target.value)}
+                placeholder="Ex: Maria (esposa)"
+                className={inputClass}
+                autoComplete="off"
+                maxLength={120}
+              />
+            </div>
+
+            <div>
+              <label htmlFor="emergencyPhone" className="block text-xs font-bold text-slate-300 mb-1.5">
+                Telefone com DDD
+              </label>
+              {/*
+                type="tel" abre o teclado numérico no celular — no cadastro
+                feito na praia, isso é a diferença entre digitar e desistir.
+              */}
+              <input
+                id="emergencyPhone"
+                type="tel"
+                inputMode="tel"
+                value={emergencyPhone}
+                onChange={(e) => setEmergencyPhone(e.target.value)}
+                placeholder="(84) 99999-0000"
+                className={inputClass}
+                autoComplete="tel"
+                maxLength={30}
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Usado para abrir o WhatsApp com sua posição durante um SOS.
+              </p>
             </div>
           </fieldset>
 

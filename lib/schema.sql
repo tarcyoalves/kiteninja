@@ -952,3 +952,24 @@ ALTER TABLE downwind_participantes
 CREATE UNIQUE INDEX IF NOT EXISTS ux_downwinds_event
   ON downwinds (event_id) WHERE event_id IS NOT NULL;
 
+
+-- ---------------------------------------------------------------------------
+-- SOS: por que esta pessoa foi notificada
+-- ---------------------------------------------------------------------------
+-- O SOS deixou de ser só "quem está perto". Companheiros de um downwind
+-- 'em_andamento' são notificados INDEPENDENTE de distância (o grupo se espalha
+-- por dezenas de km ao longo da costa, e quem combinou de navegar junto sabe
+-- que você está na água), e o apoio em terra também — ele não navega, mas tem
+-- carro, telefone e é quem consegue acionar autoridade.
+--
+-- Guardar o motivo é necessário porque a UI precisa explicar ao socorrista POR
+-- QUE ele foi chamado: "a 2km de você" e "no seu downwind" pedem reações
+-- diferentes. Sem esta coluna, um companheiro a 30 km apareceria como um
+-- vizinho qualquer com distância estranha, e o pedinte não saberia que o grupo
+-- dele foi avisado.
+--
+-- DEFAULT 'proximidade' mantém compatível toda linha já existente: antes desta
+-- mudança, todo notificado vinha por proximidade.
+ALTER TABLE sos_responders
+  ADD COLUMN IF NOT EXISTS motivo TEXT NOT NULL DEFAULT 'proximidade'
+    CHECK (motivo IN ('proximidade', 'downwind', 'downwind_apoio'));

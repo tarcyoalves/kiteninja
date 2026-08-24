@@ -548,6 +548,194 @@ async function main() {
   );
   check('SOS no raio máximo sai da varredura', varreduraMax.rows.length === 0);
 
+  // =====================================================================
+  console.log('\n6. SOS sem GPS avisa o grupo do downwind (o silêncio comprovado):');
+
+  /**
+   * O pior defeito encontrado nesta varredura: quando o `getCurrentPosition`
+   * falhava (celular molhado, permissão negada, 3s de timeout), a seleção de
+   * candidatos era feita SÓ por raio geográfico. Sem coordenada, zero
+   * candidatos: o SOS era gravado no banco e NINGUÉM era avisado. O velejador
+   * via "pedido enviado" na tela e esperava socorro que nunca foi acionado.
+   *
+   * A correção adiciona uma segunda fonte que não depende de coordenada: os
+   * companheiros de um downwind em andamento. Esta seção reproduz a consulta
+   * real de `candidatosPorDownwind` (lib/sosCandidates.ts) contra Postgres.
+   */
+  const remador = await mk('Remador sem GPS', 'remador@kn.test');
+  const parceiro = await mk('Parceiro de remada', 'parceiro@kn.test');
+  const apoio = await mk('Apoio em terra', 'apoio@kn.test');
+  const desistiu = await mk('Desistiu da remada', 'desistiu@kn.test');
+  const outroGrupo = await mk('Outro downwind', 'outrogrupo@kn.test');
+
+  const dwAndamento = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (criado_por, nome, spot_saida, status, previsto_para, iniciado_em)
+     VALUES ($1, 'Remada da tarde', 'ponta-do-mel', 'em_andamento', NOW(), NOW()) RETURNING id`,
+    [remador]
+  );
+  const dwId = dwAndamento.rows[0].id;
+
+  const dwAberto = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (criado_por, nome, spot_saida, status, previsto_para)
+     VALUES ($1, 'Remada de amanhã', 'ponta-do-mel', 'aberto', NOW() + INTERVAL '1 day') RETURNING id`,
+    [outroGrupo]
+  );
+
+  const inscreve = async (dw: string, userId: string, estado: string, papel = 'velejador') =>
+    db.query(
+      `INSERT INTO downwind_participantes (downwind_id, user_id, estado, papel)
+       VALUES ($1, $2, $3, $4)`,
+      [dw, userId, estado, papel]
+    );
+
+  await inscreve(dwId, remador, 'navegando');
+  await inscreve(dwId, parceiro, 'navegando');
+  await inscreve(dwId, apoio, 'encerrado', 'apoio_terra');
+  await inscreve(dwId, desistiu, 'desistiu');
+  await inscreve(dwAberto.rows[0].id, remador, 'confirmado');
+  await inscreve(dwAberto.rows[0].id, outroGrupo, 'confirmado');
+
+  // Consulta idêntica à de candidatosPorDownwind, com origin nulo (sem GPS).
+  const cutoffDw = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const candDw = await db.query<{ user_id: string; papel: string; pos_lat: string | null }>(
+    `SELECT DISTINCT ON (p.user_id)
+            p.user_id AS user_id, p.papel AS papel,
+            pos.lat AS pos_lat
+     FROM downwind_participantes eu
+     JOIN downwinds d ON d.id = eu.downwind_id AND d.status = 'em_andamento'
+     JOIN downwind_participantes p
+       ON p.downwind_id = eu.downwind_id
+      AND p.user_id != $1
+      AND (p.papel = 'apoio_terra' OR p.estado IN ('confirmado','navegando'))
+     LEFT JOIN LATERAL (
+       SELECT dp.lat, dp.lng FROM downwind_posicoes dp
+       WHERE dp.downwind_id = p.downwind_id AND dp.user_id = p.user_id
+         AND dp.registrado_em >= $2
+       ORDER BY dp.registrado_em DESC LIMIT 1
+     ) pos ON TRUE
+     WHERE eu.user_id = $1
+       AND (eu.papel = 'apoio_terra' OR eu.estado IN ('confirmado','navegando'))`,
+    [remador, cutoffDw]
+  );
+
+  const idsDw = candDw.rows.map(r => r.user_id);
+  check(
+    'SOS sem GPS ainda avisa alguém (antes: ZERO notificados)',
+    idsDw.length > 0,
+    `notificados=${idsDw.length}`
+  );
+  check('parceiro que está navegando é avisado', idsDw.includes(parceiro));
+  check(
+    'apoio em terra é avisado mesmo com estado encerrado (nunca navegou)',
+    idsDw.includes(apoio)
+  );
+  check('quem desistiu da remada NÃO é avisado', !idsDw.includes(desistiu));
+  check(
+    'gente de downwind apenas aberto (plano futuro) NÃO é avisada',
+    !idsDw.includes(outroGrupo)
+  );
+  check('o próprio autor não se auto-notifica', !idsDw.includes(remador));
+  check(
+    'papel do apoio chega como apoio_terra (a UI depende disso)',
+    candDw.rows.find(r => r.user_id === apoio)?.papel === 'apoio_terra'
+  );
+  check(
+    'sem GPS do pedinte, distância vem nula em vez de inventada',
+    candDw.rows.every(r => r.pos_lat === null || r.pos_lat === undefined)
+  );
+
+  // Downwind encerrado deixa de notificar: ruído em canal de emergência
+  // treina as pessoas a ignorar o alerta.
+  await db.query(`UPDATE downwinds SET status = 'encerrado' WHERE id = $1`, [dwId]);
+  const candEncerrado = await db.query(
+    `SELECT p.user_id FROM downwind_participantes eu
+     JOIN downwinds d ON d.id = eu.downwind_id AND d.status = 'em_andamento'
+     JOIN downwind_participantes p ON p.downwind_id = eu.downwind_id AND p.user_id != $1
+     WHERE eu.user_id = $1`,
+    [remador]
+  );
+  check(
+    'downwind encerrado para de notificar',
+    candEncerrado.rows.length === 0
+  );
+  await db.query(`UPDATE downwinds SET status = 'em_andamento' WHERE id = $1`, [dwId]);
+
+  // =====================================================================
+  console.log('\n7. Contrato da resposta de /api/sos/active (campos que a UI exige):');
+
+  /**
+   * Dois defeitos preexistentes, ambos invisíveis em teste unitário porque
+   * viviam na diferença entre o SELECT e o tipo declarado:
+   *
+   *  - `sos_responders` era lida sem JOIN em users e sem distance_km, então o
+   *    painel do acidentado listava socorrista com nome vazio e nunca mostrava
+   *    a distância — a informação que decide quem chega primeiro.
+   *  - `sos_alerts` era lida sem accuracy_m e sem o nome do spot, e a resposta
+   *    não montava `temCoordenada`. Chegando `undefined` no SosIncomingAlert,
+   *    TODO alerta recebido dizia "Posição não confirmada" e escondia o botão
+   *    "Ver no mapa", mesmo com GPS preciso.
+   */
+  const sosContrato = await criaSos(remador, -4.9, -37.0);
+  await db.query(`UPDATE sos_alerts SET accuracy_m = 42, spot_id = 'ponta-do-mel' WHERE id = $1`, [sosContrato]);
+  await db.query(
+    `INSERT INTO sos_responders (sos_id, user_id, state, distance_km, motivo)
+     VALUES ($1, $2, 'notificado', 3.5, 'downwind')`,
+    [sosContrato, parceiro]
+  );
+
+  const contrato = await db.query<{
+    accuracy_m: string | null; spot_name: string | null; lat: string | null;
+  }>(
+    `SELECT sa.accuracy_m, sa.lat, sp.name AS spot_name
+     FROM sos_alerts sa
+     LEFT JOIN spots sp ON sp.id = sa.spot_id
+     WHERE sa.id = $1`,
+    [sosContrato]
+  );
+  check('accuracy_m é lida (a UI avisa precisão ruim)', Number(contrato.rows[0].accuracy_m) === 42);
+  check('nome do spot vem pelo JOIN', contrato.rows[0].spot_name === 'Ponta do Mel');
+  check(
+    'lat presente permite montar temCoordenada=true',
+    contrato.rows[0].lat !== null && contrato.rows[0].lat !== undefined
+  );
+
+  const contratoResp = await db.query<{
+    responder_name: string; distance_km: string | null; motivo: string;
+  }>(
+    `SELECT u.name AS responder_name, sr.distance_km, sr.motivo
+     FROM sos_responders sr JOIN users u ON u.id = sr.user_id
+     WHERE sr.sos_id = $1`,
+    [sosContrato]
+  );
+  check(
+    'socorrista chega com nome (antes: vazio na tela do acidentado)',
+    contratoResp.rows[0].responder_name === 'Parceiro de remada'
+  );
+  check(
+    'distância do socorrista chega (antes: nunca exibida)',
+    Number(contratoResp.rows[0].distance_km) === 3.5
+  );
+  check('motivo é persistido para a UI explicar o chamado', contratoResp.rows[0].motivo === 'downwind');
+
+  // O CHECK do banco tem que recusar motivo inventado: a UI só sabe tratar três.
+  await esperaRecusa(
+    db,
+    'motivo fora do vocabulário é recusado pelo banco',
+    `INSERT INTO sos_responders (sos_id, user_id, state, motivo)
+     VALUES ($1, $2, 'notificado', 'chute')`,
+    [sosContrato, apoio]
+  );
+
+  const motivoPadrao = await db.query<{ motivo: string }>(
+    `INSERT INTO sos_responders (sos_id, user_id, state)
+     VALUES ($1, $2, 'notificado') RETURNING motivo`,
+    [sosContrato, desistiu]
+  );
+  check(
+    "linha antiga sem motivo assume 'proximidade' (migração não quebra dado existente)",
+    motivoPadrao.rows[0].motivo === 'proximidade'
+  );
+
   await db.close();
 }
 

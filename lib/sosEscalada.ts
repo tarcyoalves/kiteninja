@@ -104,53 +104,59 @@ export async function escalarUmSos(alerta: {
 
   let notificados = 0;
 
-  if (alerta.lat !== null && alerta.lng !== null) {
-    const candidatos = await selectSosCandidates({
-      excludeUserId: alerta.userId,
-      origin: { lat: alerta.lat, lng: alerta.lng },
-      radiusKm: novoRaio,
-      alreadyNotified: alerta.jaNotificados,
-    });
+  // Roda mesmo sem coordenada: o seletor avisa o grupo do downwind, que não
+  // depende de GPS. Antes tudo isto estava dentro de um
+  // `if (lat !== null && lng !== null)` e a escalada de um SOS sem GPS
+  // ampliava o raio no banco sem notificar ninguém — trabalho invisível.
+  const candidatos = await selectSosCandidates({
+    excludeUserId: alerta.userId,
+    origin: alerta.lat !== null && alerta.lng !== null
+      ? { lat: alerta.lat, lng: alerta.lng }
+      : null,
+    radiusKm: novoRaio,
+    alreadyNotified: alerta.jaNotificados,
+  });
 
-    if (candidatos.length > 0) {
-      const ids = candidatos.map(c => c.userId);
-      const dists = candidatos.map(c => c.dist);
-      // Lote único: um INSERT por candidato somava round-trips à Neon dentro
-      // do caminho crítico do socorro.
-      await sql`
-        INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
-        SELECT ${alerta.id}, u.id, 'notificado', d.dist
-        FROM UNNEST(${ids}::uuid[], ${dists}::numeric[]) AS d(uid, dist)
-        JOIN users u ON u.id = d.uid
-        ON CONFLICT (sos_id, user_id) DO NOTHING
-      `;
+  if (candidatos.length > 0) {
+    const ids = candidatos.map(c => c.userId);
+    const dists = candidatos.map(c => c.dist);
+    const motivos = candidatos.map(c => c.motivo);
+    // Lote único: um INSERT por candidato somava round-trips à Neon dentro
+    // do caminho crítico do socorro.
+    await sql`
+      INSERT INTO sos_responders (sos_id, user_id, state, distance_km, motivo)
+      SELECT ${alerta.id}, u.id, 'notificado', d.dist, d.motivo
+      FROM UNNEST(${ids}::uuid[], ${dists}::numeric[], ${motivos}::text[]) AS d(uid, dist, motivo)
+      JOIN users u ON u.id = d.uid
+      ON CONFLICT (sos_id, user_id) DO NOTHING
+    `;
 
-      const envios = await Promise.allSettled(
-        candidatos.map(c => {
-          const txt = textoDoAlerta({
-            nome: alerta.authorName,
-            distanciaKm: c.dist,
-            spotNome: alerta.spotName,
-            temCoordenada: true,
-          });
-          return sendPushToUsers([c.userId], {
-            title: txt.titulo,
-            body: txt.corpo,
-            requireInteraction: true,
-            url: `/?tab=mapa&sos=${alerta.id}`,
-          });
-        })
-      );
-
-      notificados = candidatos.length;
-      const falhas = envios.filter(e => e.status === 'rejected').length;
-      if (falhas > 0) {
-        logSos({
-          etapa: 'push.falhou',
-          sosId: alerta.id,
-          detalhe: { tentados: envios.length, falhas, contexto: 'escalada' },
+    const envios = await Promise.allSettled(
+      candidatos.map(c => {
+        const txt = textoDoAlerta({
+          nome: alerta.authorName,
+          distanciaKm: c.dist,
+          spotNome: alerta.spotName,
+          temCoordenada: alerta.lat !== null && alerta.lng !== null,
+          motivo: c.motivo,
         });
-      }
+        return sendPushToUsers([c.userId], {
+          title: txt.titulo,
+          body: txt.corpo,
+          requireInteraction: true,
+          url: `/?tab=mapa&sos=${alerta.id}`,
+        });
+      })
+    );
+
+    notificados = candidatos.length;
+    const falhas = envios.filter(e => e.status === 'rejected').length;
+    if (falhas > 0) {
+      logSos({
+        etapa: 'push.falhou',
+        sosId: alerta.id,
+        detalhe: { tentados: envios.length, falhas, contexto: 'escalada' },
+      });
     }
   }
 

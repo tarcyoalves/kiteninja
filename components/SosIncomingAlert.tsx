@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MapPin, Navigation, Phone, X, AlertTriangle } from 'lucide-react';
+import { MapPin, Navigation, X, AlertTriangle, Wind } from 'lucide-react';
+import { BotoesEmergencia } from './BotoesEmergencia';
 
 /**
  * Alerta SOS recebido — modal que INTERROMPE.
@@ -23,6 +24,8 @@ interface IncomingSos {
   message: string | null;
   createdAt: string;
   temCoordenada: boolean;
+  /** Por que VOCÊ foi chamado — ver lib/sosCandidates.ts. */
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
 }
 
 interface SosIncomingAlertProps {
@@ -93,6 +96,20 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
           <p className="text-rose-200 text-xs font-bold">
             Há {tempoDecorrido(sos.createdAt)}
           </p>
+
+          {/* Por que VOCÊ recebeu: muda a decisão. Um companheiro de downwind
+              longe pode ser o socorro mais rápido (está na água, mesma rota);
+              o apoio em terra não rema, o papel dele é acionar autoridade. */}
+          {(sos.motivo === 'downwind' || sos.motivo === 'downwind_apoio') && (
+            <div className="mt-2 inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-cyan-500/20 border border-cyan-400/40">
+              <Wind size={12} className="text-cyan-200" aria-hidden="true" />
+              <span className="text-[11px] font-black text-cyan-100">
+                {sos.motivo === 'downwind_apoio'
+                  ? 'Downwind que você apoia'
+                  : 'Do SEU downwind'}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Informações */}
@@ -190,23 +207,8 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
               )}
             </div>
 
-            {/* Números de emergência — sempre visíveis */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <a
-                href="tel:193"
-                className="py-2 rounded-xl bg-rose-900/40 border border-rose-500/30 text-rose-300 font-black text-sm flex items-center justify-center gap-1.5"
-              >
-                <Phone size={13} />
-                193
-              </a>
-              <a
-                href="tel:185"
-                className="py-2 rounded-xl bg-amber-900/40 border border-amber-500/30 text-amber-300 font-black text-sm flex items-center justify-center gap-1.5"
-              >
-                <Phone size={13} />
-                185
-              </a>
-            </div>
+            {/* Autoridades — sempre visíveis, fonte única em lib/emergencia.ts */}
+            <BotoesEmergencia variante="compacto" className="pt-1" />
           </div>
         </div>
       </div>

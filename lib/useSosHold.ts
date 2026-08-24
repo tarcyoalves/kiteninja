@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { TEXTO_FALHA_REDE } from './emergencia';
 
 /**
  * Lógica de disparo do SOS por press-and-hold, extraída para ser reaproveitada
@@ -99,8 +100,8 @@ export function useSosHold({ onSosTriggered, hasActiveSos }: UseSosHoldArgs): So
 
       onSosTriggered({ lat, lng, accuracyM });
     } catch {
-      // Rede falhou — mostra números de emergência
-      setError('Não conseguimos avisar a comunidade. Ligue 193 (Bombeiros) ou 185 (Marinha).');
+      // Rede falhou — a UI mostra os botões de discagem junto deste texto.
+      setError(TEXTO_FALHA_REDE);
     } finally {
       setSending(false);
       setHoldProgress(0);

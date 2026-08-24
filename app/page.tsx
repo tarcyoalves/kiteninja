@@ -164,6 +164,7 @@ const MainContent: React.FC = () => {
             message: incomingSosAlert.message,
             createdAt: incomingSosAlert.createdAt,
             temCoordenada: incomingSosAlert.temCoordenada,
+            motivo: incomingSosAlert.motivo,
           }}
           onRespond={respondToSos}
           onViewMap={() => {

@@ -86,26 +86,56 @@ export function ordenarCandidatos<T extends { distanciaKm: number; ultimaPresenc
 
 /**
  * Gera texto curto para notificação push.
+ *
+ * O corpo diz POR QUE esta pessoa foi chamada, porque isso muda a decisão dela.
+ * "a 2km de você" e "no seu downwind" pedem reações diferentes: no segundo caso
+ * o socorrista está na água, na mesma rota, e provavelmente é o mais rápido
+ * mesmo estando longe. O apoio em terra recebe um texto próprio: ele não vai
+ * remar até lá, o papel dele é acionar socorro e ir de carro.
+ *
+ * `distanciaKm` é null quando não há como medir (SOS sem GPS, ou companheiro de
+ * downwind sem posição recente). Nesse caso NÃO inventamos número: em resgate,
+ * uma distância errada é pior que distância nenhuma.
  */
 export function textoDoAlerta(args: {
   nome: string;
-  distanciaKm: number;
+  distanciaKm: number | null;
   spotNome: string | null;
   temCoordenada: boolean;
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
 }): { titulo: string; corpo: string } {
   const titulo = `🆘 SOS — ${args.nome}`;
-  if (!args.temCoordenada) {
+  const motivo = args.motivo ?? 'proximidade';
+  const ondeStr = args.spotNome ? ` (perto de ${args.spotNome})` : '';
+  const distStr =
+    args.distanciaKm === null
+      ? null
+      : args.distanciaKm < 1
+      ? '< 1km'
+      : `${Math.round(args.distanciaKm)}km`;
+
+  if (motivo === 'downwind_apoio') {
+    const corpo = distStr
+      ? `Está no downwind que você apoia, a ${distStr}${ondeStr}. Acione socorro (193/185).`
+      : `Está no downwind que você apoia${ondeStr}. Acione socorro (193/185).`;
+    return { titulo, corpo };
+  }
+
+  if (motivo === 'downwind') {
+    const corpo = distStr
+      ? `Está no SEU downwind, a ${distStr}${ondeStr}. Ajuda necessária!`
+      : `Está no SEU downwind${ondeStr}. Posição ainda não confirmada.`;
+    return { titulo, corpo };
+  }
+
+  if (!args.temCoordenada || distStr === null) {
     return { titulo, corpo: 'Posição não confirmada. Verifique os detalhes no app.' };
   }
-  
-  const distStr = args.distanciaKm < 1 ? '< 1km' : `${Math.round(args.distanciaKm)}km`;
-  let corpo = `Aproximadamente a ${distStr} de distância`;
-  if (args.spotNome) {
-    corpo += ` (perto de ${args.spotNome})`;
-  }
-  corpo += `. Ajuda necessária!`;
-  
-  return { titulo, corpo };
+
+  return {
+    titulo,
+    corpo: `Aproximadamente a ${distStr} de distância${ondeStr}. Ajuda necessária!`,
+  };
 }
 
 /**

@@ -190,6 +190,12 @@ export interface SosResponderData {
   name: string;
   state: 'notificado' | 'a_caminho' | 'no_local' | 'nao_posso';
   distanceKm: number | null;
+  /**
+   * Por que esta pessoa foi notificada — ver lib/sosCandidates.ts.
+   * 'downwind'/'downwind_apoio' podem estar longe e ainda assim ser o socorro
+   * mais rápido, então a UI precisa distinguir de um vizinho qualquer.
+   */
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
   lat: number | null;
   lng: number | null;
 }
@@ -210,6 +216,8 @@ export interface SosAlertData {
   responders: SosResponderData[];
   temCoordenada: boolean;
   distanceKm: number | null;
+  /** Por que ESTE usuário foi chamado para este SOS (undefined se é o autor). */
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
 }
 
 const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined);

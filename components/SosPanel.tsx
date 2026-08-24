@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Phone, X, MapPin, Clock, Users, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
+import { X, MapPin, Clock, Users, AlertTriangle, ExternalLink, Loader2, Wind } from 'lucide-react';
+import { BotoesEmergencia } from './BotoesEmergencia';
+import { mensagemDeSocorro } from '../lib/emergencia';
 
 /**
  * Painel que aparece DEPOIS do velejador disparar o SOS.
@@ -19,6 +21,8 @@ interface Responder {
   name: string;
   state: 'notificado' | 'a_caminho' | 'no_local' | 'nao_posso';
   distanceKm: number | null;
+  /** Por que foi chamado — ver lib/sosCandidates.ts. */
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
 }
 
 interface ActiveSos {
@@ -84,10 +88,22 @@ export const SosPanel: React.FC<SosPanelProps> = ({
     }
   };
 
-  // WhatsApp com posição (se tiver contato de emergência e coordenada)
-  const waLink = emergencyContactPhone && sos.lat
+  /**
+   * WhatsApp para o contato de emergência.
+   *
+   * Antes exigia `sos.lat`, então um SOS sem GPS escondia o botão — justamente
+   * quando avisar alguém de fora importa mais. Agora a mensagem sai com aviso
+   * explícito de posição não confirmada; quem recebe pode ligar e ajudar na
+   * busca. Texto montado em lib/emergencia.ts.
+   */
+  const waLink = emergencyContactPhone
     ? `https://wa.me/${emergencyContactPhone.replace(/\D/g, '')}?text=${encodeURIComponent(
-        `🆘 SOS KiteNinja — Preciso de ajuda!\n📍 Posição: https://maps.google.com/?q=${sos.lat},${sos.lng}\n${sos.spotName ? `🏖️ Perto de: ${sos.spotName}` : ''}`
+        mensagemDeSocorro({
+          nome: 'Velejador',
+          lat: sos.lat,
+          lng: sos.lng,
+          spotNome: sos.spotName,
+        })
       )}`
     : null;
 
@@ -125,25 +141,9 @@ export const SosPanel: React.FC<SosPanelProps> = ({
             </p>
           </div>
 
-          {/* 193 e 185 — EM DESTAQUE, acima de tudo da comunidade */}
-          <div className="grid grid-cols-2 gap-2">
-            <a
-              href="tel:193"
-              className="py-3 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-lg flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-rose-600/30"
-            >
-              <Phone size={20} />
-              193
-              <span className="text-[10px] font-bold opacity-80">Bombeiros</span>
-            </a>
-            <a
-              href="tel:185"
-              className="py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-lg flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-amber-600/30"
-            >
-              <Phone size={20} />
-              185
-              <span className="text-[10px] font-bold opacity-80">Marinha</span>
-            </a>
-          </div>
+          {/* Autoridades EM DESTAQUE, acima de tudo da comunidade.
+              Fonte única em lib/emergencia.ts. */}
+          <BotoesEmergencia variante="completo" />
         </div>
 
         {/* Corpo */}
@@ -180,13 +180,29 @@ export const SosPanel: React.FC<SosPanelProps> = ({
                   .filter(r => r.state !== 'nao_posso')
                   .map((r) => {
                     const { text, color } = stateLabel(r.state);
+                    const doDownwind = r.motivo === 'downwind' || r.motivo === 'downwind_apoio';
                     return (
                       <div key={r.userId} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-slate-800/50">
-                        <span className="text-sm text-slate-200 font-bold truncate">{r.name}</span>
-                        <div className="flex items-center gap-2 text-xs shrink-0">
-                          {r.distanceKm !== null && (
-                            <span className="text-slate-400">{r.distanceKm.toFixed(1)} km</span>
+                        <span className="text-sm text-slate-200 font-bold truncate flex items-center gap-1.5">
+                          {doDownwind && (
+                            <Wind
+                              size={12}
+                              className="text-cyan-400 shrink-0"
+                              aria-label={r.motivo === 'downwind_apoio' ? 'apoio em terra do downwind' : 'do seu downwind'}
+                            />
                           )}
+                          {r.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-xs shrink-0">
+                          {/* Sem distância medida, dizemos de onde veio em vez
+                              de inventar número — ver lib/sos.ts. */}
+                          {r.distanceKm !== null ? (
+                            <span className="text-slate-400">{r.distanceKm.toFixed(1)} km</span>
+                          ) : doDownwind ? (
+                            <span className="text-cyan-400/80">
+                              {r.motivo === 'downwind_apoio' ? 'apoio em terra' : 'no downwind'}
+                            </span>
+                          ) : null}
                           <span className={`font-black ${color}`}>{text}</span>
                         </div>
                       </div>

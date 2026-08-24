@@ -21,7 +21,6 @@ import {
   Camera,
   ChevronRight,
   Loader2,
-  Phone,
   Siren,
   UserCog,
 } from 'lucide-react';
@@ -29,6 +28,7 @@ import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
+import { BotoesEmergencia } from './BotoesEmergencia';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -551,22 +551,7 @@ export const SidebarDrawer: React.FC = () => {
               {sos.error && (
                 <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-500/50 space-y-2">
                   <p className="text-[11px] text-rose-200 font-bold leading-tight">{sos.error}</p>
-                  <div className="flex gap-2">
-                    <a
-                      href="tel:193"
-                      className="flex-1 py-1.5 rounded-lg bg-rose-600 text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
-                    >
-                      <Phone size={13} />
-                      193
-                    </a>
-                    <a
-                      href="tel:185"
-                      className="flex-1 py-1.5 rounded-lg bg-amber-600 text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-transform"
-                    >
-                      <Phone size={13} />
-                      185
-                    </a>
-                  </div>
+                  <BotoesEmergencia variante="compacto" />
                   <button
                     type="button"
                     onClick={() => sos.setError(null)}
@@ -576,6 +561,17 @@ export const SidebarDrawer: React.FC = () => {
                   </button>
                 </div>
               )}
+
+              {/* Autoridades — SEMPRE acessíveis, sem precisar disparar SOS.
+                  O app avisa a comunidade; a autoridade tem barco e mandato, e
+                  não pode ficar atrás de um fluxo nosso. `tel:` funciona sem
+                  internet, basta sinal de voz. */}
+              <div className="pt-1 space-y-1.5">
+                <span className="text-[10px] text-slate-400 font-bold block">
+                  Ligar para autoridades:
+                </span>
+                <BotoesEmergencia variante="completo" />
+              </div>
 
               {/* Contato de Emergência */}
               <div className="space-y-1.5 pt-1">

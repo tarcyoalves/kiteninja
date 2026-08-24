@@ -187,6 +187,46 @@ describe('textoDoAlerta', () => {
     expect(txt.corpo).toContain('10km');
     expect(txt.corpo).not.toContain('null');
   });
+
+  // O motivo muda a decisão de quem recebe: um companheiro de downwind a 30 km
+  // pode ser o socorro mais rápido (está na água, na mesma rota), enquanto um
+  // vizinho a 30 km é irrelevante. O texto tem que deixar isso claro.
+  it('avisa que o pedido é do próprio downwind do socorrista', () => {
+    const txt = textoDoAlerta({
+      nome: 'Ana', distanciaKm: 22, spotNome: null, temCoordenada: true, motivo: 'downwind',
+    });
+    expect(txt.corpo).toContain('SEU downwind');
+    expect(txt.corpo).toContain('22km');
+  });
+
+  it('pede ao apoio em terra que acione a autoridade, não que reme', () => {
+    const txt = textoDoAlerta({
+      nome: 'Ana', distanciaKm: 8, spotNome: null, temCoordenada: true, motivo: 'downwind_apoio',
+    });
+    expect(txt.corpo).toContain('apoia');
+    expect(txt.corpo).toContain('193');
+  });
+
+  // Sem GPS, o SOS agora É enviado ao grupo do downwind (antes ninguém era
+  // avisado). O texto não pode inventar distância nesse caso: número errado em
+  // resgate é pior que número nenhum.
+  it('não inventa distância quando não há como medir', () => {
+    const txt = textoDoAlerta({
+      nome: 'Ana', distanciaKm: null, spotNome: 'Cumbuco', temCoordenada: false, motivo: 'downwind',
+    });
+    expect(txt.corpo).toContain('SEU downwind');
+    expect(txt.corpo).not.toMatch(/\d+km/);
+    expect(txt.corpo).not.toContain('null');
+    expect(txt.corpo).not.toContain('NaN');
+  });
+
+  it('sem coordenada e por proximidade, diz apenas que a posição é incerta', () => {
+    const txt = textoDoAlerta({
+      nome: 'Ana', distanciaKm: null, spotNome: null, temCoordenada: false,
+    });
+    expect(txt.corpo.toLowerCase()).toContain('posição não confirmada');
+    expect(txt.corpo).not.toContain('null');
+  });
 });
 
 describe('boundingBox', () => {

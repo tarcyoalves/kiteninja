@@ -154,22 +154,34 @@ export async function POST(request: Request) {
       detalhe: { precisaoM: accuracyM, spot: spotId, raioKm: radiusKm },
     });
 
-    let candidatos: Array<{ userId: string; dist: number }> = [];
-    if (lat !== null && lng !== null) {
-      // Considera tanto quem tem posição real recente quanto quem só
-      // declarou um spot ("estou em Ponta do Mel") — ver lib/sosCandidates.ts.
-      candidatos = await selectSosCandidates({
-        excludeUserId: user.id,
-        origin: { lat, lng },
-        radiusKm,
-      });
-    }
+    /**
+     * Quem é avisado: quem está perto com o app, MAIS o grupo do downwind em
+     * andamento (independente de distância) — ver lib/sosCandidates.ts.
+     *
+     * A chamada acontece mesmo SEM coordenada. Antes ela estava dentro de um
+     * `if (lat !== null && lng !== null)`, então um SOS sem GPS (celular
+     * molhado, permissão negada, 3s de timeout) era gravado e **ninguém era
+     * notificado** — falha silenciosa no caminho de vida. O seletor lida com
+     * `origin: null` avisando o grupo do downwind, que não depende de
+     * coordenada nenhuma.
+     */
+    const candidatos = await selectSosCandidates({
+      excludeUserId: user.id,
+      origin: lat !== null && lng !== null ? { lat, lng } : null,
+      radiusKm,
+    });
 
     logSos({
       etapa: 'candidatos',
       sosId,
       userId: user.id,
-      detalhe: { total: candidatos.length, raioKm: radiusKm },
+      detalhe: {
+        total: candidatos.length,
+        raioKm: radiusKm,
+        porProximidade: candidatos.filter(c => c.motivo === 'proximidade').length,
+        porDownwind: candidatos.filter(c => c.motivo !== 'proximidade').length,
+        temGps: lat !== null && lng !== null,
+      },
     });
 
     // Um único INSERT com todos os candidatos, em vez de um por candidato.
@@ -180,10 +192,11 @@ export async function POST(request: Request) {
     if (candidatos.length > 0) {
       const ids = candidatos.map(c => c.userId);
       const dists = candidatos.map(c => c.dist);
+      const motivos = candidatos.map(c => c.motivo);
       await sql`
-        INSERT INTO sos_responders (sos_id, user_id, state, distance_km)
-        SELECT ${sosId}, u.id, 'notificado', d.dist
-        FROM UNNEST(${ids}::uuid[], ${dists}::numeric[]) AS d(uid, dist)
+        INSERT INTO sos_responders (sos_id, user_id, state, distance_km, motivo)
+        SELECT ${sosId}, u.id, 'notificado', d.dist, d.motivo
+        FROM UNNEST(${ids}::uuid[], ${dists}::numeric[], ${motivos}::text[]) AS d(uid, dist, motivo)
         JOIN users u ON u.id = d.uid
         ON CONFLICT (sos_id, user_id) DO NOTHING
       `;
@@ -203,7 +216,8 @@ export async function POST(request: Request) {
           nome: user.name,
           distanciaKm: c.dist,
           spotNome: spotName,
-          temCoordenada: true,
+          temCoordenada: lat !== null && lng !== null,
+          motivo: c.motivo,
         });
         return sendPushToUsers([c.userId], {
           title: txt.titulo,

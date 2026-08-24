@@ -259,6 +259,65 @@ async function main() {
      ORDER BY i.created_at DESC LIMIT 100`
   );
 
+  /**
+   * O cadastro por convite agora grava o contato de emergência (quem avisar se
+   * o SOS for acionado). O INSERT é exatamente onde um erro passaria calado:
+   * conta criada, app funcionando, e o contato perdido — descoberto só numa
+   * emergência real, quando o painel do acidentado não tem para quem mandar a
+   * posição. Estas checagens rodam o INSERT real de POST /api/invites/accept.
+   */
+  const contatoNovo = await db.query<{
+    emergency_contact_name: string | null; emergency_contact_phone: string | null;
+  }>(
+    `INSERT INTO users (
+       email, password_hash, name, role, avatar_url, rider_id,
+       weight_kg, rider_level, home_spot, disciplines, bio,
+       emergency_contact_name, emergency_contact_phone
+     ) VALUES (
+       'cadastro.sos@kn.test', '$2b$12$x', 'Cadastro com SOS', 'rider', 'a.svg', '7101',
+       78, 'Intermediário', 'Ponta do Mel', ARRAY['Kitesurf Twintip'], 'bio',
+       $1, $2
+     )
+     RETURNING emergency_contact_name, emergency_contact_phone`,
+    ['Maria (esposa)', '(84) 99999-0000']
+  );
+  check(
+    'cadastro por convite persiste o nome do contato de emergência',
+    contatoNovo.rows[0].emergency_contact_name === 'Maria (esposa)'
+  );
+  check(
+    'cadastro por convite persiste o telefone do contato (com máscara, como digitado)',
+    contatoNovo.rows[0].emergency_contact_phone === '(84) 99999-0000'
+  );
+
+  // Campo vazio é aceito: travar a criação da conta empurraria o velejador a
+  // inventar um número para passar da tela, e número falso parece cobertura.
+  const contatoVazio = await db.query<{ emergency_contact_phone: string | null }>(
+    `INSERT INTO users (
+       email, password_hash, name, role, avatar_url, rider_id,
+       weight_kg, rider_level, disciplines, bio,
+       emergency_contact_name, emergency_contact_phone
+     ) VALUES (
+       'cadastro.sem.sos@kn.test', '$2b$12$x', 'Sem contato', 'rider', 'a.svg', '7102',
+       78, 'Intermediário', ARRAY['Kitesurf Twintip'], 'bio', NULL, NULL
+     )
+     RETURNING emergency_contact_phone`
+  );
+  check(
+    'cadastro sem contato de emergência ainda cria a conta (campo opcional)',
+    contatoVazio.rows[0].emergency_contact_phone === null
+  );
+
+  // O SosPanel monta o link de WhatsApp com `replace(/\D/g,'')`; o banco tem de
+  // devolver o telefone intacto para essa limpeza acontecer no cliente.
+  const leituraMe = await db.query<{ emergency_contact_phone: string | null }>(
+    `SELECT emergency_contact_phone FROM users WHERE email = 'cadastro.sos@kn.test'`
+  );
+  check(
+    '/api/auth/me lê o contato gravado no cadastro (o SOS depende dele)',
+    leituraMe.rows[0].emergency_contact_phone === '(84) 99999-0000'
+  );
+
   console.log('\nRecuperação de Senha & Ciclo de Vida:');
   const resetToken = await db.query<{ id: string }>(
     `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)

@@ -52,6 +52,22 @@ export async function POST(request: Request) {
     const riderLevel = oneOf<RiderLevel>(body, 'riderLevel', LEVELS, 'Intermediário');
     const homeSpot = str(body, 'homeSpot', { optional: true, max: 120 });
 
+    /**
+     * Contato de emergência já no cadastro — quem avisar se algo der errado na
+     * água. Coletar aqui, e não só depois nas configurações, porque quem entra
+     * no app não volta para preencher campo de segurança: o SOS pode ser
+     * acionado na primeira sessão, e sem contato o painel do acidentado não tem
+     * para quem mandar a posição.
+     *
+     * `optional` de propósito: bloquear a criação da conta por causa deste
+     * campo empurraria o velejador a inventar um número qualquer para passar da
+     * tela — pior que o campo vazio, porque um número falso parece cobertura.
+     * Mesmos limites de PATCH /api/profile, para os dois caminhos aceitarem
+     * exatamente o mesmo dado.
+     */
+    const emergencyContactName = str(body, 'emergencyContactName', { optional: true, max: 120 });
+    const emergencyContactPhone = str(body, 'emergencyContactPhone', { optional: true, max: 30 });
+
     const rawDisciplines = (body as Record<string, unknown>)?.disciplines;
     const disciplines: Discipline[] = Array.isArray(rawDisciplines)
       ? (rawDisciplines.filter((d): d is Discipline =>
@@ -72,11 +88,13 @@ export async function POST(request: Request) {
     const inserted = await sql`
       INSERT INTO users (
         email, password_hash, name, role, avatar_url, rider_id,
-        weight_kg, rider_level, home_spot, disciplines, bio
+        weight_kg, rider_level, home_spot, disciplines, bio,
+        emergency_contact_name, emergency_contact_phone
       ) VALUES (
         ${email}, ${passwordHash}, ${name}, 'rider', ${avatarUrl}, ${riderId},
         ${weightKg}, ${riderLevel}, ${homeSpot || null}, ${disciplines},
-        ${`Velejador no ${homeSpot || 'Litoral'}!`}
+        ${`Velejador no ${homeSpot || 'Litoral'}!`},
+        ${emergencyContactName || null}, ${emergencyContactPhone || null}
       )
       RETURNING id
     `;
