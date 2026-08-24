@@ -235,12 +235,27 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
     };
   }, [sessionId]);
 
+  /**
+   * Fecha o modal — mas primeiro tira o foco de qualquer campo de texto
+   * ainda focado (o composer de comentário ou de resposta). Mesmo bug do
+   * `components/BuscarVelejadores.tsx` (ver comentário lá): desmontar um
+   * `<input>` que ainda está focado nem sempre dispara `focusout` a tempo em
+   * todo navegador, e `lib/useKeyboardVisible.ts` (usado por `BottomNav`)
+   * depende desse evento para saber que o teclado fechou — sem o blur
+   * explícito aqui, o menu flutuante podia sumir para sempre depois de
+   * digitar um comentário e fechar o modal sem enviar.
+   */
+  const fechar = useCallback(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    onClose();
+  }, [onClose]);
+
   // Esc fecha e trava o scroll do fundo — mesmo padrão de RiderProfileModal.
   useEffect(() => {
     if (!sessionId) return;
     closeButtonRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') fechar();
     };
     window.addEventListener('keydown', onKey);
     const anterior = document.body.style.overflow;
@@ -249,7 +264,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = anterior;
     };
-  }, [sessionId, onClose]);
+  }, [sessionId, fechar]);
 
   // Curtida otimista — mesmo hook de CardSessaoFeed (lib/useCurtidaOtimista.ts).
   // Chamado incondicionalmente (regra dos hooks): com o modal fechado
@@ -411,7 +426,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
           <button
             type="button"
             ref={closeButtonRef}
-            onClick={onClose}
+            onClick={fechar}
             className="min-w-11 min-h-11 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors shrink-0"
             aria-label="Fechar detalhe do velejo"
           >
@@ -434,7 +449,7 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
             </p>
             <button
               type="button"
-              onClick={onClose}
+              onClick={fechar}
               className="px-5 py-3 min-h-11 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 font-black text-xs"
             >
               Fechar

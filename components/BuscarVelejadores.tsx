@@ -134,12 +134,29 @@ export const BuscarVelejadores: React.FC<BuscarVelejadoresProps> = ({ onClose, o
     return () => clearTimeout(timer);
   }, [query, buscar]);
 
+  /**
+   * Fecha a busca — mas primeiro tira o foco do campo de texto, se ele
+   * estiver focado. Sem isto, o menu flutuante desaparecia para sempre
+   * depois de abrir e fechar a busca de Riders: o campo de texto tem foco
+   * automático ao abrir (linha abaixo), `lib/useKeyboardVisible.ts` (usado
+   * por `BottomNav`) rastreia teclado via `focusin`/`focusout` no
+   * `document`, e desmontar um elemento que AINDA está focado nem sempre
+   * dispara `focusout` a tempo em todo navegador — o hook (que vive em
+   * `BottomNav`, um componente à parte que nunca desmonta) ficava travado
+   * achando que o teclado continuava aberto. Tirar o foco explicitamente
+   * AQUI, com o campo ainda montado, garante o evento antes da remoção.
+   */
+  const fechar = useCallback(() => {
+    inputRef.current?.blur();
+    onClose();
+  }, [onClose]);
+
   // Foco automático no campo ao abrir + Esc fecha, mesmo padrão de
   // ListingDetailModal.
   useEffect(() => {
     inputRef.current?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') fechar();
     };
     window.addEventListener('keydown', onKey);
     const anterior = document.body.style.overflow;
@@ -148,7 +165,7 @@ export const BuscarVelejadores: React.FC<BuscarVelejadoresProps> = ({ onClose, o
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = anterior;
     };
-  }, [onClose]);
+  }, [fechar]);
 
   const handleAbrir = useCallback((riderId: string) => onAbrirPerfil(riderId), [onAbrirPerfil]);
 
@@ -192,7 +209,7 @@ export const BuscarVelejadores: React.FC<BuscarVelejadoresProps> = ({ onClose, o
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={fechar}
             className="min-w-11 min-h-11 shrink-0 flex items-center justify-center rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
             aria-label="Fechar busca"
           >
