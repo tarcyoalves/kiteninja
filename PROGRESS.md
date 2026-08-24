@@ -53,6 +53,7 @@ Validação final executada nesta rodada:
 | `npm run build` | **110/110 migrações + Next 16.3.1, 34 páginas, verde** |
 | Neon online | migração idempotente **110/110**, 0 falhas |
 | Preview móvel 375×812 | login carregou, sem erro de servidor/rede; fluxo autenticado não exercitado por falta de sessão no preview |
+| Produção (`ad0cbf5`) | **Ready**; migração 110/110; `/` e manifest 200; auth/me saudável; sessions protegida com 401 |
 
 O `npm run lint` global ainda acusa dívida anterior (regras novas do React 19,
 `no-unused-vars` e `<img>` espalhados por dezenas de arquivos). Não é regressão
