@@ -88,7 +88,24 @@ export function AcceptInviteForm({
     'text-base focus:outline-none focus:border-cyan-400';
 
   return (
-    <main className="min-h-screen bg-[#0F172A] text-slate-100 p-4 pb-10">
+    /*
+     * `flex-1 min-h-0 overflow-y-auto`, nunca `min-h-screen` (100vh): o <body>
+     * do layout raiz (app/layout.tsx) é `flex flex-col` com `overflow: hidden`
+     * — regra deliberada para o app-shell autenticado, que dá o próprio
+     * `.app-scroll` interno. Esta tela não usa o app-shell, então herdava o
+     * `overflow: hidden` do body sem NENHUM container que soubesse rolar:
+     * `min-h-screen` deixa o conteúdo crescer além da tela, mas nada ali
+     * embaixo tinha `overflow-y: auto` para alcançar o que passasse da
+     * viewport — era por isso que o formulário (mais alto que a tela em
+     * qualquer celular) ficava com o fim inacessível, sem rolagem nenhuma.
+     * `flex-1` preenche a altura real do body (sem conta de vh, mesmo
+     * motivo do `.app-shell` não declarar altura — ver globals.css, seção
+     * "ALTURA DO APP"), `min-h-0` deixa esse item flex de fato SER limitado a
+     * essa altura em vez de crescer com o conteúdo (o gotcha clássico de
+     * flexbox), e só então `overflow-y-auto` tem uma caixa com tamanho real
+     * para rolar dentro dela.
+     */
+    <main className="flex-1 min-h-0 overflow-y-auto bg-[var(--app-bg)] text-slate-100 p-4 pb-10">
       <div className="w-full max-w-md mx-auto">
         <header className="text-center py-6 space-y-2">
           <Compass size={40} className="text-cyan-400 mx-auto" aria-hidden="true" />
