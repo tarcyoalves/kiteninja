@@ -21,6 +21,19 @@ import { hashToken, newToken } from './auth';
  * - Pode ser revogado explicitamente (encerramento, detecção de uso fraudulento).
  */
 
+/*
+ * `RETURNING id` em TODA função que promete devolver contagem.
+ *
+ * Sem ele, o driver do Neon devolve um array VAZIO para UPDATE/DELETE — então
+ * `result.length` seria sempre 0, por mais linhas que a query tivesse afetado.
+ * O UPDATE acontece de verdade; só a contagem mentiria.
+ *
+ * Isso passou despercebido porque lib/trackingToken.test.ts mocka `sql` e faz
+ * o mock devolver linhas, afirmando um contrato ("retorna a contagem") que a
+ * query real não cumpria. Teste mockado verde não prova comportamento de
+ * banco — vale como lembrete ao ler os outros testes deste arquivo.
+ */
+
 /** Duração máxima de um token de rastreio (24h). */
 const MAX_TOKEN_HOURS = 24;
 
@@ -133,6 +146,7 @@ export async function revogarTodosTokensDoDownwind(
     UPDATE downwind_tracking_tokens
     SET revoked_at = NOW()
     WHERE downwind_id = ${downwindId} AND revoked_at IS NULL
+    RETURNING id
   `;
 
   return result.length;
@@ -173,6 +187,7 @@ export async function revogarTokensDoUsuario(
     UPDATE downwind_tracking_tokens
     SET revoked_at = NOW()
     WHERE user_id = ${userId} AND revoked_at IS NULL
+    RETURNING id
   `;
 
   return result.length;
@@ -187,6 +202,7 @@ export async function limparTokensExpirados(): Promise<number> {
   const result = await sql`
     DELETE FROM downwind_tracking_tokens
     WHERE expires_at < NOW()
+    RETURNING id
   `;
 
   return result.length;
