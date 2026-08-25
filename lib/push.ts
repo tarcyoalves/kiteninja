@@ -84,6 +84,76 @@ async function getFirebaseMessaging(): Promise<FirebaseMessaging | null> {
   }
 }
 
+/**
+ * Diagnóstico de configuração do push, para a rota de admin.
+ *
+ * Existe porque as duas falhas de push deste projeto foram INVISÍVEIS: a
+ * chave VAPID no formato errado (inscrição do iOS falhava em silêncio, banco
+ * com 9 usuários e zero inscrições) e o FCM sem credencial (`getFirebaseMessaging`
+ * loga um `console.warn` e devolve `null` — nada chega à interface, e o SOS
+ * fica sem notificar ninguém sem nenhum sinal). Um endpoint que responde
+ * "está configurado?" com a verdade evita a próxima rodada de adivinhação.
+ *
+ * NÃO expõe valor de segredo nenhum — só se existe, se faz parse, e qual o
+ * `project_id`/`client_email` (que não são secretos e ajudam a confirmar que
+ * a credencial é do projeto certo, e não de outro Firebase).
+ */
+export async function diagnosticarPush(): Promise<{
+  vapid: { publicaPresente: boolean; privadaPresente: boolean; subjectPresente: boolean };
+  fcm: {
+    credencialPresente: boolean;
+    formato: 'json-inline' | 'caminho-arquivo' | 'ausente';
+    jsonValido: boolean | null;
+    projectId: string | null;
+    clientEmail: string | null;
+    inicializou: boolean;
+    erro: string | null;
+  };
+}> {
+  const credJson = process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON;
+  const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+
+  let jsonValido: boolean | null = null;
+  let projectId: string | null = null;
+  let clientEmail: string | null = null;
+  let erro: string | null = null;
+
+  if (credJson) {
+    try {
+      const parsed = JSON.parse(credJson);
+      jsonValido = true;
+      projectId = typeof parsed.project_id === 'string' ? parsed.project_id : null;
+      clientEmail = typeof parsed.client_email === 'string' ? parsed.client_email : null;
+      if (!parsed.private_key) erro = 'JSON sem campo private_key.';
+    } catch (e) {
+      jsonValido = false;
+      erro = `JSON inválido: ${e instanceof Error ? e.message : 'erro ao interpretar'}`;
+    }
+  }
+
+  // Tenta de fato inicializar: presença da variável não prova que a
+  // credencial funciona (chave revogada, projeto errado, JSON truncado no
+  // copiar/colar). Isto usa o mesmo caminho do envio real.
+  const messaging = await getFirebaseMessaging();
+
+  return {
+    vapid: {
+      publicaPresente: Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY),
+      privadaPresente: Boolean(process.env.VAPID_PRIVATE_KEY),
+      subjectPresente: Boolean(process.env.VAPID_SUBJECT),
+    },
+    fcm: {
+      credencialPresente: Boolean(credJson || credPath),
+      formato: credJson ? 'json-inline' : credPath ? 'caminho-arquivo' : 'ausente',
+      jsonValido,
+      projectId,
+      clientEmail,
+      inicializou: messaging !== null,
+      erro,
+    },
+  };
+}
+
 export interface PushPayload {
   title: string;
   body: string;
