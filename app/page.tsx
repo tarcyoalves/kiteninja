@@ -32,6 +32,7 @@ import { ChatView } from "../views/ChatView";
 import { useKiteData } from "../context/KiteDataContext";
 import { useAuth } from "../context/AuthContext";
 import { LoginGate } from "../components/LoginGate";
+import { PermissoesOnboarding, permissoesJaPedidas } from "../components/PermissoesOnboarding";
 import { ForcePasswordChangeModal } from "../components/ForcePasswordChangeModal";
 import {
   SplashIntro,
@@ -253,7 +254,16 @@ const MainContent: React.FC = () => {
  * com o app já pronto e hidratado na tela, sem qualquer atraso ou tela preta.
  */
 const Gate: React.FC = () => {
-  const { isAuthenticated, isLoading, mustChangePassword } = useAuth();
+  const { isAuthenticated, isLoading, mustChangePassword, user } = useAuth();
+  // Pedido único de localização + notificações, logo depois do login. Só
+  // decide DEPOIS de saber quem é o usuário (o marcador é por conta, em
+  // localStorage) e nunca por cima do splash ou da troca de senha
+  // obrigatória — ver components/PermissoesOnboarding.tsx.
+  const [permissoesFeitas, setPermissoesFeitas] = React.useState(true);
+  React.useEffect(() => {
+    if (!isAuthenticated || !user?.id || mustChangePassword) return;
+    setPermissoesFeitas(permissoesJaPedidas(user.id));
+  }, [isAuthenticated, user?.id, mustChangePassword]);
   // Lazy init: o link para /admin é navegação de página inteira (não rota
   // client-side), então toda volta remonta o Gate do zero. Sem checar
   // introJaVista() aqui, o vídeo tocava de novo a cada ida e volta ao admin
@@ -295,6 +305,13 @@ const Gate: React.FC = () => {
             <MainContent />
           </DownwindProvider>
         </KiteDataProvider>
+      )}
+
+      {/* Depois do splash e do login, e nunca sobre a troca de senha
+          obrigatória: o velejador precisa estar parado e com o app já
+          visível para entender por que as permissões importam. */}
+      {isAuthenticated && !mustChangePassword && introDone && !permissoesFeitas && user?.id && (
+        <PermissoesOnboarding userId={user.id} onFechar={() => setPermissoesFeitas(true)} />
       )}
     </>
   );
