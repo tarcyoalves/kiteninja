@@ -3,6 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
+import { useWakeLock } from '../lib/useWakeLock';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -54,6 +55,13 @@ interface DownwindContextType {
   carregando: boolean;
   /** Último POST de posição confirmado; continua atualizando fora da aba Mapa. */
   ultimaPosicaoEm: Date | null;
+  /**
+   * A tela está travada ligada por causa da travessia. Quando `false` com um
+   * downwind em andamento, o aparelho vai apagar a tela sozinho e o
+   * rastreamento pode parar — a UI precisa poder avisar em vez de deixar o
+   * velejador achar que está coberto.
+   */
+  telaTravadaLigada: boolean;
   entrarNoDownwind: (
     downwindId: string,
     papel?: DownwindPapel
@@ -127,10 +135,32 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { isAuthenticated, user } = useAuth();
   const [downwindAtivo, setDownwindAtivo] = useState<DownwindAtivo | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const beacon = useDownwindBeacon(
-    downwindAtivo?.id ?? null,
-    downwindAtivo?.status === 'em_andamento'
-  );
+  const emAndamento = downwindAtivo?.status === 'em_andamento';
+  const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
+
+  /*
+   * Wake Lock durante TODA a travessia, não só dentro do Modo Navegação.
+   *
+   * O relato que motivou isto: no Android, com o app em segundo plano, o
+   * downwind deixava de ser monitorado. A causa não era só o beacon pausar
+   * (corrigido em lib/useDownwindBeacon.ts) — era a tela apagar. Tela
+   * apagada, o sistema congela a página e nenhum `setInterval` dispara;
+   * o velejador some do mapa de quem acompanha em terra.
+   *
+   * O Wake Lock já existia, mas SÓ enquanto o Modo Navegação estava aberto
+   * (components/ModoNavegacao.tsx). Quem entrava no downwind e ficava em
+   * qualquer outra aba — ou só guardava o celular no colete — perdia a
+   * proteção justamente por não estar olhando a tela.
+   *
+   * Fica aqui no provider, e não numa tela, pelo mesmo motivo do beacon:
+   * trocar de aba não pode interromper o rastreamento. Solto assim que o
+   * downwind sai de `em_andamento` (encerrar, desistir, cancelar), então a
+   * tela volta ao normal sem exigir nada do usuário.
+   *
+   * NÃO substitui rastreio nativo: com o app FECHADO nada disto roda.
+   * Ver docs/ANTIGRAVITY-FINDINGS.md (ANT-003).
+   */
+  const wakeLock = useWakeLock(emAndamento);
   // Evita que a resposta do GET sobrescreva um estado mais novo (ex.: acabou
   // de entrar num downwind) se as duas chegarem fora de ordem.
   const versaoRef = useRef(0);
@@ -295,6 +325,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         downwindAtivo,
         carregando,
         ultimaPosicaoEm: beacon.ultimaPosicaoEm,
+        telaTravadaLigada: wakeLock.ativo,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,
