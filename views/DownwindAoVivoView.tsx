@@ -75,6 +75,8 @@ export const DownwindAoVivoView: React.FC = () => {
     downwindAtivo,
     ultimaPosicaoEm,
     telaTravadaLigada,
+    statusTrackingNativo,
+    diagnosticoTracking,
     iniciarDownwind,
     encerrarMinhaParticipacao,
     encerrarDownwind,
@@ -459,9 +461,24 @@ export const DownwindAoVivoView: React.FC = () => {
           }`}
           role="status"
         >
-          {telaTravadaLigada
-            ? 'Rastreamento ativo: a tela fica ligada durante a travessia para continuar enviando sua posição com o celular no colete. Não feche o app — com o app fechado o envio para.'
-            : 'Atenção: não foi possível travar a tela ligada neste aparelho. Se a tela apagar, sua posição pode parar de ser enviada. Mantenha o app aberto e a tela acesa durante a travessia.'}
+          {statusTrackingNativo === 'ativo'
+            ? 'Rastreamento em segundo plano ATIVO: o serviço nativo continua enviando sua posição mesmo com a tela apagada ou o app minimizado. Procure a notificação "Rastreando downwind" na barra de status.'
+            : telaTravadaLigada
+              ? 'Rastreamento ativo: a tela fica ligada durante a travessia para continuar enviando sua posição com o celular no colete. Não feche o app — com o app fechado o envio para.'
+              : 'Atenção: não foi possível travar a tela ligada neste aparelho. Se a tela apagar, sua posição pode parar de ser enviada. Mantenha o app aberto e a tela acesa durante a travessia.'}
+
+          {/*
+            Linha de diagnóstico. Não é enfeite: sem cabo USB e sem logcat,
+            esta é a ÚNICA forma de descobrir onde o rastreio nativo parou no
+            aparelho de quem relata o problema. Mesma escolha já feita para o
+            FCM. Só aparece dentro do app nativo — em PWA o conceito não
+            existe e a frase só confundiria.
+          */}
+          {diagnosticoTracking && statusTrackingNativo !== null && (
+            <p className="mt-2 pt-2 border-t border-current/20 opacity-80 font-mono text-[10px]">
+              {diagnosticoTracking}
+            </p>
+          )}
         </div>
       )}
 

@@ -79,6 +79,12 @@ interface DownwindContextType {
    * for removido dos recentes.
    */
   statusTrackingNativo: 'inativo' | 'ativo' | 'permissao_negada' | null;
+  /**
+   * Frase legível dizendo em que ponto o rastreio nativo está — ou por que
+   * não ligou. Existe para ser MOSTRADA na tela: sem cabo USB não há outro
+   * jeito de saber onde o fluxo parou no aparelho do usuário.
+   */
+  diagnosticoTracking: string | null;
   entrarNoDownwind: (
     downwindId: string,
     papel?: DownwindPapel
@@ -208,20 +214,44 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // chama o plugin nativo quando o estado ligado/desligado realmente muda.
   const trackingLigadoRef = useRef(false);
 
+  /*
+   * Diagnóstico legível do rastreio nativo, mostrado na tela do downwind.
+   *
+   * POR QUE ISTO EXISTE: `statusTrackingNativo` era exposto pelo contexto e
+   * NUNCA renderizado em lugar nenhum. Quando o dono relatou "continua sem
+   * rastrear com a tela apagada", não havia como saber onde o fluxo parava —
+   * se não era app nativo, se a decisão dava false, se o token falhava, se o
+   * plugin rejeitava, ou se o serviço subia e morria depois. Sem cabo USB e
+   * sem logcat, um agente não tem NENHUMA visibilidade do aparelho.
+   *
+   * Mesmo caminho já adotado para o FCM ("diag(push): mostra na tela por que
+   * o registro não completa"): quando não dá para depurar de fora, o app
+   * precisa dizer na própria tela o que está acontecendo.
+   */
+  const [diagnosticoTracking, setDiagnosticoTracking] = useState<string | null>(null);
+
   useEffect(() => {
-    if (!estaNoAppNativo()) return;
+    if (!estaNoAppNativo()) {
+      setDiagnosticoTracking('Rodando como PWA/navegador — sem serviço nativo.');
+      return;
+    }
 
     const downwindId = downwindAtivo?.id ?? null;
+    const papel = downwindAtivo?.minhaParticipacao.papel ?? null;
+    const estadoParticipante = downwindAtivo?.minhaParticipacao.estado ?? null;
+    const statusDw = downwindAtivo?.status ?? null;
+
     const deveRastrear = decidirTracking({
       isAuthenticated,
-      papel: downwindAtivo?.minhaParticipacao.papel ?? null,
-      downwindStatus: downwindAtivo?.status ?? null,
-      participanteEstado: downwindAtivo?.minhaParticipacao.estado ?? null,
+      papel,
+      downwindStatus: statusDw,
+      participanteEstado: estadoParticipante,
       appNativo: true,
     });
 
     if (deveRastrear && downwindId && !trackingLigadoRef.current) {
       trackingLigadoRef.current = true;
+      setDiagnosticoTracking('Pedindo token de rastreio ao servidor…');
       iniciarTrackingNativo({
         downwindId,
         baseUrl: window.location.origin,
@@ -229,18 +259,36 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }).then((resultado) => {
         if (resultado.ok) {
           setStatusTrackingNativo('ativo');
+          setDiagnosticoTracking('Serviço nativo iniciado. Procure a notificação "Rastreando downwind".');
         } else {
           // Falhou: libera o ref para permitir nova tentativa (ex.: revalidação
           // periódica trazendo o mesmo estado de novo) em vez de travar
           // silenciosamente "tentando" para sempre.
           trackingLigadoRef.current = false;
           setStatusTrackingNativo(resultado.permissaoNegada ? 'permissao_negada' : 'inativo');
+          setDiagnosticoTracking(
+            resultado.permissaoNegada
+              ? 'Permissão de localização negada — o serviço nativo não pode iniciar.'
+              : `Falha ao iniciar o serviço nativo: ${resultado.error ?? 'motivo desconhecido'}`
+          );
         }
       });
     } else if (!deveRastrear && trackingLigadoRef.current) {
       trackingLigadoRef.current = false;
       pararTrackingNativo();
       setStatusTrackingNativo('inativo');
+      setDiagnosticoTracking('Rastreio nativo encerrado (travessia terminou ou você saiu).');
+    } else if (!deveRastrear) {
+      // Diz QUAL condição barrou. Sem isso, "não rastreia" é indistinguível de
+      // "não deveria rastrear ainda", e o relato vira adivinhação.
+      const motivo = !isAuthenticated
+        ? 'sem sessão iniciada'
+        : statusDw !== 'em_andamento'
+          ? `downwind está "${statusDw ?? 'nenhum'}", não "em_andamento"`
+          : papel !== 'velejador'
+            ? `seu papel é "${papel}", e só velejador rastreia`
+            : `sua participação está "${estadoParticipante}", precisa ser "confirmado" ou "navegando"`;
+      setDiagnosticoTracking(`Rastreio nativo não deve ligar agora: ${motivo}.`);
     }
   }, [
     isAuthenticated,
@@ -437,6 +485,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ultimaPosicaoEm: beacon.ultimaPosicaoEm,
         telaTravadaLigada: wakeLock.ativo,
         statusTrackingNativo,
+        diagnosticoTracking,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,

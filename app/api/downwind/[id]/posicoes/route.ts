@@ -255,11 +255,32 @@ export async function POST(request: Request, ctx: Params) {
     // registradoEm: timestamp opcional para o app nativo (foreground service)
     const registradoEm = validarRegistroEm((body as Record<string, unknown>)?.registradoEm);
 
-    const inserted = await sql`
-      INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
-      VALUES (${id}, ${usuario.id}, ${lat}, ${lng}, ${accuracyM}, ${registradoEm ?? sql`DEFAULT`})
-      RETURNING registrado_em
-    `;
+    /*
+     * Duas queries, e não uma com `${registradoEm ?? sql`DEFAULT`}`.
+     *
+     * O driver HTTP do Neon NÃO compõe fragmentos: um `sql\`DEFAULT\``
+     * aninhado não vira SQL, vira VALOR de parâmetro — a query saía com
+     * `values: [..., {queryData:{strings:['DEFAULT'],values:[]}}]` e o
+     * Postgres respondia "Invalid input for date type". Ou seja: TODO POST
+     * sem `registradoEm` (isto é, todo envio do beacon web) devolvia 500 e
+     * NENHUMA posição era gravada — enquanto o app nativo, que sempre manda
+     * o campo, passava pelo outro ramo e funcionava. Um bug que só aparecia
+     * de um dos dois lados.
+     *
+     * Omitir a coluna deixa o DEFAULT NOW() da tabela agir (lib/schema.sql),
+     * que é exatamente o comportamento pretendido.
+     */
+    const inserted = registradoEm
+      ? await sql`
+          INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
+          VALUES (${id}, ${usuario.id}, ${lat}, ${lng}, ${accuracyM}, ${registradoEm.toISOString()})
+          RETURNING registrado_em
+        `
+      : await sql`
+          INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m)
+          VALUES (${id}, ${usuario.id}, ${lat}, ${lng}, ${accuracyM})
+          RETURNING registrado_em
+        `;
 
     // Resolve silêncio ativo se houver (aposição foi recebida, o velejador voltou a reportar)
     // Fire-and-forget: não bloqueia a resposta se falhar
