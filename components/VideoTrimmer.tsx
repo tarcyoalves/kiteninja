@@ -144,19 +144,14 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
     }
   }, [valorInicial, duracaoVideo, minSeg, maxSeg]);
 
-  // Carrega metadados do vídeo e gera filmstrip
-  const handleLoadedMetadata = useCallback(() => {
-    if (!videoRef.current) return;
-    const duracao = videoRef.current.duration;
-    if (duracao && isFinite(duracao)) {
-      setDuracaoVideo(duracao);
-      setTrecho((atual) => validarValorInicial(atual.fimSeg > 0 ? atual : valorInicial, duracao, minSeg, maxSeg));
-      gerarMiniaturas(duracao);
-    }
-  }, [valorInicial, minSeg, maxSeg]);
-
-  // Gera 8 miniaturas ao longo do vídeo para o filmstrip
-  const gerarMiniaturas = async (duracao: number) => {
+  /*
+   * Declarada ANTES de handleLoadedMetadata e memoizada de propósito.
+   * Antes era um arrow comum declarado depois, recriado a cada render e
+   * chamado de dentro de um useCallback que não a listava como
+   * dependência — clássico stale closure, que o react-hooks/immutability
+   * do React 19 pega. Só `src` a afeta.
+   */
+  const gerarMiniaturas = useCallback(async (duracao: number) => {
     setCarregandoMiniaturas(true);
     const canvas = document.createElement('canvas');
     canvas.width = 120;
@@ -198,7 +193,19 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
 
     setMiniaturas(thumbs.length > 0 ? thumbs : []);
     setCarregandoMiniaturas(false);
-  };
+  }, [src]);
+
+  // Carrega metadados do vídeo e gera filmstrip
+  const handleLoadedMetadata = useCallback(() => {
+    if (!videoRef.current) return;
+    const duracao = videoRef.current.duration;
+    if (duracao && isFinite(duracao)) {
+      setDuracaoVideo(duracao);
+      setTrecho((atual) => validarValorInicial(atual.fimSeg > 0 ? atual : valorInicial, duracao, minSeg, maxSeg));
+      gerarMiniaturas(duracao);
+    }
+  }, [valorInicial, minSeg, maxSeg, gerarMiniaturas]);
+
 
   // Aplica novo trecho e notifica componente pai
   const atualizarTrecho = useCallback(

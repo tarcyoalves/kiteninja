@@ -7,7 +7,12 @@
  */
 
 /* eslint-disable no-restricted-globals */
-// @ts-nocheck — service worker global é `self`, não `window`
+// O global aqui é `self` (escopo de service worker), não `window`.
+//
+// Este arquivo não leva diretiva de supressão do TypeScript: o `include` do
+// tsconfig.json cobre só .ts/.tsx, então ele nunca passa pelo compilador. A
+// diretiva que existia aqui era inócua, e a regra ban-ts-comment reclamava
+// dela com razão — foi removida em vez de silenciada.
 
 self.addEventListener('push', function onPush(event) {
   if (!event.data) return;

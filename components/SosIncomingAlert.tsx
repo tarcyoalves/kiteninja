@@ -170,7 +170,7 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
           {/* Mensagem do pedinte */}
           {sos.message && (
             <div className="py-2 px-3 rounded-xl bg-slate-800/40 border border-slate-700/50">
-              <p className="text-xs text-slate-300 italic">"{sos.message}"</p>
+              <p className="text-xs text-slate-300 italic">&ldquo;{sos.message}&rdquo;</p>
             </div>
           )}
 

@@ -1164,7 +1164,7 @@ const DmInboxPanel: React.FC<DmInboxPanelProps> = ({
           </div>
           <p className="mt-3 font-black text-slate-100 text-sm">Nenhuma conversa direta ainda</p>
           <p className="mt-1.5 text-xs text-slate-400 leading-relaxed max-w-xs mx-auto">
-            Mande um "Acenar 🤙" para alguém na aba Online para começar uma conversa privada.
+            Mande um &ldquo;Acenar 🤙&rdquo; para alguém na aba Online para começar uma conversa privada.
           </p>
         </div>
       )}

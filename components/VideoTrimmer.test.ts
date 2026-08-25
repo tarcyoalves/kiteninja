@@ -11,6 +11,7 @@ import {
   clampTrecho,
   validarValorInicial,
 } from './VideoTrimmer';
+import type { TrechoVideo } from './VideoTrimmer';
 
 describe('posicaoParaSegundo', () => {
   it('converte posição 0 para 0 segundos', () => {
@@ -184,7 +185,10 @@ describe('validarValorInicial', () => {
   });
 
   it('retorna padrão quando null', () => {
-    const resultado = validarValorInicial(null as any, duracaoVideo, minSeg, maxSeg);
+    // Cast explícito em vez de `any`: o teste existe justamente para provar
+    // que a função aguenta entrada que o TIPO diz ser impossível — quem
+    // chama de JS puro (ou de uma resposta de API) pode mandar null.
+    const resultado = validarValorInicial(null as unknown as TrechoVideo, duracaoVideo, minSeg, maxSeg);
     expect(resultado).toEqual({ inicioSeg: 0, fimSeg: 1.5 });
   });
 
@@ -208,7 +212,7 @@ describe('validarValorInicial', () => {
   });
 
   it('corrige valor inicial com undefined', () => {
-    const entrada = { inicioSeg: undefined as any, fimSeg: 10 };
+    const entrada = { inicioSeg: undefined, fimSeg: 10 } as unknown as TrechoVideo;
     const resultado = validarValorInicial(entrada, duracaoVideo, minSeg, maxSeg);
     expect(resultado).toEqual({ inicioSeg: 0, fimSeg: 1.5 });
   });

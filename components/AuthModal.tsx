@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { X, LogIn, Compass } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -66,12 +67,14 @@ export const AuthModal: React.FC = () => {
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block font-bold text-slate-300">Senha</label>
-              <a
+              {/* next/link e não <a>: navegação client-side não recarrega o
+                  app inteiro nem perde o estado do modal. */}
+              <Link
                 href="/recuperar-senha"
                 className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
               >
                 Esqueceu a senha?
-              </a>
+              </Link>
             </div>
             <input
               type="password"

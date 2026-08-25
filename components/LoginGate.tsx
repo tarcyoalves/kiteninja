@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import Link from 'next/link';
 import React, { useState } from 'react';
 import { Lock, LogIn, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -86,12 +87,13 @@ export const LoginGate: React.FC = () => {
               <label htmlFor="gate-senha" className="block text-xs font-bold text-slate-300">
                 Senha
               </label>
-              <a
+              {/* next/link e não <a>: ver o mesmo caso em AuthModal.tsx. */}
+              <Link
                 href="/recuperar-senha"
                 className="text-xs font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
               >
                 Esqueceu a senha?
-              </a>
+              </Link>
             </div>
             <div className="relative">
               <Lock

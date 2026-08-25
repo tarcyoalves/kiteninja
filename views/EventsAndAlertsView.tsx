@@ -330,7 +330,9 @@ export const EventsAndAlertsView: React.FC = () => {
                     <label className="block text-slate-300 font-bold mb-1">Gravidade</label>
                     <select
                       value={alertSeverity}
-                      onChange={e => setAlertSeverity(e.target.value as any)}
+                      onChange={e =>
+                        setAlertSeverity(e.target.value as 'alerta' | 'perigo' | 'informativo')
+                      }
                       className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-white font-black"
                     >
                       <option value="alerta">Alerta ⚠️</option>
