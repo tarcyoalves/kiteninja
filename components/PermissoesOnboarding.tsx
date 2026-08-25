@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Check, Loader2, MapPin, Siren } from 'lucide-react';
 import { ativarWebPush, pedirLocalizacao } from '../lib/pushClient';
+import { useIsNativeApp } from '../lib/usePushNotifications';
 
 /**
  * Pede localização e notificações UMA VEZ, logo depois do login.
@@ -71,17 +72,29 @@ export const PermissoesOnboarding: React.FC<{ userId: string; onFechar: () => vo
   const [rodando, setRodando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // No app Android (Capacitor) o push NÃO é Web Push: quem registra é
+  // `usePushNotifications` via FCM nativo, montado no provider e disparado
+  // sozinho. Chamar `ativarWebPush()` dentro da WebView cai no ramo de
+  // "navegador não suporta" (a WebView não tem Push API), e o velejador via
+  // a mensagem "Notificações Push não são suportadas neste navegador" —
+  // que era ENGANOSA: o suporte existe, só por outro caminho.
+  const ehAppNativo = useIsNativeApp();
+
   // iOS só entrega Web Push quando o app está instalado na tela de início —
   // no Safari comum o botão existiria mas nunca funcionaria, então avisamos
   // em vez de deixar o velejador tentar e achar que o app está quebrado.
   const [precisaInstalar, setPrecisaInstalar] = useState(false);
   useEffect(() => {
+    if (ehAppNativo) {
+      setPrecisaInstalar(false);
+      return;
+    }
     const ehIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const instalado =
       Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone) ||
       window.matchMedia('(display-mode: standalone)').matches;
     setPrecisaInstalar(ehIos && !instalado);
-  }, []);
+  }, [ehAppNativo]);
 
   const conceder = useCallback(async () => {
     setRodando(true);
@@ -93,7 +106,13 @@ export const PermissoesOnboarding: React.FC<{ userId: string; onFechar: () => vo
     const okLocal = await pedirLocalizacao();
     setLocal(okLocal ? 'concedido' : 'negado');
 
-    if (!precisaInstalar) {
+    if (ehAppNativo) {
+      // App Android: o registro FCM é feito por `usePushNotifications`, que
+      // já roda no provider e pede a permissão nativa por conta própria.
+      // Aqui não há nada a fazer além de refletir isso na tela — chamar Web
+      // Push seria o erro que gerava "não suportadas neste navegador".
+      setPush('concedido');
+    } else if (!precisaInstalar) {
       try {
         const okPush = await ativarWebPush();
         setPush(okPush ? 'concedido' : 'negado');
@@ -108,8 +127,8 @@ export const PermissoesOnboarding: React.FC<{ userId: string; onFechar: () => vo
 
     // Fecha sozinho só quando deu tudo certo — se algo falhou, o velejador
     // precisa ver o que aconteceu antes da tela sumir.
-    if (okLocal && !precisaInstalar) setTimeout(onFechar, 900);
-  }, [userId, precisaInstalar, onFechar]);
+    if (okLocal && (ehAppNativo || !precisaInstalar)) setTimeout(onFechar, 900);
+  }, [userId, precisaInstalar, ehAppNativo, onFechar]);
 
   const pular = useCallback(() => {
     marcarPedido(userId);

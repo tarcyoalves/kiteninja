@@ -31,6 +31,7 @@ import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
 import { urlBase64ToUint8Array } from '../lib/pushClient';
+import { useIsNativeApp } from '../lib/usePushNotifications';
 import { BotoesEmergencia } from './BotoesEmergencia';
 
 export const SidebarDrawer: React.FC = () => {
@@ -79,6 +80,8 @@ export const SidebarDrawer: React.FC = () => {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushErro, setPushErro] = useState<string | null>(null);
+  // App Android usa FCM nativo, nao Web Push - ver handleTogglePush abaixo.
+  const ehAppNativo = useIsNativeApp();
 
   const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const isStandalone =
@@ -94,10 +97,19 @@ export const SidebarDrawer: React.FC = () => {
   }, [user]);
 
   useEffect(() => {
+    // No app nativo a Push API do navegador não existe na WebView, mas o push
+    // FUNCIONA (via FCM, registrado por usePushNotifications no provider).
+    // Sem este ramo o botão diria "Ativar Notificações" para sempre, mesmo
+    // com o push já ativo — checar `Notification.permission` ali é a
+    // pergunta errada para o Android.
+    if (ehAppNativo) {
+      setPushEnabled(true);
+      return;
+    }
     if (typeof window !== 'undefined' && 'Notification' in window) {
       setPushEnabled(Notification.permission === 'granted');
     }
-  }, []);
+  }, [ehAppNativo]);
 
   const handleSaveContact = async () => {
     setSavingContact(true);
@@ -116,6 +128,18 @@ export const SidebarDrawer: React.FC = () => {
   };
 
   const handleTogglePush = async () => {
+    // No app Android (Capacitor) o push é FCM nativo, registrado por
+    // `usePushNotifications` no provider — não Web Push. Sem esta guarda, a
+    // WebView caía no ramo abaixo (não tem Push API) e mostrava
+    // "Notificações Push não são suportadas neste navegador", mensagem
+    // enganosa: o suporte existe, só por outro caminho.
+    if (ehAppNativo) {
+      setPushErro(
+        'No app Android as notificações são gerenciadas pelo sistema. Se estiverem desligadas, ative em Ajustes do Android → Apps → KiteNinja → Notificações.'
+      );
+      return;
+    }
+
     if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
       alert('Notificações Push não são suportadas neste navegador.');
       return;
@@ -724,7 +748,7 @@ export const SidebarDrawer: React.FC = () => {
                 )}
 
                 {/* Instrução especial para iPhone / iOS Safari */}
-                {isIos && !isStandalone && (
+                {!ehAppNativo && isIos && !isStandalone && (
                   <p className="text-[10px] text-amber-300/90 leading-tight bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
                     📱 <strong>No iPhone:</strong> para receber push de socorro, instale o app tocando em <strong>Compartilhar ➔ Adicionar à Tela de Início</strong>.
                   </p>
