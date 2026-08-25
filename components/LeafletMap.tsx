@@ -10,6 +10,10 @@ import { Spot } from '@/types';
 import { getWindColorClass } from '@/lib/windUtils';
 import { nearestSpot, LatLng } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
+// ANT-005: `users.name` é campo livre e entra CRU em `L.divIcon({ html })`,
+// que o Leaflet injeta via innerHTML. DownwindMapa.tsx já escapava; estes
+// dois ícones de SOS/socorrista tinham ficado de fora.
+import { escaparHtml } from '@/lib/htmlEscape';
 import { WindParticleLayer } from './WindParticleLayer';
 import { Wind, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
@@ -181,7 +185,7 @@ function createSosMarkerIcon(reduceMotion: boolean, authorName?: string): L.DivI
       <div class="absolute w-8 h-8 rounded-full bg-rose-500/50 ${pulseClass}"></div>
       <div class="relative px-2.5 py-1 rounded-full bg-rose-600 border-2 border-white shadow-2xl shadow-rose-600/80 flex items-center gap-1 text-white font-black text-[11px] whitespace-nowrap">
         <span>🆘</span>
-        <span>SOS${authorName ? ` • ${authorName}` : ''}</span>
+        <span>SOS${authorName ? ` • ${escaparHtml(authorName)}` : ''}</span>
       </div>
     </div>
   `;
@@ -200,7 +204,7 @@ function createResponderMarkerIcon(name?: string): L.DivIcon {
     <div class="relative flex items-center justify-center">
       <div class="relative px-2 py-0.5 rounded-full bg-emerald-600 border border-white shadow-lg flex items-center gap-1 text-white font-bold text-[10px] whitespace-nowrap">
         <span>🏄</span>
-        <span>${name || 'A caminho'}</span>
+        <span>${name ? escaparHtml(name) : 'A caminho'}</span>
       </div>
     </div>
   `;
@@ -329,11 +333,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [mapStyle, setMapStyle] = useState<MapStyle>('satelite');
 
   // Detectar preferência de movimento reduzido para desativar animações
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduceMotion(mq.matches);
 
     const listener = (e: MediaQueryListEvent) => setReduceMotion(e.matches);
     mq.addEventListener('change', listener);

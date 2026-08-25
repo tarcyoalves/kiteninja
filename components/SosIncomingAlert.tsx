@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MapPin, Navigation, X, AlertTriangle, Wind } from 'lucide-react';
+import { MapPin, Navigation, X, AlertTriangle, Wind, ShieldAlert } from 'lucide-react';
 import { BotoesEmergencia } from './BotoesEmergencia';
 
 /**
@@ -25,7 +25,7 @@ interface IncomingSos {
   createdAt: string;
   temCoordenada: boolean;
   /** Por que VOCÊ foi chamado — ver lib/sosCandidates.ts. */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 }
 
 interface SosIncomingAlertProps {
@@ -107,6 +107,22 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
                 {sos.motivo === 'downwind_apoio'
                   ? 'Downwind que você apoia'
                   : 'Do SEU downwind'}
+              </span>
+            </div>
+          )}
+          {sos.motivo === 'moderador' && (
+            <div className="mt-2 inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-amber-500/20 border border-amber-400/40">
+              <ShieldAlert size={12} className="text-amber-200" aria-hidden="true" />
+              <span className="text-[11px] font-black text-amber-100">
+                Você é moderador
+              </span>
+            </div>
+          )}
+          {sos.motivo === 'spot_fallback' && (
+            <div className="mt-2 inline-flex items-center gap-1.5 py-1 px-2.5 rounded-full bg-purple-500/20 border border-purple-400/40">
+              <MapPin size={12} className="text-purple-200" aria-hidden="true" />
+              <span className="text-[11px] font-black text-purple-100">
+                Mesmo spot/região
               </span>
             </div>
           )}

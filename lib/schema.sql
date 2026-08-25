@@ -700,6 +700,28 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id);
 
+-- Push nativo (FCM) — canal separado de push_subscriptions (Web Push/VAPID).
+-- O app Android (Capacitor + @capacitor/push-notifications) registra aqui o
+-- token obtido do Firebase; lib/push.ts (sendFcmToUser) lê esta tabela para
+-- enviar via FCM Admin SDK. UNIQUE em `token`, não em (user_id, token): o
+-- mesmo token nunca deveria pertencer a dois usuários (reinstall/troca de
+-- conta no mesmo aparelho reatribui via UPSERT em app/api/push/fcm/route.ts).
+CREATE TABLE IF NOT EXISTS fcm_tokens (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token         TEXT NOT NULL UNIQUE,
+  device_name   TEXT,
+  platform      TEXT NOT NULL DEFAULT 'android',
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at  TIMESTAMPTZ,
+  -- Mesmo padrão de push_subscriptions.failure_count: token que falha
+  -- repetidamente (NotFound/Unregistered) é removido em vez de retentado
+  -- para sempre — ver o loop de sendFcmToUser em lib/push.ts.
+  failure_count INT NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_fcm_tokens_user ON fcm_tokens (user_id);
+
 -- ----------------------------------------------------------------- downwind
 -- Downwind: navegação em grupo de um ponto A a um ponto B ao longo da costa,
 -- com apoio em terra acompanhando pelo carro. É atividade de risco: a razão
@@ -876,6 +898,40 @@ CREATE INDEX IF NOT EXISTS idx_downwind_convites_open
   ON downwind_convites (downwind_id, expira_em)
   WHERE revogado_em IS NULL;
 
+-- Token de rastreio para o Foreground Service Android (rastreio com o app
+-- fechado — ver docs/PLANO-RASTREIO-BACKGROUND-ANDROID.md). O app é
+-- publicado como TWA: o serviço nativo não tem acesso ao cookie httpOnly de
+-- sessão (fica no Chrome, não numa WebView do app), então precisa de um
+-- credencial próprio para chamar POST /api/downwind/{id}/posicoes.
+--
+-- Escopo estreito de propósito: o token só autoriza reportar posição NAQUELE
+-- downwind (ver lib/trackingToken.ts) — não dá acesso à conta, não envia SOS,
+-- não lê mensagens. Se vazar, o estrago possível é alguém reportar posição
+-- falsa numa travessia, nada mais.
+--
+-- token_hash guarda só o SHA-256, mesmo padrão de invites/auth_sessions/
+-- downwind_convites: o token em claro nunca é gravado, só entregue uma vez
+-- (por FCM) na emissão.
+CREATE TABLE IF NOT EXISTS downwind_tracking_tokens (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  token_hash   TEXT NOT NULL UNIQUE,
+  downwind_id  UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  revoked_at   TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- A validação (lib/trackingToken.ts, validarTokenRastreio) sempre busca por
+-- token_hash primeiro (índice UNIQUE já cobre) e então filtra
+-- expires_at/revoked_at/downwind_id na mesma linha — não precisa de índice
+-- adicional para isso. Este índice serve à revogação em massa ao encerrar um
+-- downwind (revogarTodosTokensDoDownwind): "todos os tokens ainda ativos
+-- deste downwind".
+CREATE INDEX IF NOT EXISTS idx_downwind_tracking_tokens_downwind
+  ON downwind_tracking_tokens (downwind_id)
+  WHERE revoked_at IS NULL;
+
 -- Marca uma conta como CONVIDADA de um downwind específico — o link de 12h
 -- para apoio em terra sem conta (ver downwind_convites acima). NULL para
 -- toda conta normal, que é a esmagadora maioria das linhas desta tabela.
@@ -970,9 +1026,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_downwinds_event
 --
 -- DEFAULT 'proximidade' mantém compatível toda linha já existente: antes desta
 -- mudança, todo notificado vinha por proximidade.
+-- Motivos adicionados: 'moderador' (fallback para SOS sem GPS), 'spot_fallback'
+-- (mesmo spot/estado do autor).
 ALTER TABLE sos_responders
-  ADD COLUMN IF NOT EXISTS motivo TEXT NOT NULL DEFAULT 'proximidade'
-    CHECK (motivo IN ('proximidade', 'downwind', 'downwind_apoio'));
+  ADD COLUMN IF NOT EXISTS motivo TEXT NOT NULL DEFAULT 'proximidade';
+
+-- Atualiza o CHECK para permitir os novos motivos (idempotente).
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'sos_responders_motivo_check'
+      AND contype = 'c'
+  ) THEN
+    ALTER TABLE sos_responders
+      DROP CONSTRAINT sos_responders_motivo_check;
+  END IF;
+  ALTER TABLE sos_responders
+    ADD CONSTRAINT sos_responders_motivo_check
+      CHECK (motivo IN ('proximidade', 'downwind', 'downwind_apoio', 'moderador', 'spot_fallback'));
+END $$;
 
 -- ------------------------------------------------------- central de chamados
 -- Bug/melhoria reportado por qualquer usuário logado, revisado pelo dono
@@ -997,3 +1070,33 @@ CREATE TABLE IF NOT EXISTS chamados (
 );
 CREATE INDEX IF NOT EXISTS idx_chamados_status ON chamados (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_chamados_user ON chamados (user_id, created_at DESC);
+
+-- ---------------------------------------------------------------------------
+-- Downwind: alerta de silêncio no servidor
+-- ---------------------------------------------------------------------------
+-- Quando um velejador para de reportar posição num downwind em andamento,
+-- o servidor detecta e notifica organizadores e apoio em terra.
+--
+-- A tabela registra cada silêncio detectado para garantir idempotência:
+-- não notifica repetidamente sobre o mesmo período de silêncio. Quando o
+-- velejador volta a reportar, o registro é marcado como resolvido.
+CREATE TABLE IF NOT EXISTS downwind_silencio_alertas (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  downwind_id     UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  user_id         UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Timestamp aproximado de quando o silêncio começou (última posição válida + limite)
+  silencio_desde  TIMESTAMPTZ NOT NULL,
+  -- Quando o velejador voltou a reportar (NULL = ainda em silêncio)
+  resolvido_em    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Um participante só pode ter um silêncio ativo por downwind (não duplicar alertas)
+CREATE UNIQUE INDEX IF NOT EXISTS ux_downwind_silencio_ativo
+  ON downwind_silencio_alertas (downwind_id, user_id)
+  WHERE resolvido_em IS NULL;
+
+-- Índices para limpeza de alertas antigos
+CREATE INDEX IF NOT EXISTS idx_downwind_silencio_resolvidos
+  ON downwind_silencio_alertas (resolvido_em)
+  WHERE resolvido_em IS NOT NULL;

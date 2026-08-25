@@ -5,6 +5,7 @@ import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit,
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
+import { usePushNotifications } from '../lib/usePushNotifications';
 import { PrefillLogbook } from '../lib/trilhaSessao';
 
 /**
@@ -54,6 +55,17 @@ interface KiteDataContextType {
   events: KiteEvent[];
   toggleEventRegistration: (eventId: string) => void;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Recarrega eventos/downwinds e alertas de segurança do servidor.
+   *
+   * Exposto para pull-to-refresh manual em EventsAndAlertsView — o mesmo
+   * gesto usado no feed (lib/pullToRefresh.ts). Sem `setInterval`: o custo de
+   * poll constante já é o principal item apontado em
+   * docs/ANTIGRAVITY-AUDIT-2026.md, então a atualização concorrente fica a
+   * cargo do usuário (puxar) ou de voltar ao app (visibilitychange, já
+   * coberto por loadFeedAndEvents).
+   */
+  refreshEventsAndAlerts: () => Promise<void>;
   createDownwind: (data: {
     title: string;
     location: string;
@@ -208,7 +220,7 @@ export interface SosResponderData {
    * 'downwind'/'downwind_apoio' podem estar longe e ainda assim ser o socorro
    * mais rápido, então a UI precisa distinguir de um vizinho qualquer.
    */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
   lat: number | null;
   lng: number | null;
 }
@@ -230,7 +242,7 @@ export interface SosAlertData {
   temCoordenada: boolean;
   distanceKm: number | null;
   /** Por que ESTE usuário foi chamado para este SOS (undefined se é o autor). */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 }
 
 const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined);
@@ -261,6 +273,12 @@ function saveLocalFavorites(ids: string[]) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
+    // `no-store` no cliente além do header no servidor (lib/api.ts): são duas
+    // camadas de cache diferentes, e o app precisa das duas. Os watchers de
+    // chat e DM já passavam isso na mão — sinal de que alguém topou com cache
+    // velho antes e resolveu no ponto em vez de na base. Aqui vale para TODAS
+    // as chamadas de uma vez. Ver docs/BUG-SINCRONIZACAO-DADOS.md.
+    cache: 'no-store',
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
@@ -630,6 +648,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  /** Quando feed/eventos/alertas foram carregados pela última vez. */
+  const ultimoLoadFeedRef = useRef(0);
+
   const loadFeedAndEvents = useCallback(async () => {
     const [postsR, eventsR, alertsR] = await Promise.allSettled([
       api<{ posts: CommunityPost[] }>('/api/posts'),
@@ -639,6 +660,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (postsR.status === 'fulfilled') setPosts(postsR.value.posts);
     if (eventsR.status === 'fulfilled') setEvents(eventsR.value.events);
     if (alertsR.status === 'fulfilled') setSafetyAlerts(alertsR.value.alerts);
+    ultimoLoadFeedRef.current = Date.now();
   }, []);
 
   const loadSessions = useCallback(async () => {
@@ -670,6 +692,56 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     loadFeedAndEvents();
     loadSessions();
+  }, [isAuthenticated, loadFeedAndEvents, loadSessions]);
+
+  /*
+   * Revalida feed/eventos/alertas quando o app volta ao primeiro plano.
+   *
+   * O BUG QUE ISTO CORRIGE: até aqui, `loadFeedAndEvents` só rodava (a) ao
+   * logar/montar e (b) logo depois de uma ação do PRÓPRIO usuário. Não havia
+   * NADA que reagisse a mudança feita por OUTRA pessoa — nem poll, nem
+   * revalidação ao retomar o app. Quem estivesse com o app aberto ficava
+   * congelado no snapshot de quando carregou, indefinidamente.
+   *
+   * Sintoma relatado: o dono apagou dois downwinds e criou um novo; o outro
+   * usuário continuou vendo só os dois antigos. Não era "versão diferente do
+   * app" — era o mesmo app com estado velho em memória, sem nada para
+   * invalidá-lo.
+   *
+   * Por que atinge MAIS o app nativo que a PWA: no Android o processo do app
+   * fica vivo em memória por dias entre um uso e outro, então o estado velho
+   * sobrevive muito mais tempo. Na aba do navegador é mais comum recarregar a
+   * página em algum momento e "consertar" sozinho por acidente.
+   *
+   * Retomada em vez de poll de propósito: o `visibilitychange` cobre o caso
+   * real (abrir o app e ver o que mudou) sem somar requisição de fundo a cada
+   * X segundos — este projeto já paga polling de chat, SOS e downwind, e
+   * `docs/ANTIGRAVITY-AUDIT-2026.md` aponta compute do Neon como principal
+   * custo. A janela mínima evita rajada quando o usuário alterna de app
+   * várias vezes seguidas.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const IDADE_MINIMA_MS = 30_000;
+
+    const revalidarSeVelho = () => {
+      if (document.hidden) return;
+      if (Date.now() - ultimoLoadFeedRef.current < IDADE_MINIMA_MS) return;
+      loadFeedAndEvents();
+      loadSessions();
+    };
+
+    document.addEventListener('visibilitychange', revalidarSeVelho);
+    // `focus` cobre o caso em que a aba já estava visível mas o sistema
+    // devolveu o foco ao app (alt-tab no desktop, split-screen no Android),
+    // quando `visibilitychange` não chega a disparar.
+    window.addEventListener('focus', revalidarSeVelho);
+
+    return () => {
+      document.removeEventListener('visibilitychange', revalidarSeVelho);
+      window.removeEventListener('focus', revalidarSeVelho);
+    };
   }, [isAuthenticated, loadFeedAndEvents, loadSessions]);
 
   const toggleFavorite = (spotId: string) => {
@@ -965,6 +1037,38 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // de outro velejador encontrar quem está por perto para socorrer.
   usePositionBeacon(isAuthenticated);
 
+  // Deep link de uma notificação nativa tocada com o app em background/
+  // fechado. O payload usa o mesmo formato de URL do Web Push (ver
+  // app/api/sos/route.ts e app/api/chat/messages/route.ts): "/?tab=mapa&sos=ID"
+  // ou "/?tab=chat". Não navegamos por window.location — isto é SPA — só lemos
+  // a querystring e aplicamos na aba/estado já existentes no contexto.
+  const handlePushOpenUrl = useCallback(
+    (url: string) => {
+      try {
+        const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const params = new URLSearchParams(query);
+        const tab = params.get('tab');
+        if (tab === 'mapa' || tab === 'chat' || tab === 'favoritos' || tab === 'destaques' ||
+            tab === 'sessoes' || tab === 'alertas' || tab === 'anuncios' || tab === 'perfil' ||
+            tab === 'mais') {
+          setActiveTab(tab as ActiveTab);
+        }
+        // SOS específico: garante que o alerta mais recente esteja carregado
+        // antes de o velejador cair na aba Mapa a partir da notificação.
+        if (params.get('sos')) {
+          fetchActiveSos();
+        }
+      } catch {
+        // URL malformada não deve travar o app — apenas ignora a navegação.
+      }
+    },
+    [fetchActiveSos]
+  );
+
+  // Registra push nativo (Android/FCM) só depois do login, mesmo motivo do
+  // usePositionBeacon acima: sem isto, /api/push/fcm responderia 401.
+  usePushNotifications(isAuthenticated, handlePushOpenUrl);
+
   const refreshWindData = () => {
     setIsRefreshing(true);
     loadSpots(true).finally(() => setIsRefreshing(false));
@@ -997,6 +1101,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         events,
         toggleEventRegistration,
         deleteEvent,
+        refreshEventsAndAlerts: loadFeedAndEvents,
         createDownwind,
         windUnit,
         setWindUnit,

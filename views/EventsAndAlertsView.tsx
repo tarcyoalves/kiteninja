@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useDownwind } from '../context/DownwindContext';
@@ -22,18 +22,76 @@ import {
   X,
   Loader2,
   Trash2,
+  RefreshCw,
 } from 'lucide-react';
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
+import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
 
 export const EventsAndAlertsView: React.FC = () => {
-  const { safetyAlerts, addSafetyAlert, events, toggleEventRegistration, deleteEvent, spots, beachMode, createDownwind, setActiveTab } =
-    useKiteData();
+  const {
+    safetyAlerts,
+    addSafetyAlert,
+    events,
+    toggleEventRegistration,
+    deleteEvent,
+    spots,
+    beachMode,
+    createDownwind,
+    setActiveTab,
+    refreshEventsAndAlerts,
+  } = useKiteData();
   const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
   const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
+
+  /**
+   * Pull-to-refresh (ANT-003): eventos/downwind e alertas mudam por ação de
+   * OUTRA pessoa (alguém criou um downwind, apagou um evento, reportou um
+   * alerta) e esta tela não tinha nenhum jeito de revalidar sem trocar de aba
+   * e voltar. Mesmo gesto e mesmo helper puro do feed (lib/pullToRefresh.ts) —
+   * ver justificativa de não usar polling em KiteDataContext.tsx,
+   * refreshEventsAndAlerts.
+   */
+  const [puxando, setPuxando] = useState(false);
+  const [progressoPullVisual, setProgressoPullVisual] = useState(0);
+  const [atualizandoManual, setAtualizandoManual] = useState(false);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const toqueInicialRef = useRef<{ y: number; scrollTopNoInicio: number } | null>(null);
+
+  const aoTocar = useCallback((e: React.TouchEvent) => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    toqueInicialRef.current = { y: e.touches[0].clientY, scrollTopNoInicio: scroller.scrollTop };
+  }, []);
+
+  const aoMoverToque = useCallback((e: React.TouchEvent) => {
+    const inicio = toqueInicialRef.current;
+    if (!inicio) return;
+    const delta = e.touches[0].clientY - inicio.y;
+    if (inicio.scrollTopNoInicio <= 0 && delta > 0) {
+      setPuxando(true);
+      setProgressoPullVisual(progressoPull(delta));
+    }
+  }, []);
+
+  const aoSoltarToque = useCallback(
+    (e: React.TouchEvent) => {
+      const inicio = toqueInicialRef.current;
+      toqueInicialRef.current = null;
+      setPuxando(false);
+      setProgressoPullVisual(0);
+      if (!inicio) return;
+      const delta = e.changedTouches[0].clientY - inicio.y;
+      if (devePuxarAtualizar(inicio.scrollTopNoInicio, delta)) {
+        setAtualizandoManual(true);
+        refreshEventsAndAlerts().finally(() => setAtualizandoManual(false));
+      }
+    },
+    [refreshEventsAndAlerts]
+  );
 
   const handleApagarEvento = async (eventId: string, titulo: string) => {
     if (!confirm(`Apagar "${titulo}"? Esta ação não pode ser desfeita.`)) return;
@@ -153,7 +211,27 @@ export const EventsAndAlertsView: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col min-h-full pb-24 p-3 space-y-4 max-w-lg mx-auto w-full">
+    <div
+      ref={scrollerRef}
+      onTouchStart={aoTocar}
+      onTouchMove={aoMoverToque}
+      onTouchEnd={aoSoltarToque}
+      className="flex flex-col min-h-full pb-24 p-3 space-y-4 max-w-lg mx-auto w-full"
+    >
+      {/* Indicador de puxar-para-atualizar — mesmo padrão do feed (FeedView.tsx),
+          só ocupa espaço durante o gesto para não empurrar o layout no dia a dia. */}
+      {(puxando || atualizandoManual) && (
+        <div
+          className="flex items-center justify-center text-cyan-400 transition-opacity"
+          style={{ opacity: atualizandoManual ? 1 : progressoPullVisual }}
+        >
+          <RefreshCw
+            size={18}
+            className={progressoPullVisual >= 1 || atualizandoManual ? 'animate-spin' : ''}
+          />
+        </div>
+      )}
+
       {/* Top Toggle between Alertas de Segurança and Eventos */}
       <div className="grid grid-cols-2 gap-2 bg-[#0F172A] p-1.5 rounded-2xl border border-slate-700/80 text-xs font-black shadow-lg">
         <button

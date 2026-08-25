@@ -11,6 +11,7 @@ import {
 } from '@/lib/downwindAcesso';
 import { buscarParticipacao, ehUuid, listarParticipantes, resumirEPurgar } from '@/lib/downwindDb';
 import { podeEncerrarDownwind } from '@/lib/downwind';
+import { revogarTokensDoParticipante, revogarTodosTokensDoDownwind } from '@/lib/trackingToken';
 
 export const dynamic = 'force-dynamic';
 
@@ -165,6 +166,10 @@ export async function PATCH(request: Request, ctx: Params) {
     // ALGUÉM para fora da água (`novoEstado` é 'encerrado'/'desistiu'):
     // mudar só o apoio (`novoApoioUserId`) nunca deveria fechar o downwind.
     if (novoEstado === 'encerrado' || novoEstado === 'desistiu') {
+      // O serviço nativo desse participante não deve continuar autorizado nem
+      // por uma requisição extra depois que ele saiu da água.
+      await revogarTokensDoParticipante(id, alvoUserId);
+
       const [participantesAtuais, statusAtual] = await Promise.all([
         listarParticipantes(id),
         sql`SELECT status FROM downwinds WHERE id = ${id}`,
@@ -184,7 +189,10 @@ export async function PATCH(request: Request, ctx: Params) {
           WHERE id = ${id} AND status = 'em_andamento'
           RETURNING id
         `;
-        if (fechado.length > 0) await resumirEPurgar(id);
+        if (fechado.length > 0) {
+          await revogarTodosTokensDoDownwind(id);
+          await resumirEPurgar(id);
+        }
       }
     }
 

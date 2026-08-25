@@ -84,10 +84,10 @@ export const ChamadosModal: React.FC<ChamadosModalProps> = ({ aberto, onClose, t
     if (!aberto) return;
 
     let ativo = true;
-    setCarregando(true);
-    setErroLista(null);
 
     (async () => {
+      setCarregando(true);
+      setErroLista(null);
       try {
         const res = await fetch('/api/chamados', { cache: 'no-store' });
         const body = await res.json().catch(() => null);

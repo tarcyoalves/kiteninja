@@ -7,10 +7,28 @@ import { useEffect, useRef, useState } from 'react';
  *
  * Casca fina no mesmo espírito de lib/usePositionBeacon.ts, com duas
  * diferenças deliberadas: cadência de 45s (não 90s — é segurança de
- * travessia, não presença geral) e SÓ pausa com `document.hidden`, nunca por
- * qualquer outro motivo. Enquanto o velejador está navegando, o envio de
- * posição não pode parar por causa de UI (chat aberto, Modo Navegação
- * ativo) — só a aba/app sair de primeiro plano é motivo válido.
+ * travessia, não presença geral) e NUNCA pausa sozinho enquanto o downwind
+ * está em andamento.
+ *
+ * POR QUE NÃO PAUSA MAIS COM `document.hidden` (bug relatado no Android):
+ * este hook pausava quando o documento ficava oculto. Só que "oculto" é
+ * exatamente o estado normal de quem está velejando: o celular vai para o
+ * bolso do colete e a tela apaga. O rastreamento morria no instante em que
+ * passava a importar, e em terra a última posição congelava sem nenhum erro
+ * na tela — o pior tipo de falha num app de segurança.
+ *
+ * Pausar quando oculto nunca economizou nada de verdade: se o navegador
+ * decidir congelar a página em segundo plano, o `setInterval` simplesmente
+ * não dispara e nada é enviado de qualquer forma. O guard só garantia que,
+ * NAS janelas em que o sistema deixava a página rodar, a gente se recusasse
+ * a usá-las.
+ *
+ * LIMITE REAL, que nenhuma mudança neste arquivo resolve: com o app FECHADO
+ * (removido dos recentes) não existe JavaScript rodando — nem PWA, nem TWA.
+ * Rastreio com app fechado exige um Foreground Service nativo no Android.
+ * Ver docs/ANTIGRAVITY-FINDINGS.md (ANT-003) e docs/PLANO-APP-NATIVO.md.
+ * A defesa possível no lado web é manter a página VIVA enquanto o downwind
+ * corre — é o que o Wake Lock em context/DownwindContext.tsx faz.
  */
 
 const INTERVALO_MS = 45_000;
@@ -44,7 +62,9 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
     let cancelado = false;
 
     const enviar = async () => {
-      if (emVoo.current || document.hidden) return;
+      // Sem checar `document.hidden`: o celular no colete, com a tela
+      // apagada, é o cenário-alvo deste beacon — ver o cabeçalho.
+      if (emVoo.current) return;
       emVoo.current = true;
       try {
         const pos = await lerPosicaoAlta();
@@ -68,6 +88,9 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
     enviar();
     const id = setInterval(enviar, INTERVALO_MS);
 
+    // Voltar ao primeiro plano dispara um envio imediato: se o sistema
+    // congelou a página enquanto ela estava em segundo plano, este é o
+    // primeiro instante em que dá para recuperar o atraso.
     const onVisibility = () => {
       if (!document.hidden) enviar();
     };

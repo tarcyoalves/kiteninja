@@ -74,6 +74,7 @@ export const DownwindAoVivoView: React.FC = () => {
   const {
     downwindAtivo,
     ultimaPosicaoEm,
+    telaTravadaLigada,
     iniciarDownwind,
     encerrarMinhaParticipacao,
     encerrarDownwind,
@@ -438,6 +439,31 @@ export const DownwindAoVivoView: React.FC = () => {
           </button>
         )}
       </div>
+
+      {/*
+        Aviso honesto sobre o limite real do rastreamento. Enquanto o Wake
+        Lock estiver ativo a tela não apaga e a posição continua saindo com o
+        celular no colete; sem ele (navegador antigo, política do sistema,
+        economia de bateria agressiva) o aparelho vai apagar a tela sozinho e
+        o rastreamento pode parar. Em nenhum dos dois casos o app rastreia
+        com o app FECHADO — isso exige Foreground Service nativo
+        (docs/ANTIGRAVITY-FINDINGS.md, ANT-003). Dizer isso aqui é melhor do
+        que deixar quem está na água acreditar numa cobertura que não existe.
+      */}
+      {downwindAtivo.status === 'em_andamento' && (
+        <div
+          className={`mx-3 mb-3 p-3 rounded-2xl border text-[11px] leading-relaxed ${
+            telaTravadaLigada
+              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+              : 'bg-amber-500/10 border-amber-500/40 text-amber-200'
+          }`}
+          role="status"
+        >
+          {telaTravadaLigada
+            ? 'Rastreamento ativo: a tela fica ligada durante a travessia para continuar enviando sua posição com o celular no colete. Não feche o app — com o app fechado o envio para.'
+            : 'Atenção: não foi possível travar a tela ligada neste aparelho. Se a tela apagar, sua posição pode parar de ser enviada. Mantenha o app aberto e a tela acesa durante a travessia.'}
+        </div>
+      )}
 
       {chatAberto && (
         <DownwindChat downwindId={downwindAtivo.id} onFechar={() => setChatAberto(false)} />

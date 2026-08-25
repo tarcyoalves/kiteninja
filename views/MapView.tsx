@@ -96,19 +96,19 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
         watchIdRef.current = null;
       }
     };
-
-    // Limpar quando o componente desmonta
-    window.addEventListener('beforeunload', limparWatch);
-    document.addEventListener('visibilitychange', () => {
+    const limparWatchAoOcultar = () => {
       if (document.hidden) limparWatch();
-    });
+    };
+
+    // Reutiliza a mesma referência no add/removeEventListener; uma função
+    // anônima nova no cleanup não remove o listener registrado anteriormente.
+    window.addEventListener('beforeunload', limparWatch);
+    document.addEventListener('visibilitychange', limparWatchAoOcultar);
 
     return () => {
       limparWatch();
       window.removeEventListener('beforeunload', limparWatch);
-      document.removeEventListener('visibilitychange', () => {
-        if (document.hidden) limparWatch();
-      });
+      document.removeEventListener('visibilitychange', limparWatchAoOcultar);
     };
   }, []);
 

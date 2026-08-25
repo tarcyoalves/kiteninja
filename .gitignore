@@ -45,3 +45,31 @@ next-env.d.ts
 .vercel
 .env*
 .tmp-media/
+
+# Claude Code worktrees (agentes paralelos)
+.claude/worktrees/
+
+# Android build artifacts and caches (keep source files)
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.gradle/
+android/.idea/
+android/local.properties
+android/*.iml
+# android/capacitor-cordova-android-plugins/ já é ignorado pelo android/.gitignore (auto-gerado pelo cap sync)
+
+# Android signing secrets (never commit)
+android/keystore.properties
+android/app/google-services.json
+*.jks
+*.keystore
+
+# Build logs
+.android-icon-build.log
+
+# Mobile shell: mantém index.html (fonte), ignora só artefatos que
+# `npx cap sync` copiaria de outro build (bundles/assets gerados)
+mobile-shell/assets/
+mobile-shell/*.bundle.js
+mobile-shell/*.bundle.css

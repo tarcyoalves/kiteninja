@@ -131,30 +131,38 @@ export function ChamadosManager() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const load = useCallback(async (status: StatusChamado | 'todos') => {
-    setCarregando(true);
-    setErro(null);
-    try {
-      const url = status === 'todos' ? '/api/admin/chamados' : `/api/admin/chamados?status=${status}`;
-      const res = await fetch(url, { cache: 'no-store' });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(
-          (body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : null) ||
-            'Não foi possível carregar os chamados.'
-        );
-      }
-      setChamados((body as { chamados: ChamadoAdmin[] }).chamados);
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : 'Falha ao carregar chamados.');
-    } finally {
-      setCarregando(false);
-    }
-  }, []);
-
   useEffect(() => {
-    load(filtro);
-  }, [filtro, load]);
+    const controller = new AbortController();
+
+    (async () => {
+      setCarregando(true);
+      setErro(null);
+      try {
+        const url = filtro === 'todos' ? '/api/admin/chamados' : `/api/admin/chamados?status=${filtro}`;
+        const res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        const body = await res.json().catch(() => null);
+        if (!res.ok) {
+          throw new Error(
+            (body && typeof body === 'object' && 'error' in body ? String((body as { error: unknown }).error) : null) ||
+              'Não foi possível carregar os chamados.'
+          );
+        }
+        setChamados((body as { chamados: ChamadoAdmin[] }).chamados);
+      } catch (err) {
+        if (!controller.signal.aborted) {
+          setErro(err instanceof Error ? err.message : 'Falha ao carregar chamados.');
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setCarregando(false);
+        }
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, [filtro]);
 
   const mudarStatus = async (id: string, status: StatusChamado) => {
     // Otimista: a lista reage na hora; reverte se o servidor recusar.

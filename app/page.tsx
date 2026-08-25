@@ -70,7 +70,8 @@ const MainContent: React.FC = () => {
   // Um downwind ativo troca apenas o conteúdo da aba Mapa pelo mapa ao vivo.
   // O menu flutuante e as demais abas permanecem disponíveis.
   const emDownwind = Boolean(downwindAtivo);
-  const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(true);
+  // Inicializa painel SOS aberto se há SOS ativo; caso contrário fecha
+  const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(() => Boolean(myActiveSos));
   // Marca o estado do teclado no shell para o CSS zerar a folga do menu
   // (que é desmontado quando o teclado abre) e não deixar faixa vazia embaixo.
   const tecladoAberto = useKeyboardVisible();

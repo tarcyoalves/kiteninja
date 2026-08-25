@@ -4,7 +4,12 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['**/*.test.ts', '**/*.test.tsx'],
-    exclude: ['node_modules/**', '.next/**'],
+    exclude: [
+      'node_modules/**',
+      '.next/**',
+      '.claude/worktrees/**',
+      'android/**',
+    ],
   },
   resolve: {
     alias: {

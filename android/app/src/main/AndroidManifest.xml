@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <activity
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:name=".MainActivity"
+            android:label="@string/title_activity_main"
+            android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:launchMode="singleTask"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+        </activity>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths"></meta-data>
+        </provider>
+
+        <!-- O serviço de Firebase Cloud Messaging (MessagingService) é
+             registrado automaticamente pelo AndroidManifest.xml embutido no
+             AAR de @capacitor/push-notifications, via merge do Gradle — não
+             precisa (e não deve) ser declarado aqui de novo. Uma declaração
+             manual com o nome de classe errado (com.getcapacitor.Capacitor...
+             em vez de com.capacitorjs.plugins.pushnotifications.MessagingService)
+             chegou a existir aqui e foi removida: duas entradas escutando
+             com.google.firebase.MESSAGING_EVENT, uma delas apontando para uma
+             classe inexistente, arriscava crash ao receber um push. -->
+
+        <!-- Foreground Service para rastreamento de downwind com app fechado.
+             Usado quando o velejador inicia a travessia em primeiro plano.
+             O serviço continua rodando após o app ser removido dos recentes. -->
+        <service
+            android:name=".RastreioDownwindService"
+            android:foregroundServiceType="location"
+            android:exported="false" />
+    </application>
+
+    <!-- Permissions -->
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Foreground Service: obrigatório para Android 14+ (API 34+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Push Notifications (FCM) — obrigatório no Android 13+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Localização apenas em primeiro plano. O BridgeWebChromeClient do
+         Capacitor solicita estas permissões quando a WebView chama a API
+         navigator.geolocation; background tracking exige outro gate. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+</manifest>

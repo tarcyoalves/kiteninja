@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MessageSquare, User, X } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
+import { deveExibirToastMensagem } from '../lib/toastMensagem';
 
 export const InAppPushToast: React.FC = () => {
   const {
@@ -15,17 +16,40 @@ export const InAppPushToast: React.FC = () => {
   } = useKiteData();
   const [visible, setVisible] = useState(false);
 
+  /*
+   * Id da última mensagem que JÁ teve seu toast exibido. É o que garante
+   * "cada mensagem aparece uma vez só".
+   *
+   * O bug que isto corrige (relatado pelo dono: "fica direto aparecendo o
+   * popup, mesmo eu já tendo visto a msg") vinha de duas coisas somadas:
+   *
+   * 1. o auto-hide de 5,5s mexia só em `visible`, e deixava
+   *    `latestIncomingMessage` preenchido no contexto; e
+   * 2. este efeito tinha `activeTab` na lista de dependências, então TODA
+   *    troca de aba o reexecutava — e, reexecutando com a mensagem ainda
+   *    preenchida, ele chamava `setVisible(true)` de novo.
+   *
+   * Resultado: a mensagem já lida voltava a aparecer a cada navegação entre
+   * abas, indefinidamente, até o usuário abrir o chat (que zera o contexto)
+   * ou fechar no X. Quanto mais o usuário navegava, mais o popup aparecia.
+   *
+   * A correção tira `activeTab` das dependências (esconder o toast quando o
+   * usuário está no chat é trabalho da guarda de render abaixo, não deste
+   * efeito) e marca a mensagem como exibida por id. Efeito colateral bom:
+   * o toast passa a durar os 5,5s inteiros mesmo se a pessoa trocar de aba
+   * no meio, em vez de reiniciar a contagem a cada troca.
+   */
+  const jaExibidaRef = useRef<string | null>(null);
+
   useEffect(() => {
-    if (latestIncomingMessage && activeTab !== 'chat') {
-      setVisible(true);
-      const timer = setTimeout(() => {
-        setVisible(false);
-      }, 5500);
-      return () => clearTimeout(timer);
-    } else {
-      setVisible(false);
-    }
-  }, [latestIncomingMessage, activeTab]);
+    if (!latestIncomingMessage) return;
+    if (!deveExibirToastMensagem(latestIncomingMessage, jaExibidaRef.current)) return;
+
+    jaExibidaRef.current = latestIncomingMessage.id;
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), 5500);
+    return () => clearTimeout(timer);
+  }, [latestIncomingMessage]);
 
   if (!visible || !latestIncomingMessage || activeTab === 'chat') return null;
 

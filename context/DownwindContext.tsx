@@ -3,6 +3,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
 import { useDownwindBeacon } from '../lib/useDownwindBeacon';
+import { useWakeLock } from '../lib/useWakeLock';
+import {
+  decidirTracking,
+  estaNoAppNativo,
+  iniciarTrackingNativo,
+  pararTrackingNativo,
+} from '../lib/downwindTracker';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -54,6 +61,24 @@ interface DownwindContextType {
   carregando: boolean;
   /** Último POST de posição confirmado; continua atualizando fora da aba Mapa. */
   ultimaPosicaoEm: Date | null;
+  /**
+   * A tela está travada ligada por causa da travessia. Quando `false` com um
+   * downwind em andamento, o aparelho vai apagar a tela sozinho e o
+   * rastreamento pode parar — a UI precisa poder avisar em vez de deixar o
+   * velejador achar que está coberto.
+   */
+  telaTravadaLigada: boolean;
+  /**
+   * Estado mínimo do rastreamento nativo (Foreground Service Android via
+   * lib/downwindTracker.ts). `null` em PWA/browser — lá o conceito não
+   * existe, e a UI não deve tratar isso como erro. Dentro do app nativo,
+   * `'permissao_negada'` é o único caso que precisa de aviso explícito ao
+   * velejador: sem o serviço nativo, o rastreio só sobrevive enquanto o
+   * beacon web + Wake Lock conseguirem manter a página viva (ver
+   * lib/useDownwindBeacon.ts e lib/useWakeLock.ts) — ou seja, PARA se o app
+   * for removido dos recentes.
+   */
+  statusTrackingNativo: 'inativo' | 'ativo' | 'permissao_negada' | null;
   entrarNoDownwind: (
     downwindId: string,
     papel?: DownwindPapel
@@ -109,6 +134,9 @@ function salvarDica(d: DicaCache | null) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
+    // Ver o mesmo comentário em context/KiteDataContext.tsx: dado de downwind
+    // servido de cache velho mostraria travessia encerrada como ativa.
+    cache: 'no-store',
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
@@ -127,13 +155,100 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { isAuthenticated, user } = useAuth();
   const [downwindAtivo, setDownwindAtivo] = useState<DownwindAtivo | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const beacon = useDownwindBeacon(
-    downwindAtivo?.id ?? null,
-    downwindAtivo?.status === 'em_andamento'
-  );
+  const emAndamento = downwindAtivo?.status === 'em_andamento';
+  const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
+
+  /*
+   * Wake Lock durante TODA a travessia, não só dentro do Modo Navegação.
+   *
+   * O relato que motivou isto: no Android, com o app em segundo plano, o
+   * downwind deixava de ser monitorado. A causa não era só o beacon pausar
+   * (corrigido em lib/useDownwindBeacon.ts) — era a tela apagar. Tela
+   * apagada, o sistema congela a página e nenhum `setInterval` dispara;
+   * o velejador some do mapa de quem acompanha em terra.
+   *
+   * O Wake Lock já existia, mas SÓ enquanto o Modo Navegação estava aberto
+   * (components/ModoNavegacao.tsx). Quem entrava no downwind e ficava em
+   * qualquer outra aba — ou só guardava o celular no colete — perdia a
+   * proteção justamente por não estar olhando a tela.
+   *
+   * Fica aqui no provider, e não numa tela, pelo mesmo motivo do beacon:
+   * trocar de aba não pode interromper o rastreamento. Solto assim que o
+   * downwind sai de `em_andamento` (encerrar, desistir, cancelar), então a
+   * tela volta ao normal sem exigir nada do usuário.
+   *
+   * NÃO substitui rastreio nativo: com o app FECHADO nada disto roda.
+   * Ver docs/ANTIGRAVITY-FINDINGS.md (ANT-003).
+   */
+  const wakeLock = useWakeLock(emAndamento);
   // Evita que a resposta do GET sobrescreva um estado mais novo (ex.: acabou
   // de entrar num downwind) se as duas chegarem fora de ordem.
   const versaoRef = useRef(0);
+
+  /*
+   * Rastreamento nativo (Foreground Service Android) via lib/downwindTracker.ts.
+   *
+   * DECISÃO DE PRODUTO: liga automaticamente, sem ação extra do velejador,
+   * assim que `decidirTracking()` for true — o mesmo espírito do beacon web
+   * e do Wake Lock acima: a proteção não deveria depender de o usuário
+   * lembrar de apertar um botão. Desliga nas mesmas condições descritas no
+   * pedido: downwind encerra/cancela, participação encerra/desiste ou logout.
+   * A desmontagem da WebView NÃO desliga o serviço: sobreviver ao app removido
+   * dos recentes é justamente a função do Foreground Service.
+   *
+   * NÃO duplica o beacon web — ver o cabeçalho de lib/downwindTracker.ts.
+   * Os dois convivem: o nativo é a rede de segurança para quando o app é
+   * removido dos recentes, algo que nenhum código JS alcança.
+   */
+  const [statusTrackingNativo, setStatusTrackingNativo] = useState<
+    'inativo' | 'ativo' | 'permissao_negada' | null
+  >(estaNoAppNativo() ? 'inativo' : null);
+  // Evita iniciar duas vezes em corridas de re-render (ex.: `recarregar()`
+  // disparando de novo antes do primeiro `startTracking` resolver) — só
+  // chama o plugin nativo quando o estado ligado/desligado realmente muda.
+  const trackingLigadoRef = useRef(false);
+
+  useEffect(() => {
+    if (!estaNoAppNativo()) return;
+
+    const downwindId = downwindAtivo?.id ?? null;
+    const deveRastrear = decidirTracking({
+      isAuthenticated,
+      papel: downwindAtivo?.minhaParticipacao.papel ?? null,
+      downwindStatus: downwindAtivo?.status ?? null,
+      participanteEstado: downwindAtivo?.minhaParticipacao.estado ?? null,
+      appNativo: true,
+    });
+
+    if (deveRastrear && downwindId && !trackingLigadoRef.current) {
+      trackingLigadoRef.current = true;
+      iniciarTrackingNativo({
+        downwindId,
+        baseUrl: window.location.origin,
+        obterToken: () => api<{ token: string }>(`/api/downwind/${downwindId}/tracking-token`, { method: 'POST' }),
+      }).then((resultado) => {
+        if (resultado.ok) {
+          setStatusTrackingNativo('ativo');
+        } else {
+          // Falhou: libera o ref para permitir nova tentativa (ex.: revalidação
+          // periódica trazendo o mesmo estado de novo) em vez de travar
+          // silenciosamente "tentando" para sempre.
+          trackingLigadoRef.current = false;
+          setStatusTrackingNativo(resultado.permissaoNegada ? 'permissao_negada' : 'inativo');
+        }
+      });
+    } else if (!deveRastrear && trackingLigadoRef.current) {
+      trackingLigadoRef.current = false;
+      pararTrackingNativo();
+      setStatusTrackingNativo('inativo');
+    }
+  }, [
+    isAuthenticated,
+    downwindAtivo?.id,
+    downwindAtivo?.status,
+    downwindAtivo?.minhaParticipacao.papel,
+    downwindAtivo?.minhaParticipacao.estado,
+  ]);
 
   const recarregar = useCallback(async () => {
     if (!isAuthenticated) {
@@ -186,6 +301,31 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     recarregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
+
+  /*
+   * Revalida o downwind ativo ao voltar para o primeiro plano — mesma correção
+   * e mesmo motivo do KiteDataContext (ver docs/BUG-SINCRONIZACAO-DADOS.md).
+   *
+   * Aqui o estado velho é ainda pior que no feed: `recarregar()` só rodava ao
+   * logar e depois de ação do próprio usuário, então um downwind CANCELADO ou
+   * ENCERRADO pelo organizador continuava na tela do participante como se
+   * estivesse rolando — inclusive mantendo o Wake Lock aceso e o beacon
+   * mandando posição para uma travessia que acabou.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const revalidar = () => {
+      if (!document.hidden) recarregar();
+    };
+
+    document.addEventListener('visibilitychange', revalidar);
+    window.addEventListener('focus', revalidar);
+    return () => {
+      document.removeEventListener('visibilitychange', revalidar);
+      window.removeEventListener('focus', revalidar);
+    };
+  }, [isAuthenticated, recarregar]);
 
   const entrarNoDownwind = useCallback(
     async (downwindId: string, papel: DownwindPapel = 'velejador') => {
@@ -295,6 +435,8 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         downwindAtivo,
         carregando,
         ultimaPosicaoEm: beacon.ultimaPosicaoEm,
+        telaTravadaLigada: wakeLock.ativo,
+        statusTrackingNativo,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,

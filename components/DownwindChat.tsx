@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Send, X } from 'lucide-react';
 import { useAuthOptional } from '../context/AuthContext';
 import { CHAT_TEXT_MAX, downwindRoomName, formatClockTime } from '../lib/chat';
@@ -67,27 +67,39 @@ export const DownwindChat: React.FC<DownwindChatProps> = ({ downwindId, onFechar
   const sinceRef = useRef<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const carregar = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/chat/messages?room=${encodeURIComponent(room)}`, {
-        cache: 'no-store',
-      });
-      const body = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(body?.error ?? 'Não foi possível carregar a conversa.');
-      setMessages((body.messages ?? []) as ChatMessage[]);
-      sinceRef.current = body.latestAt ?? null;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Falha de conexão.');
-    } finally {
-      setLoading(false);
-    }
+
+  // Carrega mensagens ao mudar sala
+  useEffect(() => {
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/chat/messages?room=${encodeURIComponent(room)}`, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const body = await res.json().catch(() => null);
+        if (!res.ok || !body) {
+          throw new Error('Falha ao carregar mensagens.');
+        }
+        setMessages((body.messages ?? []) as ChatMessage[]);
+        sinceRef.current = body.latestAt ?? null;
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          setError(err instanceof Error ? err.message : 'Falha de conexão.');
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
   }, [room]);
 
+  // Poll para novas mensagens
   useEffect(() => {
-    carregar().then(() => endRef.current?.scrollIntoView({ block: 'end' }));
-
     const poll = async () => {
       if (document.hidden || !sinceRef.current) return;
       try {
@@ -112,7 +124,7 @@ export const DownwindChat: React.FC<DownwindChatProps> = ({ downwindId, onFechar
     };
     const id = setInterval(poll, POLL_MS);
     return () => clearInterval(id);
-  }, [room, carregar]);
+  }, [room]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' });

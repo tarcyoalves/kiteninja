@@ -16,7 +16,9 @@ export default async function ConvitePage({
 
   if (!invite) {
     return (
-      <main className="min-h-screen bg-[#0F172A] text-slate-100 flex items-center justify-center p-5">
+      // flex-1 min-h-0, não min-h-screen — mesmo motivo documentado em
+      // AcceptInviteForm.tsx: o <body> já é flex-col de altura cheia.
+      <main className="flex-1 min-h-0 overflow-y-auto bg-[var(--app-bg)] text-slate-100 flex items-center justify-center p-5">
         <div className="w-full max-w-sm text-center space-y-4">
           <div className="text-5xl" aria-hidden="true">
             🪁
