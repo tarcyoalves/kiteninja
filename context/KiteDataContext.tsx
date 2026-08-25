@@ -84,6 +84,9 @@ interface KiteDataContextType {
 
   // Notificações e Chat Global
   unreadChatCount: number;
+  /** Diagnóstico do push nativo (Android/FCM), exposto na tela para não
+   *  exigir cabo USB só para saber por que fcm_tokens está vazio. */
+  pushNativo: { isSupported: boolean; isEnabled: boolean; isRegistered: boolean; isLoading: boolean; error: string | null };
   setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
   latestIncomingMessage: ChatMessage | null;
   setLatestIncomingMessage: (msg: ChatMessage | null) => void;
@@ -1067,7 +1070,14 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Registra push nativo (Android/FCM) só depois do login, mesmo motivo do
   // usePositionBeacon acima: sem isto, /api/push/fcm responderia 401.
-  usePushNotifications(isAuthenticated, handlePushOpenUrl);
+  //
+  // O estado é exposto no contexto (não descartado) porque as falhas de push
+  // deste projeto foram todas INVISÍVEIS: o hook loga tudo em console, mas
+  // dentro da WebView do Android ninguém vê console sem cabo USB. Com
+  // `fcm_tokens` em zero e toda a configuração correta, precisar de ADB para
+  // descobrir o motivo é exatamente o custo que este projeto já pagou caro
+  // duas vezes — ver components/SidebarDrawer.tsx, seção de notificações.
+  const pushNativo = usePushNotifications(isAuthenticated, handlePushOpenUrl);
 
   const refreshWindData = () => {
     setIsRefreshing(true);
@@ -1109,6 +1119,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         beachMode,
         setBeachMode,
         unreadChatCount,
+        pushNativo,
         setUnreadChatCount,
         latestIncomingMessage,
         setLatestIncomingMessage,

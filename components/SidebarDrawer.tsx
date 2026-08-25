@@ -53,6 +53,7 @@ export const SidebarDrawer: React.FC = () => {
     setIsBuscaVelejadoresOpen,
     setIsNotificacoesAbertas,
     setIsChamadosAbertos,
+    pushNativo,
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
@@ -748,6 +749,23 @@ export const SidebarDrawer: React.FC = () => {
                 )}
 
                 {/* Instrução especial para iPhone / iOS Safari */}
+                {/* Diagnóstico do FCM no app Android. Sem isto, descobrir por
+                    que `fcm_tokens` está vazio exige cabo USB e logcat — o
+                    hook loga tudo, mas ninguém vê console dentro da WebView.
+                    Some sozinho quando o token registra (o estado normal). */}
+                {ehAppNativo && !pushNativo.isRegistered && (
+                  <div className="text-[10px] leading-tight bg-slate-800/60 border border-slate-700 p-2 rounded-lg text-slate-300 space-y-0.5">
+                    <p className="font-bold text-slate-200">Registro do push (Android)</p>
+                    <p>plugin: {pushNativo.isSupported ? 'ok' : 'não carregou'}</p>
+                    <p>permissão: {pushNativo.isEnabled ? 'concedida' : 'não concedida'}</p>
+                    <p>token no servidor: {pushNativo.isRegistered ? 'sim' : 'ainda não'}</p>
+                    {pushNativo.isLoading && <p>estado: registrando…</p>}
+                    {pushNativo.error && (
+                      <p className="text-rose-300">erro: {pushNativo.error}</p>
+                    )}
+                  </div>
+                )}
+
                 {!ehAppNativo && isIos && !isStandalone && (
                   <p className="text-[10px] text-amber-300/90 leading-tight bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
                     📱 <strong>No iPhone:</strong> para receber push de socorro, instale o app tocando em <strong>Compartilhar ➔ Adicionar à Tela de Início</strong>.
