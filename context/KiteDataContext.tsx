@@ -261,6 +261,12 @@ function saveLocalFavorites(ids: string[]) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
+    // `no-store` no cliente além do header no servidor (lib/api.ts): são duas
+    // camadas de cache diferentes, e o app precisa das duas. Os watchers de
+    // chat e DM já passavam isso na mão — sinal de que alguém topou com cache
+    // velho antes e resolveu no ponto em vez de na base. Aqui vale para TODAS
+    // as chamadas de uma vez. Ver docs/BUG-SINCRONIZACAO-DADOS.md.
+    cache: 'no-store',
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
@@ -630,6 +636,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, []);
 
+  /** Quando feed/eventos/alertas foram carregados pela última vez. */
+  const ultimoLoadFeedRef = useRef(0);
+
   const loadFeedAndEvents = useCallback(async () => {
     const [postsR, eventsR, alertsR] = await Promise.allSettled([
       api<{ posts: CommunityPost[] }>('/api/posts'),
@@ -639,6 +648,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (postsR.status === 'fulfilled') setPosts(postsR.value.posts);
     if (eventsR.status === 'fulfilled') setEvents(eventsR.value.events);
     if (alertsR.status === 'fulfilled') setSafetyAlerts(alertsR.value.alerts);
+    ultimoLoadFeedRef.current = Date.now();
   }, []);
 
   const loadSessions = useCallback(async () => {
@@ -670,6 +680,56 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
     loadFeedAndEvents();
     loadSessions();
+  }, [isAuthenticated, loadFeedAndEvents, loadSessions]);
+
+  /*
+   * Revalida feed/eventos/alertas quando o app volta ao primeiro plano.
+   *
+   * O BUG QUE ISTO CORRIGE: até aqui, `loadFeedAndEvents` só rodava (a) ao
+   * logar/montar e (b) logo depois de uma ação do PRÓPRIO usuário. Não havia
+   * NADA que reagisse a mudança feita por OUTRA pessoa — nem poll, nem
+   * revalidação ao retomar o app. Quem estivesse com o app aberto ficava
+   * congelado no snapshot de quando carregou, indefinidamente.
+   *
+   * Sintoma relatado: o dono apagou dois downwinds e criou um novo; o outro
+   * usuário continuou vendo só os dois antigos. Não era "versão diferente do
+   * app" — era o mesmo app com estado velho em memória, sem nada para
+   * invalidá-lo.
+   *
+   * Por que atinge MAIS o app nativo que a PWA: no Android o processo do app
+   * fica vivo em memória por dias entre um uso e outro, então o estado velho
+   * sobrevive muito mais tempo. Na aba do navegador é mais comum recarregar a
+   * página em algum momento e "consertar" sozinho por acidente.
+   *
+   * Retomada em vez de poll de propósito: o `visibilitychange` cobre o caso
+   * real (abrir o app e ver o que mudou) sem somar requisição de fundo a cada
+   * X segundos — este projeto já paga polling de chat, SOS e downwind, e
+   * `docs/ANTIGRAVITY-AUDIT-2026.md` aponta compute do Neon como principal
+   * custo. A janela mínima evita rajada quando o usuário alterna de app
+   * várias vezes seguidas.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const IDADE_MINIMA_MS = 30_000;
+
+    const revalidarSeVelho = () => {
+      if (document.hidden) return;
+      if (Date.now() - ultimoLoadFeedRef.current < IDADE_MINIMA_MS) return;
+      loadFeedAndEvents();
+      loadSessions();
+    };
+
+    document.addEventListener('visibilitychange', revalidarSeVelho);
+    // `focus` cobre o caso em que a aba já estava visível mas o sistema
+    // devolveu o foco ao app (alt-tab no desktop, split-screen no Android),
+    // quando `visibilitychange` não chega a disparar.
+    window.addEventListener('focus', revalidarSeVelho);
+
+    return () => {
+      document.removeEventListener('visibilitychange', revalidarSeVelho);
+      window.removeEventListener('focus', revalidarSeVelho);
+    };
   }, [isAuthenticated, loadFeedAndEvents, loadSessions]);
 
   const toggleFavorite = (spotId: string) => {

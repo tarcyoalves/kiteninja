@@ -117,6 +117,9 @@ function salvarDica(d: DicaCache | null) {
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
+    // Ver o mesmo comentário em context/KiteDataContext.tsx: dado de downwind
+    // servido de cache velho mostraria travessia encerrada como ativa.
+    cache: 'no-store',
     ...init,
     headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
   });
@@ -216,6 +219,31 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     recarregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
+
+  /*
+   * Revalida o downwind ativo ao voltar para o primeiro plano — mesma correção
+   * e mesmo motivo do KiteDataContext (ver docs/BUG-SINCRONIZACAO-DADOS.md).
+   *
+   * Aqui o estado velho é ainda pior que no feed: `recarregar()` só rodava ao
+   * logar e depois de ação do próprio usuário, então um downwind CANCELADO ou
+   * ENCERRADO pelo organizador continuava na tela do participante como se
+   * estivesse rolando — inclusive mantendo o Wake Lock aceso e o beacon
+   * mandando posição para uma travessia que acabou.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const revalidar = () => {
+      if (!document.hidden) recarregar();
+    };
+
+    document.addEventListener('visibilitychange', revalidar);
+    window.addEventListener('focus', revalidar);
+    return () => {
+      document.removeEventListener('visibilitychange', revalidar);
+      window.removeEventListener('focus', revalidar);
+    };
+  }, [isAuthenticated, recarregar]);
 
   const entrarNoDownwind = useCallback(
     async (downwindId: string, papel: DownwindPapel = 'velejador') => {
