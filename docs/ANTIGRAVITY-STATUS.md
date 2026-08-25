@@ -31,7 +31,7 @@ amostra, mas isso não substitui checar o achado que se vai corrigir.
 |---|---|---|---|
 | ANT-001 | P0 | SOS sem GPS fora de downwind não notifica ninguém | ❌ **Aberto — próxima prioridade** |
 | ANT-002 | P1 | Rate limit bloqueia atualizar posição de SOS ativo | ❌ Aberto |
-| ANT-003 | P1 | Rastreio para ao bloquear a tela / background | 🟡 **Mitigado no que a web permite** (ver abaixo) |
+| ANT-003 | P1 | Rastreio para ao bloquear a tela / background | 🟡 **Parcial** — tela apagada resolvido; **app fechado NÃO** (ver abaixo) |
 | ANT-004 | P1 | Service Worker sem cache offline | ❌ Aberto |
 | ANT-005 | P1 | DOM XSS nos marcadores Leaflet | ✅ **Corrigido** |
 | ANT-006 | P1 | Login aceita conta suspensa | ❌ Aberto |
@@ -84,14 +84,23 @@ WebView têm processo vivo depois que o app é encerrado. Rastreio real com app
 fechado exige **Foreground Service nativo no Android** — um serviço com
 notificação persistente, coletando GPS fora da WebView.
 
-Como o app já está na Play Store como TWA e o dono relatou projeto no Android
-Studio com Firebase, este é o próximo passo concreto — e depende de acesso ao
-projeto Android, que não está neste repositório. Ver
-`docs/PLANO-APP-NATIVO.md`, que já lista as 4 perguntas em aberto sobre onde
-esse projeto vive.
+**ATENÇÃO — o que foi corrigido não cobre o teste do dono.** Ele testou no app
+Android real com o **app fechado**, e para esse caso nada acima muda o
+resultado. São dois cenários que parecem iguais de fora (o velejador some do
+mapa) e têm causas diferentes:
 
-Com a tela ligada pelo Wake Lock e o app em primeiro plano, o rastreamento
-agora funciona com o celular no colete — que é o cenário real da travessia.
+| Cenário | Situação |
+|---|---|
+| Tela apagada, app aberto (celular no colete) | ✅ Corrigido |
+| App em segundo plano (trocou de app) | ✅ Melhorado (o sistema ainda pode congelar a página) |
+| **App fechado (fora dos recentes)** | ❌ **Não resolvido — exige código nativo** |
+
+O plano concreto para o terceiro caso está em
+**`docs/PLANO-RASTREIO-BACKGROUND-ANDROID.md`**: arquitetura do Foreground
+Service, como evitar a revisão especial de background location da Play Store,
+o problema de autenticação do serviço nativo (TWA não compartilha cookie nem
+aceita ponte JS) e as **4 etapas que dá para começar neste repositório desde
+já**.
 
 ## ANT-011 — bloqueado por dado que só o dono tem
 
