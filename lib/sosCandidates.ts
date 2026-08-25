@@ -15,8 +15,12 @@ import { haversineKm, LatLng } from './geo';
  *  - 'downwind_apoio': é o apoio em terra do downwind. Não navega, mas tem
  *    carro, telefone e sabe exatamente onde o grupo entrou na água. Em resgate
  *    real, quem está em terra costuma ser quem consegue acionar autoridade.
+ *  - 'moderador': é moderador/admin do sistema. Sempre notificado quando não
+ *    há ninguém por proximidade nem downwind — é o fallback de último recurso.
+ *  - 'spot_fallback': está no mesmo spot ou estado do autor do SOS. Fallback
+ *    quando não há moderadores online.
  */
-export type MotivoNotificacao = 'proximidade' | 'downwind' | 'downwind_apoio';
+export type MotivoNotificacao = 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 
 export interface CandidatoSos {
   userId: string;
@@ -68,6 +72,8 @@ export async function selectSosCandidates(args: {
   radiusKm: number;
   /** Quem já foi notificado antes (ex.: em uma escalada) não entra de novo. */
   alreadyNotified?: Set<string>;
+  /** ID do spot do autor (para fallback). */
+  spotId?: string | null;
 }): Promise<CandidatoSos[]> {
   const already = args.alreadyNotified ?? new Set<string>();
 
@@ -83,6 +89,20 @@ export async function selectSosCandidates(args: {
   for (const c of [...porDownwind, ...porProximidade]) {
     if (already.has(c.userId)) continue;
     if (!porUsuario.has(c.userId)) porUsuario.set(c.userId, c);
+  }
+
+  // Se ninguém foi notificado ainda (caso SOS sem GPS fora de downwind),
+  // aplica os fallbacks: moderadores online, depois usuários no mesmo spot/estado.
+  if (porUsuario.size === 0) {
+    const [moderadores, porSpot] = await Promise.all([
+      candidatosModeradores(args.excludeUserId),
+      candidatosPorSpotOuEstado(args.excludeUserId, args.spotId ?? null, null),
+    ]);
+
+    for (const c of [...moderadores, ...porSpot]) {
+      if (already.has(c.userId)) continue;
+      if (!porUsuario.has(c.userId)) porUsuario.set(c.userId, c);
+    }
   }
 
   return [...porUsuario.values()];
@@ -198,6 +218,91 @@ async function candidatosPorDownwind(
       motivo: String(row.papel) === 'apoio_terra'
         ? ('downwind_apoio' as const)
         : ('downwind' as const),
+    };
+  });
+}
+
+/**
+ * Moderadores do sistema — notificados quando não há ninguém por proximidade,
+ * downwind ou apoio. São o fallback de último recurso para um SOS sem GPS.
+ */
+async function candidatosModeradores(excludeUserId: string): Promise<CandidatoSos[]> {
+  const cutoff = new Date(Date.now() - JANELA_PRESENCA_MS).toISOString();
+
+  const rows = await sql`
+    SELECT DISTINCT u.id AS user_id
+    FROM users u
+    JOIN user_presence p ON p.user_id = u.id
+    WHERE u.id != ${excludeUserId}
+      AND u.role IN ('admin', 'moderator')
+      AND p.last_seen_at >= ${cutoff}
+  `;
+
+  return rows.map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      userId: String(row.user_id),
+      dist: null,
+      motivo: 'moderador' as const,
+    };
+  });
+}
+
+/**
+ * Usuários no mesmo spot ou estado do autor do SOS.
+ *
+ * Fallback quando não há moderadores online. Mais abrangente que proximidade
+ * (não exige GPS do autor), mas mais específico que "todo mundo".
+ */
+async function candidatosPorSpotOuEstado(
+  excludeUserId: string,
+  spotId: string | null,
+  estado: string | null
+): Promise<CandidatoSos[]> {
+  if (!spotId && !estado) return [];
+
+  const cutoff = new Date(Date.now() - JANELA_PRESENCA_MS).toISOString();
+
+  let rows;
+  if (spotId) {
+    rows = await sql`
+      SELECT DISTINCT p.user_id AS user_id
+      FROM user_presence p
+      WHERE p.user_id != ${excludeUserId}
+        AND p.at_spot_id = ${spotId}
+        AND p.last_seen_at >= ${cutoff}
+    `;
+  } else if (estado) {
+    // Primeiro busca o spot do autor para saber o estado
+    const spotRows = await sql`
+      SELECT s.state
+      FROM users u
+      JOIN spots s ON s.id = u.home_spot
+      WHERE u.id = ${excludeUserId}
+        AND u.home_spot IS NOT NULL
+      LIMIT 1
+    `;
+    if (spotRows.length === 0) return [];
+    const autorEstado = (spotRows[0] as Record<string, unknown>).state as string;
+
+    rows = await sql`
+      SELECT DISTINCT p.user_id AS user_id
+      FROM user_presence p
+      JOIN spots s ON s.id = p.at_spot_id
+      WHERE p.user_id != ${excludeUserId}
+        AND s.state = ${autorEstado}
+        AND p.last_seen_at >= ${cutoff}
+    `;
+  } else {
+    return [];
+  }
+
+  return rows.map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      userId: String(row.user_id),
+      dist: null,
+      motivo: 'spot_fallback' as const,
     };
   });
 }

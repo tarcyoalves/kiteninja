@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Copy, Link2, Trash2, TriangleAlert } from 'lucide-react';
 
 interface InviteRow {
@@ -29,20 +29,25 @@ export function InviteManager() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch('/api/admin/invites');
-      if (!res.ok) return;
-      const data = await res.json();
-      setInvites(data.invites ?? []);
-    } catch {
-      /* lista vazia é aceitável até a próxima tentativa */
-    }
-  }, []);
-
+  // Carrega lista de convites
   useEffect(() => {
-    load();
-  }, [load]);
+    const controller = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch('/api/admin/invites', { signal: controller.signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        setInvites(data.invites ?? []);
+      } catch {
+        // aborted
+      }
+    })();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +71,12 @@ export function InviteManager() {
       setFreshLink(data.inviteUrl);
       setEmail('');
       setNote('');
-      load();
+      // Recarrega lista de convites
+      const listRes = await fetch('/api/admin/invites');
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        setInvites(listData.invites ?? []);
+      }
     } catch {
       setError('Falha de conexão.');
     } finally {
@@ -94,7 +104,12 @@ export function InviteManager() {
         setError(data.error ?? 'Não foi possível revogar.');
         return;
       }
-      load();
+      // Recarrega lista de convites
+      const listRes = await fetch('/api/admin/invites');
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        setInvites(listData.invites ?? []);
+      }
     } catch {
       setError('Falha de conexão.');
     }

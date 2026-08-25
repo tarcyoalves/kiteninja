@@ -119,6 +119,17 @@ export const rateLimiters = {
       'Limite de chamadas SOS atingido. Aguarde 1 hora — ligue 193 (Bombeiros) ou 185 (Marinha) se precisar de socorro imediato.'
     ),
 
+  // Atualização de posição de SOS ativo. Mais permissivo que criação (60/min)
+  // porque o velejador deriva no mar e precisa poder atualizar coordenadas
+  // sem ser bloqueado. Este limite só é atingido em loop de erro no cliente.
+  sosUpdate: (userId: string) =>
+    enforceRateLimit(
+      `sos_update:${userId}`,
+      60,
+      60 * 1000,
+      'Muitas atualizações de posição. Tente novamente em 1 minuto.'
+    ),
+
   // 120/min é ~40x a cadência normal de POST (a cada 45s — ver
   // lib/trilhaDownwind.ts): só pega cliente em loop de erro, nunca um
   // velejador de verdade.

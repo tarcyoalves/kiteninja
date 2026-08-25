@@ -8,6 +8,8 @@ import {
   podeIniciarDownwind,
 } from '@/lib/downwindAcesso';
 import { buscarContexto, ehUuid, listarParticipantes, resumirEPurgar } from '@/lib/downwindDb';
+import { revogarTodosTokensDoDownwind } from '@/lib/trackingToken';
+import { sendFcmToUser } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -82,6 +84,9 @@ export async function POST(request: Request, ctx: Params) {
       `;
       if (rows.length === 0) throw new HttpError(409, 'Este downwind já foi encerrado ou cancelado.');
 
+      // Cancelled: revoga tokens de rastreio
+      await revogarTodosTokensDoDownwind(id);
+
       return {
         status: 'cancelado',
         iniciadoEm: null,
@@ -108,6 +113,29 @@ export async function POST(request: Request, ctx: Params) {
     if (rows.length === 0) throw new HttpError(409, 'Este downwind já foi encerrado ou cancelado.');
 
     await resumirEPurgar(id);
+
+    // Revoga tokens de rastreio: o downwind terminou
+    await revogarTodosTokensDoDownwind(id);
+
+    // Notifica os participantes que estavam rastreando via FCM (opcional)
+    // O app Android pode usar isso para parar o Foreground Service
+    try {
+      const participantesIds = await sql`
+        SELECT DISTINCT user_id FROM downwind_participantes
+        WHERE downwind_id = ${id} AND papel = 'velejador'
+      `;
+      for (const row of participantesIds) {
+        const uid = String((row as Record<string, unknown>).user_id);
+        // Fire-and-forget: não esperamos para não atrasar a resposta
+        sendFcmToUser(uid, {
+          title: 'Downwind encerrado',
+          body: 'A travessia foi encerrada. O rastreamento foi parado.',
+          tag: 'downwind_encerrado',
+        });
+      }
+    } catch {
+      // Não falha o encerramento se push falhar
+    }
 
     return {
       status: 'encerrado',

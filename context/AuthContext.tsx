@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Discipline, RiderLevel, UserProfile } from '../types';
+import { FCM_TOKEN_STORAGE_KEY } from '../lib/usePushNotifications';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -110,11 +111,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const logout = useCallback(async () => {
+    // Desvincula somente ESTE aparelho da conta enquanto o cookie de sessão
+    // ainda existe. Não chama Plugin.unregister(): o mesmo aparelho pode entrar
+    // em outra conta e reutilizar seu token FCM normalmente.
+    const fcmToken = localStorage.getItem(FCM_TOKEN_STORAGE_KEY);
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fcmToken }),
+      });
+      localStorage.removeItem(FCM_TOKEN_STORAGE_KEY);
     } finally {
       setUser(null);
       setIsAdmin(false);
+      setCanOrganizeDownwind(false);
+      setCanModerateEvents(false);
       setMustChangePassword(false);
     }
   }, []);

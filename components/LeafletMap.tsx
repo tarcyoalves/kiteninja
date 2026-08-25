@@ -333,11 +333,13 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [mapStyle, setMapStyle] = useState<MapStyle>('satelite');
 
   // Detectar preferência de movimento reduzido para desativar animações
-  const [reduceMotion, setReduceMotion] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  });
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReduceMotion(mq.matches);
 
     const listener = (e: MediaQueryListEvent) => setReduceMotion(e.matches);
     mq.addEventListener('change', listener);

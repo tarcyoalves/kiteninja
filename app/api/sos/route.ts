@@ -22,8 +22,6 @@ function ehViolacaoDeUnicidade(err: unknown): boolean {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
-    rateLimiters.sos(user.id);
-
     const body = await readOptionalJson(request);
 
     // Faixa validada (item 7 da revisão): sem min/max, `lat: 999` era aceito e
@@ -44,6 +42,10 @@ export async function POST(request: Request) {
      * Nos dois casos o INSERT abaixo bateria na constraint e o velejador
      * receberia 500 no momento em que mais precisa. A janela de tempo sai: se
      * o SOS está aberto, é o mesmo socorro, independente de quando começou.
+     *
+     * ANT-002: rate limit é COBRADO DEPOIS da checagem. Atualizar coordenadas
+     * de um SOS já aberto não deve consumir criação nova ��� o velejador deriva
+     * no mar e precisa poder atualizar posição sem ser bloqueado.
      */
     const aberto = await sql`
       SELECT id, lat, lng, spot_id, radius_km, status
@@ -53,6 +55,11 @@ export async function POST(request: Request) {
     `;
 
     if (aberto.length > 0) {
+      // Atualização de posição: rate limit mais permissivo (60/min) em vez de
+      // criação nova (3/hora). O limite baixo de criação evita abuso, mas atualizar
+      // posição à deriva é exatamente o que acontece DEPOIS de um SOS.
+      rateLimiters.sosUpdate(user.id);
+
       const row = aberto[0] as Record<string, unknown>;
       const updateLat = lat ?? (row.lat === null ? null : Number(row.lat));
       const updateLng = lng ?? (row.lng === null ? null : Number(row.lng));
@@ -83,6 +90,9 @@ export async function POST(request: Request) {
         notificados: 0,
       };
     }
+
+    // CRIAÇÃO NOVA: rate limit estrito (3/hora)
+    rateLimiters.sos(user.id);
 
     let spotId: string | null = null;
     let spotName: string | null = null;
@@ -169,6 +179,7 @@ export async function POST(request: Request) {
       excludeUserId: user.id,
       origin: lat !== null && lng !== null ? { lat, lng } : null,
       radiusKm,
+      spotId,
     });
 
     logSos({
@@ -179,7 +190,9 @@ export async function POST(request: Request) {
         total: candidatos.length,
         raioKm: radiusKm,
         porProximidade: candidatos.filter(c => c.motivo === 'proximidade').length,
-        porDownwind: candidatos.filter(c => c.motivo !== 'proximidade').length,
+        porDownwind: candidatos.filter(c => c.motivo === 'downwind' || c.motivo === 'downwind_apoio').length,
+        porModerador: candidatos.filter(c => c.motivo === 'moderador').length,
+        porSpotFallback: candidatos.filter(c => c.motivo === 'spot_fallback').length,
         temGps: lat !== null && lng !== null,
       },
     });

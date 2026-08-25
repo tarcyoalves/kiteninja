@@ -1,0 +1,55 @@
+name: Varredura periódica (SOS + downwind)
+
+# POR QUE ESTE WORKFLOW EXISTE
+#
+# O plano Hobby da Vercel só permite Cron Jobs com frequência DIÁRIA
+# (schedule com granularidade de minuto/hora, tipo "*/2 * * * *", é
+# rejeitado no deploy — ver docs/OPERACAO-SOS.md e
+# docs/RASTREIO-BACKGROUND-ANDROID-LIMITACOES.md). Isso é insuficiente para:
+#   - escalada de SOS (emergência medida em minutos);
+#   - alerta de silêncio de downwind (limiar padrão de 5 minutos).
+#
+# Este workflow substitui um cron de minuto que o Vercel Hobby não aceita.
+# vercel.json mantém os crons nativos só em frequência diária (manutenção/
+# fallback); a varredura frequente de verdade roda aqui.
+#
+# LIMITAÇÃO CONHECIDA: o `schedule` do GitHub Actions não é garantido no
+# minuto exato — sob carga da plataforma, a execução pode atrasar vários
+# minutos (a documentação do GitHub Actions é explícita sobre isso). Para
+# SOS (emergência) e downwind (silêncio de segurança), isso significa que o
+# tempo real de detecção pode exceder o limiar configurado. Não há
+# contorno gratuito para isso fora da Vercel; se precisão de minuto for
+# crítica, mova para o plano Pro da Vercel (cron "* * * * *") ou um
+# scheduler dedicado (cron-job.org, Upstash QStash).
+
+on:
+  schedule:
+    # A cada 5 minutos — mínimo suportado pelo GitHub Actions.
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {} # permite disparo manual para depuração
+
+concurrency:
+  # Evita que duas execuções se sobreponham se uma atrasar (ver limitação
+  # acima) — a próxima execução agendada espera a anterior terminar em vez
+  # de rodar em paralelo e duplicar chamadas.
+  group: cron-varredura
+  cancel-in-progress: false
+
+jobs:
+  varredura:
+    name: Varredura SOS + downwind
+    runs-on: ubuntu-latest
+    steps:
+      - name: Varredura de escalada de SOS
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 30 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.APP_BASE_URL || 'https://kiteninja.vercel.app' }}/api/cron/sos-escalada"
+
+      - name: Varredura de silêncio de downwind
+        run: |
+          curl --fail --silent --show-error \
+            --max-time 30 \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "${{ vars.APP_BASE_URL || 'https://kiteninja.vercel.app' }}/api/cron/downwind-silencio"

@@ -44,6 +44,8 @@ const PUBLICAS: Record<string, string> = {
 const MAQUINA: Record<string, string> = {
   'cron/sos-escalada/route.ts':
     'varredura periódica de escaladas de SOS; chamada pelo Cron Job da Vercel com Authorization: Bearer $CRON_SECRET',
+  'cron/downwind-silencio/route.ts':
+    'varredura periódica de silêncios em downwinds; chamada pelo Cron Job da Vercel com Authorization: Bearer $CRON_SECRET',
 };
 
 function listarRotas(dir: string): string[] {

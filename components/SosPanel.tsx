@@ -22,7 +22,7 @@ interface Responder {
   state: 'notificado' | 'a_caminho' | 'no_local' | 'nao_posso';
   distanceKm: number | null;
   /** Por que foi chamado — ver lib/sosCandidates.ts. */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 }
 
 interface ActiveSos {

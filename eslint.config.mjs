@@ -12,6 +12,20 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Android generated artifacts (keep sources checkable)
+    "android/.gradle/**",
+    "android/build/**",
+    "android/app/build/**",
+    "android/app/.gradle/**",
+    "android/capacitor-cordova-android-plugins/**",
+    "android/app/src/main/assets/**",
+    "android/app/src/main/res/xml/config.xml",
+    // Mobile shell rebuilt by capacitor sync (static placeholder)
+    "mobile-shell/*.js",
+    "mobile-shell/*.css",
+    "mobile-shell/*.map",
+    // Claude worktrees
+    ".claude/worktrees/**",
   ]),
 ]);
 

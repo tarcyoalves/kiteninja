@@ -12,6 +12,8 @@ import {
 import { buscarContexto, ehUuid } from '@/lib/downwindDb';
 import { amostrarTrilha, MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ultimoTimestamp } from '@/lib/trilhaDownwind';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
+import { validarTokenRastreio } from '@/lib/trackingToken';
+import { resolverSilencio } from '@/lib/downwindSilencio';
 
 /**
  * O coração do mapa ao vivo — o ÚNICO endpoint polled desta feature (a regra
@@ -39,23 +41,37 @@ interface Params {
  * próprio downwind são exatamente os dois lugares que precisam aceitar.
  * Convidado de OUTRO downwind recebe 404, mesma regra de "não confirma
  * existência" de quem simplesmente não participa.
+ *
+ * Também aceita Bearer token de rastreio (lib/trackingToken.ts) — usado pelo
+ * Foreground Service Android quando o app está fechado. O token é escopoado
+ * ao downwind, então verificamos isso aqui.
  */
-async function resolverUsuario(downwindId: string) {
+async function resolverUsuario(downwindId: string, bearerToken?: string | null) {
+  // Se há Bearer token, tenta validar como token de rastreio
+  if (bearerToken) {
+    const tokenResult = await validarTokenRastreio(bearerToken, downwindId);
+    if (tokenResult) {
+      // Token válido: retorna ID do usuário do token
+      return { id: tokenResult.userId, isTrackingToken: true };
+    }
+    // Token inválido: continua para tentar sessão normal
+  }
+
   const user = await getSessionUser();
   if (!user) throw new HttpError(401, 'Não autenticado.');
   if (user.guestDownwindId && user.guestDownwindId !== downwindId) {
     throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
   }
-  return user;
+  return { id: user.id, isTrackingToken: false };
 }
 
 export async function GET(request: Request, ctx: Params) {
   return handle(async () => {
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
-    const user = await resolverUsuario(id);
+    const usuario = await resolverUsuario(id);
 
-    const { status, participacao } = await buscarContexto(id, user.id);
+    const { status, participacao } = await buscarContexto(id, usuario.id);
     const acesso = podeVerPosicoes({ statusDownwind: status, participacao });
     if (!acesso.permitido) throw new HttpError(acesso.status, acesso.mensagem);
 
@@ -120,7 +136,7 @@ export async function GET(request: Request, ctx: Params) {
         // Calculado no servidor: o cliente não deveria montar esse cruzamento,
         // e centralizar evita a tela do velejador e a do motorista divergirem.
         ehMeuApoio: meuApoioId !== null && userId === meuApoioId,
-        souApoioDele: String(r.apoio_user_id ?? '') === user.id,
+        souApoioDele: String(r.apoio_user_id ?? '') === usuario.id,
       };
     });
 
@@ -139,7 +155,7 @@ export async function GET(request: Request, ctx: Params) {
         const delta = await sql`
           SELECT lat, lng, registrado_em
           FROM downwind_posicoes
-          WHERE downwind_id = ${id} AND user_id = ${user.id} AND registrado_em > ${desde.toISOString()}
+          WHERE downwind_id = ${id} AND user_id = ${usuario.id} AND registrado_em > ${desde.toISOString()}
           ORDER BY registrado_em ASC
           LIMIT ${LIMITE_DELTA}
         `;
@@ -151,7 +167,7 @@ export async function GET(request: Request, ctx: Params) {
         const bruta = await sql`
           SELECT lat, lng, registrado_em
           FROM downwind_posicoes
-          WHERE downwind_id = ${id} AND user_id = ${user.id}
+          WHERE downwind_id = ${id} AND user_id = ${usuario.id}
           ORDER BY registrado_em ASC
         `;
         const pontos = bruta.map((r) => {
@@ -175,28 +191,81 @@ export async function GET(request: Request, ctx: Params) {
   });
 }
 
+/**
+ * Valida e normaliza timestamp de registro de posição.
+ *
+ * O POST aceita `registradoEm` opcional para permitir que o app nativo (foreground
+ * service) reporte posições coletadas offline com o timestamp de quando foram
+ * coletadas, não de quando a rede permitiu o envio.
+ *
+ * Rejeita:
+ * - timestamp no futuro (relógio desconfigurado)
+ * - timestamp mais velho que 6 horas (dado obsoleto, não é rastreamento real)
+ *
+ * Retorna Date válido ou null (usa default do banco).
+ */
+function validarRegistroEm(raw: unknown): Date | null {
+  if (!raw) return null;
+
+  if (typeof raw !== 'string' && typeof raw !== 'number') return null;
+
+  let ts: number;
+  if (typeof raw === 'number') {
+    ts = raw;
+  } else {
+    ts = Date.parse(raw);
+  }
+  if (!Number.isFinite(ts)) return null;
+
+  const agora = Date.now();
+  const seisHorasMs = 6 * 60 * 60 * 1000;
+
+  // Rejeita timestamp no futuro
+  if (ts > agora) return null;
+  // Rejeita mais velho que 6h (dado obsoleto)
+  if (agora - ts > seisHorasMs) return null;
+
+  return new Date(ts);
+}
+
 export async function POST(request: Request, ctx: Params) {
   return handle(async () => {
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
-    const user = await resolverUsuario(id);
 
-    const { status, participacao } = await buscarContexto(id, user.id);
+    // Extrai Bearer token do header Authorization
+    const authHeader = request.headers.get('Authorization');
+    const bearerToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : null;
+
+    const usuario = await resolverUsuario(id, bearerToken);
+
+    const { status, participacao } = await buscarContexto(id, usuario.id);
     const acesso = podeReportarPosicao({ statusDownwind: status, participacao });
     if (!acesso.permitido) throw new HttpError(acesso.status, acesso.mensagem);
 
-    rateLimiters.downwindPosicao(user.id);
+    rateLimiters.downwindPosicao(usuario.id);
 
     const body = await readJson(request);
     const lat = num(body, 'lat', { min: -90, max: 90 });
     const lng = num(body, 'lng', { min: -180, max: 180 });
     const accuracyM = num(body, 'accuracyM', { optional: true, min: 0, max: 100000 });
 
+    // registradoEm: timestamp opcional para o app nativo (foreground service)
+    const registradoEm = validarRegistroEm((body as Record<string, unknown>)?.registradoEm);
+
     const inserted = await sql`
-      INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m)
-      VALUES (${id}, ${user.id}, ${lat}, ${lng}, ${accuracyM})
+      INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, accuracy_m, registrado_em)
+      VALUES (${id}, ${usuario.id}, ${lat}, ${lng}, ${accuracyM}, ${registradoEm ?? sql`DEFAULT`})
       RETURNING registrado_em
     `;
+
+    // Resolve silêncio ativo se houver (aposição foi recebida, o velejador voltou a reportar)
+    // Fire-and-forget: não bloqueia a resposta se falhar
+    resolverSilencio(id, usuario.id).catch((err) => {
+      console.error('[downwind-posicoes] Erro ao resolver silêncio:', err);
+    });
 
     return {
       ok: true,

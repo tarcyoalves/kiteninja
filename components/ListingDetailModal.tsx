@@ -45,8 +45,9 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
   onClose,
   onChanged,
 }) => {
+  // State inicial determina se há dados para carregar
   const [listing, setListing] = useState<Listing | null>(null);
-  const [carregando, setCarregando] = useState(false);
+  const [carregando, setCarregando] = useState(() => Boolean(listingId));
   const [erro, setErro] = useState<string | null>(null);
   const [fotoAtual, setFotoAtual] = useState(0);
   const [lightbox, setLightbox] = useState(false);
@@ -57,17 +58,17 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
 
   useEffect(() => {
     if (!listingId) {
-      setListing(null);
+      // Não limpa aqui — o render já mostra null se listingId for falsy
       return;
     }
 
     let ativo = true;
-    setCarregando(true);
-    setErro(null);
-    setFotoAtual(0);
-    setConfirmandoRemocao(false);
 
     (async () => {
+      setCarregando(true);
+      setErro(null);
+      setFotoAtual(0);
+      setConfirmandoRemocao(false);
       try {
         const res = await fetch(`/api/listings/${listingId}`);
         const body = await res.json().catch(() => null);

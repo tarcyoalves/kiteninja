@@ -227,6 +227,21 @@ describe('textoDoAlerta', () => {
     expect(txt.corpo.toLowerCase()).toContain('posição não confirmada');
     expect(txt.corpo).not.toContain('null');
   });
+
+  // Novos motivos de fallback (ANT-001): moderadores e spot_fallback
+  it('avisa moderador sobre emergência sem posição conhecida', () => {
+    const txt = textoDoAlerta({
+      nome: 'João', distanciaKm: null, spotNome: null, temCoordenada: false, motivo: 'moderador',
+    });
+    expect(txt.corpo).toContain('sem posição conhecida');
+  });
+
+  it('avisa usuário do mesmo spot/estado sobre emergência na região', () => {
+    const txt = textoDoAlerta({
+      nome: 'João', distanciaKm: null, spotNome: null, temCoordenada: false, motivo: 'spot_fallback',
+    });
+    expect(txt.corpo).toContain('sua região');
+  });
 });
 
 describe('boundingBox', () => {

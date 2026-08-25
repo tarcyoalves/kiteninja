@@ -5,6 +5,7 @@ import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit,
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
+import { usePushNotifications } from '../lib/usePushNotifications';
 import { PrefillLogbook } from '../lib/trilhaSessao';
 
 /**
@@ -54,6 +55,17 @@ interface KiteDataContextType {
   events: KiteEvent[];
   toggleEventRegistration: (eventId: string) => void;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Recarrega eventos/downwinds e alertas de segurança do servidor.
+   *
+   * Exposto para pull-to-refresh manual em EventsAndAlertsView — o mesmo
+   * gesto usado no feed (lib/pullToRefresh.ts). Sem `setInterval`: o custo de
+   * poll constante já é o principal item apontado em
+   * docs/ANTIGRAVITY-AUDIT-2026.md, então a atualização concorrente fica a
+   * cargo do usuário (puxar) ou de voltar ao app (visibilitychange, já
+   * coberto por loadFeedAndEvents).
+   */
+  refreshEventsAndAlerts: () => Promise<void>;
   createDownwind: (data: {
     title: string;
     location: string;
@@ -208,7 +220,7 @@ export interface SosResponderData {
    * 'downwind'/'downwind_apoio' podem estar longe e ainda assim ser o socorro
    * mais rápido, então a UI precisa distinguir de um vizinho qualquer.
    */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
   lat: number | null;
   lng: number | null;
 }
@@ -230,7 +242,7 @@ export interface SosAlertData {
   temCoordenada: boolean;
   distanceKm: number | null;
   /** Por que ESTE usuário foi chamado para este SOS (undefined se é o autor). */
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 }
 
 const KiteDataContext = createContext<KiteDataContextType | undefined>(undefined);
@@ -1025,6 +1037,38 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // de outro velejador encontrar quem está por perto para socorrer.
   usePositionBeacon(isAuthenticated);
 
+  // Deep link de uma notificação nativa tocada com o app em background/
+  // fechado. O payload usa o mesmo formato de URL do Web Push (ver
+  // app/api/sos/route.ts e app/api/chat/messages/route.ts): "/?tab=mapa&sos=ID"
+  // ou "/?tab=chat". Não navegamos por window.location — isto é SPA — só lemos
+  // a querystring e aplicamos na aba/estado já existentes no contexto.
+  const handlePushOpenUrl = useCallback(
+    (url: string) => {
+      try {
+        const query = url.includes('?') ? url.slice(url.indexOf('?') + 1) : '';
+        const params = new URLSearchParams(query);
+        const tab = params.get('tab');
+        if (tab === 'mapa' || tab === 'chat' || tab === 'favoritos' || tab === 'destaques' ||
+            tab === 'sessoes' || tab === 'alertas' || tab === 'anuncios' || tab === 'perfil' ||
+            tab === 'mais') {
+          setActiveTab(tab as ActiveTab);
+        }
+        // SOS específico: garante que o alerta mais recente esteja carregado
+        // antes de o velejador cair na aba Mapa a partir da notificação.
+        if (params.get('sos')) {
+          fetchActiveSos();
+        }
+      } catch {
+        // URL malformada não deve travar o app — apenas ignora a navegação.
+      }
+    },
+    [fetchActiveSos]
+  );
+
+  // Registra push nativo (Android/FCM) só depois do login, mesmo motivo do
+  // usePositionBeacon acima: sem isto, /api/push/fcm responderia 401.
+  usePushNotifications(isAuthenticated, handlePushOpenUrl);
+
   const refreshWindData = () => {
     setIsRefreshing(true);
     loadSpots(true).finally(() => setIsRefreshing(false));
@@ -1057,6 +1101,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         events,
         toggleEventRegistration,
         deleteEvent,
+        refreshEventsAndAlerts: loadFeedAndEvents,
         createDownwind,
         windUnit,
         setWindUnit,

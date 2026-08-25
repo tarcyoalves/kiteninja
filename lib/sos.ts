@@ -102,7 +102,7 @@ export function textoDoAlerta(args: {
   distanciaKm: number | null;
   spotNome: string | null;
   temCoordenada: boolean;
-  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio';
+  motivo?: 'proximidade' | 'downwind' | 'downwind_apoio' | 'moderador' | 'spot_fallback';
 }): { titulo: string; corpo: string } {
   const titulo = `🆘 SOS — ${args.nome}`;
   const motivo = args.motivo ?? 'proximidade';
@@ -126,6 +126,20 @@ export function textoDoAlerta(args: {
       ? `Está no SEU downwind, a ${distStr}${ondeStr}. Ajuda necessária!`
       : `Está no SEU downwind${ondeStr}. Posição ainda não confirmada.`;
     return { titulo, corpo };
+  }
+
+  if (motivo === 'moderador') {
+    return {
+      titulo,
+      corpo: `Emergência SOS sem posição conhecida. Verifique os detalhes no app.`,
+    };
+  }
+
+  if (motivo === 'spot_fallback') {
+    return {
+      titulo,
+      corpo: `Emergência SOS na sua região (spot/estado). Verifique os detalhes no app.`,
+    };
   }
 
   if (!args.temCoordenada || distStr === null) {

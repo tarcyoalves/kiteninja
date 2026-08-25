@@ -68,8 +68,8 @@ async function main() {
     for (const statement of statements) await db.exec(statement);
     check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', true);
     check(
-      'separador preserva os 2 blocos DO $$ do schema como instruções inteiras',
-      statements.filter((statement) => statement.trimStart().startsWith('DO $$')).length === 2
+      'separador preserva os 3 blocos DO $$ do schema como instruções inteiras',
+      statements.filter((statement) => statement.trimStart().startsWith('DO $$')).length === 3
     );
   } catch (err) {
     check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', false, err instanceof Error ? err.message : '');
@@ -101,10 +101,13 @@ async function main() {
     'sos_alerts',
     'sos_responders',
     'push_subscriptions',
+    'fcm_tokens',
     'downwinds',
     'downwind_participantes',
     'downwind_posicoes',
     'downwind_convites',
+    'downwind_tracking_tokens',
+    'downwind_silencio_alertas',
     'notifications',
     'chamados',
   ]) {
@@ -1449,6 +1452,42 @@ async function main() {
     [riderB]
   );
 
+  // --------------------------------------------------- push nativo (FCM)
+  await expectOk(
+    db,
+    'registro de token FCM criado com sucesso',
+    `INSERT INTO fcm_tokens (user_id, token, device_name, platform, last_used_at)
+     VALUES ($1, 'fcm-token-abc123', 'Pixel 7', 'android', NOW())
+     RETURNING id`,
+    [riderB]
+  );
+
+  await expectFail(
+    db,
+    'fcm_tokens: token UNIQUE rejeita duplicata direta',
+    `INSERT INTO fcm_tokens (user_id, token) VALUES ($1, 'fcm-token-abc123')`,
+    [riderB]
+  );
+
+  await expectOk(
+    db,
+    'fcm_tokens: UPSERT por token atualiza sem erro (re-registro do mesmo dispositivo)',
+    `INSERT INTO fcm_tokens (user_id, token, device_name, last_used_at, failure_count)
+     VALUES ($1, 'fcm-token-abc123', 'Pixel 7 (atualizado)', NOW(), 0)
+     ON CONFLICT (token) DO UPDATE
+       SET device_name = EXCLUDED.device_name, last_used_at = NOW(), failure_count = 0`,
+    [riderB]
+  );
+
+  await expectOk(
+    db,
+    'mesmo usuário pode ter múltiplos tokens FCM (multi-dispositivo)',
+    `INSERT INTO fcm_tokens (user_id, token, device_name)
+     VALUES ($1, 'fcm-token-outro-aparelho', 'Galaxy S23')
+     RETURNING id`,
+    [riderB]
+  );
+
   await expectOk(
     db,
     'atualização de contato de emergência no perfil',
@@ -1789,6 +1828,70 @@ async function main() {
     [dwId, riderA]
   );
   check('trilha de A tem as 2 posições gravadas, em ordem', trilhaDeA.length === 2);
+
+  // ------------------------------------- downwind_tracking_tokens (Foreground Service Android)
+  const trackingToken = await expectOk(
+    db,
+    'downwind_tracking_tokens: emissão de token de rastreio para o Foreground Service',
+    `INSERT INTO downwind_tracking_tokens (token_hash, downwind_id, user_id, expires_at)
+     VALUES ('tt-hash-abc123', $1, $2, NOW() + INTERVAL '24 hours')
+     RETURNING id, token_hash`,
+    [dwId, riderA]
+  );
+  check('token de rastreio criado', trackingToken.length === 1);
+
+  await expectFail(
+    db,
+    'downwind_tracking_tokens: token_hash UNIQUE rejeita duplicata',
+    `INSERT INTO downwind_tracking_tokens (token_hash, downwind_id, user_id, expires_at)
+     VALUES ('tt-hash-abc123', $1, $2, NOW() + INTERVAL '24 hours')`,
+    [dwId, riderB]
+  );
+
+  await expectFail(
+    db,
+    'downwind_tracking_tokens: downwind_id inexistente é rejeitado (FK)',
+    `INSERT INTO downwind_tracking_tokens (token_hash, downwind_id, user_id, expires_at)
+     VALUES ('tt-hash-fk-invalida', '00000000-0000-0000-0000-000000000000', $1, NOW() + INTERVAL '24 hours')`,
+    [riderA]
+  );
+
+  const tokenValido = await expectOk(
+    db,
+    'downwind_tracking_tokens: consulta de validação (escopo do downwind + não expirado + não revogado)',
+    `SELECT user_id, downwind_id FROM downwind_tracking_tokens
+     WHERE token_hash = 'tt-hash-abc123' AND expires_at > NOW() AND revoked_at IS NULL`,
+    []
+  );
+  check(
+    'token válido resolve para o usuário e downwind corretos',
+    tokenValido.length === 1 &&
+      String(tokenValido[0].user_id) === riderA &&
+      String(tokenValido[0].downwind_id) === dwId
+  );
+
+  await db.query(
+    `UPDATE downwind_tracking_tokens SET revoked_at = NOW() WHERE token_hash = 'tt-hash-abc123'`
+  );
+  const tokenRevogado = await db.query(
+    `SELECT id FROM downwind_tracking_tokens
+     WHERE token_hash = 'tt-hash-abc123' AND revoked_at IS NULL`
+  );
+  check('token revogado não passa mais no filtro de "ativo"', tokenRevogado.rows.length === 0);
+
+  await db.query(
+    `INSERT INTO downwind_tracking_tokens (token_hash, downwind_id, user_id, expires_at)
+     VALUES ('tt-hash-outro-downwind', $1, $2, NOW() + INTERVAL '24 hours')`,
+    [dwId, riderB]
+  );
+  const tokenEscopoErrado = await db.query(
+    `SELECT id FROM downwind_tracking_tokens
+     WHERE token_hash = 'tt-hash-outro-downwind' AND downwind_id = '00000000-0000-0000-0000-000000000000'`
+  );
+  check(
+    'token de um downwind não resolve para downwind_id diferente (escopo restrito)',
+    tokenEscopoErrado.rows.length === 0
+  );
 
   const meusDownwindsAtivos = await expectOk(
     db,
@@ -2233,6 +2336,17 @@ async function main() {
 
   const orphanPush = await db.query(`SELECT id FROM push_subscriptions WHERE user_id = $1`, [riderA]);
   check('push_subscriptions morrem com o usuário', orphanPush.rows.length === 0);
+
+  const orphanFcm = await db.query(`SELECT id FROM fcm_tokens WHERE user_id = $1`, [riderA]);
+  check('fcm_tokens morrem com o usuário', orphanFcm.rows.length === 0);
+
+  // riderA emitiu 'tt-hash-abc123' (já revogado acima) — confirma que o
+  // apagar o usuário também limpa qualquer token de rastreio que sobrou.
+  const orphanTrackingTokens = await db.query(
+    `SELECT id FROM downwind_tracking_tokens WHERE user_id = $1`,
+    [riderA]
+  );
+  check('downwind_tracking_tokens morrem com o usuário', orphanTrackingTokens.rows.length === 0);
 
   await db.close();
 }

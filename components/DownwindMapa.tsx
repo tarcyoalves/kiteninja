@@ -80,17 +80,18 @@ function MapaController({
 
   // Centraliza só uma vez, quando o primeiro centro fica disponível — depois
   // disso o velejador pode arrastar o mapa livremente sem ele "voltar" a
-  // cada poll.
-  const [centralizado, setCentralizado] = useState(false);
+  // cada poll. `centralizado` só controla o efeito abaixo, nunca o render —
+  // por isso é ref, não state (evita setState síncrono dentro do effect).
+  const centralizadoRef = useRef(ehPosicaoPropria);
   useEffect(() => {
-    if (!centro || centralizado) return;
+    if (!centro || centralizadoRef.current) return;
     map.setView(centro, DEFAULT_ZOOM, { animate: false });
     // Só trava depois de centralizar na posição REAL do velejador — enquanto
     // `centro` ainda é o fallback do ponto A, o efeito continua livre para
     // rodar de novo assim que a posição própria chegar (o valor de `centro`
     // muda, o array de dependências detecta e refaz o setView).
-    if (ehPosicaoPropria) setCentralizado(true);
-  }, [centro, ehPosicaoPropria, centralizado, map]);
+    if (ehPosicaoPropria) centralizadoRef.current = true;
+  }, [centro, ehPosicaoPropria, map]);
 
   return null;
 }
