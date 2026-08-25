@@ -24,11 +24,13 @@ import {
   Siren,
   UserCog,
   MessageSquareWarning,
+  AlertTriangle,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
+import { urlBase64ToUint8Array } from '../lib/pushClient';
 import { BotoesEmergencia } from './BotoesEmergencia';
 
 export const SidebarDrawer: React.FC = () => {
@@ -76,6 +78,7 @@ export const SidebarDrawer: React.FC = () => {
   // Web Push
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  const [pushErro, setPushErro] = useState<string | null>(null);
 
   const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
   const isStandalone =
@@ -128,28 +131,51 @@ export const SidebarDrawer: React.FC = () => {
         await navigator.serviceWorker.ready;
 
         const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-        if (vapidKey) {
-          const sub = await reg.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: vapidKey,
-          });
-
-          const subJson = sub.toJSON();
-          if (subJson.endpoint && subJson.keys?.p256dh && subJson.keys?.auth) {
-            await fetch('/api/push/subscribe', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                endpoint: subJson.endpoint,
-                p256dh: subJson.keys.p256dh,
-                auth: subJson.keys.auth,
-              }),
-            });
-          }
+        if (!vapidKey) {
+          throw new Error(
+            'Chave VAPID pública ausente no build. Confira NEXT_PUBLIC_VAPID_PUBLIC_KEY na Vercel — variáveis NEXT_PUBLIC_* entram no bundle em tempo de BUILD, então mudá-la exige um redeploy.'
+          );
         }
+
+        // `applicationServerKey` PRECISA ser Uint8Array, não a string
+        // base64url crua — ver lib/pushClient.ts. Passar a string fazia o
+        // Safari do iOS recusar a inscrição em silêncio.
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(vapidKey),
+        });
+
+        const subJson = sub.toJSON();
+        if (!subJson.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) {
+          throw new Error('Inscrição de push veio incompleta do navegador.');
+        }
+
+        const res = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            endpoint: subJson.endpoint,
+            p256dh: subJson.keys.p256dh,
+            auth: subJson.keys.auth,
+          }),
+        });
+        // Sem checar `ok`, um 4xx/5xx aqui passaria por sucesso: `fetch` só
+        // rejeita em falha de rede. Foi assim que a inscrição parecia ter
+        // funcionado enquanto o banco seguia vazio.
+        if (!res.ok) {
+          throw new Error(`Servidor recusou a inscrição (HTTP ${res.status}).`);
+        }
+        setPushErro(null);
       }
     } catch (err) {
+      // Antes isto era só console.error: a tela dizia "ativado" (a PERMISSÃO
+      // realmente foi concedida) enquanto nenhuma inscrição chegava ao banco,
+      // e o SOS ficava sem ninguém para notificar sem nenhum sinal visível.
       console.error('[push] Erro ao ativar notificações:', err);
+      setPushEnabled(false);
+      setPushErro(
+        err instanceof Error ? err.message : 'Não foi possível ativar as notificações.'
+      );
     } finally {
       setPushBusy(false);
     }
@@ -686,6 +712,16 @@ export const SidebarDrawer: React.FC = () => {
                     )}
                   </button>
                 </div>
+
+                {/* Falha real da inscrição precisa aparecer: o SOS depende
+                    dela, e antes o erro só ia pro console — a tela mostrava
+                    "Ativo" com o banco vazio. */}
+                {pushErro && (
+                  <p className="text-[10px] text-rose-300 leading-tight bg-rose-500/10 border border-rose-500/25 p-2 rounded-lg flex items-start gap-1.5">
+                    <AlertTriangle size={11} className="shrink-0 mt-px" />
+                    <span>{pushErro}</span>
+                  </p>
+                )}
 
                 {/* Instrução especial para iPhone / iOS Safari */}
                 {isIos && !isStandalone && (
