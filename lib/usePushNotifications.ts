@@ -165,10 +165,30 @@ export function usePushNotifications(
         // devolvem o token imediatamente e o evento seria perdido se o registro
         // viesse primeiro.
         await Plugin.addListener('registration', (event: unknown) => {
-          const e = event as { token: string };
-          token = e.token;
+          // O plugin entrega `Token { value: string }` — NÃO `{ token }`.
+          // Confirmado em node_modules/@capacitor/push-notifications/dist/esm/
+          // definitions.d.ts (interface Token, campo `value`: "On Android it
+          // contains the FCM token").
+          //
+          // O código lia `e.token`, que é `undefined`, e mandava um corpo sem
+          // token para POST /api/push/fcm — o servidor respondia "Campo
+          // obrigatório: token" e `fcm_tokens` ficava eternamente vazio, com
+          // toda a configuração (credencial, google-services.json, plugin,
+          // permissão) correta. O cast `as { token: string }` escondia o erro
+          // do TypeScript, que teria pegado isto se o tipo real do plugin
+          // fosse usado.
+          const e = event as { value?: string; token?: string };
+          // `?? e.token` como rede: se alguma versão do plugin usar o outro
+          // nome, continua funcionando em vez de voltar a falhar em silêncio.
+          const recebido = e.value ?? e.token;
+          if (!recebido) {
+            console.error('[push] Evento de registro sem token:', event);
+            setError('O aparelho devolveu um registro de push sem token.');
+            return;
+          }
+          token = recebido;
           console.log('[push] Token FCM recebido');
-          void registerToken(token);
+          void registerToken(recebido);
         });
 
         await Plugin.addListener('registrationError', (event: unknown) => {
