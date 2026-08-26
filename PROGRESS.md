@@ -4,11 +4,15 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
-## Atualização — 26/08/2026 (rastreamento resiliente, convites, início rápido e logbook)
+## Atualização — 26/08/2026 (botão central de PLAY, Feed da comunidade e início rápido)
 
-Entrega completa e integrada do ecossistema de atividades, convites e rastreamento nativo/web:
+1. **Menu Flutuante (`BottomNav.tsx`) com Botão Central de PLAY:**
+   - **Botão Central Elevado:** Botão circular com ícone `Play` e gradiente ciano brilhante (`shadow-cyan-500/40`), acessível de qualquer aba para abrir a folha de início rápido (`IniciarAtividadeSheet`).
+   - **Opções de Velejo Unificadas:** Velejo Solo (com telemetria e link de apoio), Criar Downwind em Grupo (privado ou comunidade) e Entrar por Link/Convite.
+   - **Aba de Feed da Comunidade (`destaques`):** Botão dedicado com ícone `Flame` exibindo a timeline com as postagens, fotos e relatos de velejadores da comunidade (`FeedView`).
+   - **Spots (`Wind`), Mapa (`Compass`) e Chat (`MessageSquare` com badge de não lidas):** Estrutura de navegação limpa, equilibrada e compatível com as regras de layout.
 
-1. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
+2. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
    - Foreground Service nativo coletando localização com app em background e tela apagada.
    - Fila local SQLite persistente (`TrackingQueueDatabase`) para armazenamento de posições offline e drenagem automática ao restabelecer rede.
    - Política de retry exponencial e parada segura em cancelamento/encerramento de downwind ou revogação de token.

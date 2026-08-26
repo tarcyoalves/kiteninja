@@ -136,6 +136,9 @@ interface KiteDataContextType {
   setIsNewAlertOpen: (open: boolean) => void;
   isNewListingOpen: boolean;
   setIsNewListingOpen: (open: boolean) => void;
+  isSheetIniciarOpen: boolean;
+  setIsSheetIniciarOpen: (open: boolean) => void;
+  abrirIniciarAtividade: () => void;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
 
@@ -341,6 +344,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
+  const [isSheetIniciarOpen, setIsSheetIniciarOpen] = useState(false);
+  const abrirIniciarAtividade = useCallback(() => setIsSheetIniciarOpen(true), []);
   const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
   const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
   const [sessaoIdAberta, setSessaoIdAberta] = useState<string | null>(null);
@@ -1198,6 +1203,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsNewAlertOpen,
         isNewListingOpen,
         setIsNewListingOpen,
+        isSheetIniciarOpen,
+        setIsSheetIniciarOpen,
+        abrirIniciarAtividade,
         isBuscaVelejadoresOpen,
         setIsBuscaVelejadoresOpen,
         riderIdAberto,

@@ -5,11 +5,10 @@ import {
   Compass,
   Flame,
   MessageSquare,
-  User as UserIcon,
+  Play,
   Wind,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
-import { useAuth } from '../context/AuthContext';
 import { useKeyboardVisible } from '../lib/useKeyboardVisible';
 
 export const BottomNav: React.FC = () => {
@@ -22,23 +21,20 @@ export const BottomNav: React.FC = () => {
     setIsSidebarOpen,
     setIsLoggerOpen,
     setIsCalculatorOpen,
+    abrirIniciarAtividade,
+    unreadChatCount,
+    dmUnreadCount,
   } = useKiteData();
-  const { user } = useAuth();
+
   // Com interactive-widget=resizes-content o teclado encolhe a viewport em vez
   // de sobrepô-la, então a diferença de altura fica ~0 e não serve de sinal.
   // O hook combina foco em campo editável (toque) + diferença de viewport.
   const isKeyboardOpen = useKeyboardVisible();
 
-  // `--nav-h` (a distância do fundo da tela até o topo desta pílula) é uma
-  // constante CSS pura em app/globals.css — não é medida em runtime aqui. Uma
-  // versão anterior media o DOM em JS a cada resize/orientationchange/scroll
-  // da visualViewport e publicava via `style.setProperty`, e isso foi a causa
-  // raiz da "tarja escura no rodapé" reaparecer repetidas vezes: bastava um
-  // evento de mudança de viewport não coberto (inclusive este componente
-  // desmontando quando o teclado abre, o que derrubava o listener) para o
-  // valor ficar desatualizado. Ver o comentário em app/globals.css junto de
-  // `--nav-h` antes de tentar reintroduzir qualquer medição em JS.
+  const totalChatUnread = unreadChatCount + dmUnreadCount;
 
+  // `--nav-h` (a distância do fundo da tela até o topo desta pílula) é uma
+  // constante CSS pura em app/globals.css — não é medida em runtime aqui.
   const handleTabClick = (tab: ActiveTab) => {
     if (selectedSpot) {
       setSelectedSpot(null);
@@ -57,10 +53,10 @@ export const BottomNav: React.FC = () => {
   if (isKeyboardOpen) return null;
 
   return (
-    /* Barra Flutuante estilo Instagram rebaixada e elegante */
+    /* Barra Flutuante estilo Instagram rebaixada e elegante com PLAY central */
     <div className="fixed bottom-1.5 inset-x-0 z-chrome pointer-events-none flex justify-center px-3 safe-area-pb">
       <nav
-        className={`pointer-events-auto w-full max-w-[390px] h-[58px] px-2 rounded-full flex items-center justify-between transition-all duration-300 shadow-2xl shadow-black/70 border backdrop-blur-2xl ${
+        className={`pointer-events-auto w-full max-w-[390px] h-[58px] px-2.5 rounded-full flex items-center justify-between transition-all duration-300 shadow-2xl shadow-black/70 border backdrop-blur-2xl ${
           beachMode
             ? 'bg-[#020617]/90 border-slate-700/80 text-slate-300'
             : 'bg-[#0B1220]/85 border-white/15 text-slate-300'
@@ -72,12 +68,13 @@ export const BottomNav: React.FC = () => {
         <button
           type="button"
           onClick={() => handleTabClick('favoritos')}
-          className={`relative h-11 px-3.5 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
+          className={`relative h-11 px-3 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
             isTabActive('favoritos')
               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-xs'
               : 'text-slate-400 hover:text-slate-200'
           }`}
           aria-label="Spots e Previsão"
+          title="Spots e Previsão de Vento"
           aria-current={isTabActive('favoritos') ? 'page' : undefined}
         >
           <Wind
@@ -92,12 +89,13 @@ export const BottomNav: React.FC = () => {
         <button
           type="button"
           onClick={() => handleTabClick('mapa')}
-          className={`relative h-11 px-3.5 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
+          className={`relative h-11 px-3 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
             isTabActive('mapa')
               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-xs'
               : 'text-slate-400 hover:text-slate-200'
           }`}
           aria-label="Mapa"
+          title="Mapa Interativo de Spots e Downwind"
           aria-current={isTabActive('mapa') ? 'page' : undefined}
         >
           <Compass
@@ -108,16 +106,28 @@ export const BottomNav: React.FC = () => {
           />
         </button>
 
-        {/* 3. Destaques (Feed) */}
+        {/* 3. BOTÃO CENTRAL: PLAY / Iniciar Velejo & Downwind */}
+        <button
+          type="button"
+          onClick={abrirIniciarAtividade}
+          className="relative -top-2 flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-cyan-400 via-cyan-500 to-blue-600 text-slate-950 shadow-lg shadow-cyan-500/40 border-2 border-[#0B1220] active:scale-90 hover:scale-105 transition-all duration-200"
+          aria-label="Iniciar Velejo ou Downwind"
+          title="Iniciar Velejo Solo ou Criar Downwind"
+        >
+          <Play size={20} className="fill-slate-950 stroke-[1.8] translate-x-0.5" />
+        </button>
+
+        {/* 4. Feed da Comunidade (Timeline de Destaques e Sessões) */}
         <button
           type="button"
           onClick={() => handleTabClick('destaques')}
-          className={`relative h-11 px-3.5 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
+          className={`relative h-11 px-3 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
             isTabActive('destaques')
               ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 shadow-xs'
               : 'text-slate-400 hover:text-slate-200'
           }`}
-          aria-label="Feed de Destaques"
+          aria-label="Feed da Comunidade Geral"
+          title="Feed e Destaques da Comunidade"
           aria-current={isTabActive('destaques') ? 'page' : undefined}
         >
           <Flame
@@ -128,16 +138,17 @@ export const BottomNav: React.FC = () => {
           />
         </button>
 
-        {/* 4. Chat */}
+        {/* 5. Chat */}
         <button
           type="button"
           onClick={() => handleTabClick('chat')}
-          className={`relative h-11 px-3.5 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
+          className={`relative h-11 px-3 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95 ${
             isTabActive('chat')
               ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-400/40 shadow-xs'
               : 'text-slate-400 hover:text-slate-200'
           }`}
           aria-label="Chat dos Velejadores"
+          title="Chat dos Velejadores e DMs"
           aria-current={isTabActive('chat') ? 'page' : undefined}
         >
           <MessageSquare
@@ -146,26 +157,9 @@ export const BottomNav: React.FC = () => {
               isTabActive('chat') ? 'scale-110 stroke-[2.4] text-cyan-300' : 'stroke-[1.8]'
             }`}
           />
-        </button>
-
-        {/* 5. Perfil / Gaveta Lateral */}
-        <button
-          type="button"
-          onClick={() => setIsSidebarOpen(true)}
-          className="relative h-11 px-2.5 rounded-full flex items-center justify-center transition-all duration-200 active:scale-95"
-          aria-label="Meu Perfil e Menu"
-        >
-          <div className="w-8 h-8 rounded-full overflow-hidden ring-2 ring-white/30 hover:ring-cyan-400/80 transition-all flex items-center justify-center bg-slate-800 shadow-sm">
-            {user?.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={user.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <UserIcon size={16} className="text-slate-300" />
-            )}
-          </div>
+          {totalChatUnread > 0 && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-[#0B1220] animate-pulse" />
+          )}
         </button>
       </nav>
     </div>

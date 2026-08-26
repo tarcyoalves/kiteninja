@@ -22,6 +22,8 @@ import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
 import { EntrarDownwindModal } from "../components/activity/EntrarDownwindModal";
+import { IniciarAtividadeSheet } from "../components/activity/IniciarAtividadeSheet";
+import { CriarDownwindModal } from "../components/activity/CriarDownwindModal";
 import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
@@ -65,10 +67,15 @@ const MainContent: React.FC = () => {
     setIsChamadosAbertos,
     unreadChatCount,
     dmUnreadCount,
+    isSheetIniciarOpen,
+    setIsSheetIniciarOpen,
+    createDownwind,
+    spots,
   } = useKiteData();
 
   const { user } = useAuth();
-  const { downwindAtivo } = useDownwind();
+  const { downwindAtivo, recarregar: recarregarDownwind } = useDownwind();
+  const [modalCriarDwGlobalAberto, setModalCriarDwGlobalAberto] = React.useState(false);
   // Um downwind ativo troca apenas o conteúdo da aba Mapa pelo mapa ao vivo.
   // O menu flutuante e as demais abas permanecem disponíveis.
   const emDownwind = Boolean(downwindAtivo);
@@ -272,6 +279,81 @@ const MainContent: React.FC = () => {
         onClose={() => setIsChamadosAbertos(false)}
         telaAtual={activeTab}
       />
+
+      {/* Menu Global de Iniciar Atividade (acionado pelo botão PLAY central do BottomNav ou do Mapa) */}
+      {isSheetIniciarOpen && (
+        <IniciarAtividadeSheet
+          isOpen={isSheetIniciarOpen}
+          onClose={() => setIsSheetIniciarOpen(false)}
+          selectedSpot={selectedSpot}
+          downwindAtivo={downwindAtivo}
+          modoNavegacaoAtivo={false}
+          onIniciarVelejoSolo={() => {
+            setIsSheetIniciarOpen(false);
+            setSelectedSpot(null);
+            setActiveTab('mapa');
+          }}
+          onAbrirCriarDownwind={() => {
+            setIsSheetIniciarOpen(false);
+            setModalCriarDwGlobalAberto(true);
+          }}
+          onAbrirEntrarPorLink={() => {
+            setIsSheetIniciarOpen(false);
+            const token = window.prompt('Cole o link ou token do convite de downwind:');
+            if (token) {
+              const cleanToken = token.trim().replace(/^.*dw_invite=/, '');
+              setTokenConviteUrl(cleanToken);
+            }
+          }}
+          onContinuarDownwindAtivo={() => {
+            setIsSheetIniciarOpen(false);
+            setSelectedSpot(null);
+            setActiveTab('mapa');
+          }}
+          onCompartilharSoloLink={async () => {
+            const shareData = {
+              title: 'Acompanhar Velejo KiteNinja',
+              text: `Estou iniciando um velejo solo em ${selectedSpot?.name || 'KiteNinja'}! Acompanhe comigo.`,
+              url: typeof window !== 'undefined' ? window.location.origin : '',
+            };
+            if (navigator.share) {
+              try {
+                await navigator.share(shareData);
+              } catch {}
+            } else if (navigator.clipboard) {
+              await navigator.clipboard.writeText(shareData.url);
+              alert('Link copiado para a área de transferência!');
+            }
+          }}
+        />
+      )}
+
+      {/* Modal Global de Criar Downwind */}
+      {modalCriarDwGlobalAberto && (
+        <CriarDownwindModal
+          isOpen={modalCriarDwGlobalAberto}
+          onClose={() => setModalCriarDwGlobalAberto(false)}
+          spots={spots}
+          defaultSpotId={selectedSpot?.id}
+          onCriarDownwind={async (dados) => {
+            try {
+              const res = await fetch('/api/downwind', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(dados),
+              });
+              const data = await res.json();
+              if (!res.ok) return { ok: false, error: data.error || 'Falha ao criar downwind.' };
+              await recarregarDownwind();
+              setModalCriarDwGlobalAberto(false);
+              setActiveTab('mapa');
+              return { ok: true, downwindId: data.id };
+            } catch {
+              return { ok: false, error: 'Erro de conexão ao criar downwind.' };
+            }
+          }}
+        />
+      )}
 
       {/* In-App Push Notification Toast */}
       <InAppPushToast />
