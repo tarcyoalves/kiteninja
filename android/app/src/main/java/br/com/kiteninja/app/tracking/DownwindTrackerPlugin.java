@@ -1,10 +1,20 @@
 package br.com.kiteninja.app.tracking;
 
 import android.Manifest;
+import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkCapabilities;
+import android.net.Uri;
 import android.os.Build;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.PowerManager;
+import android.os.ResultReceiver;
+import android.provider.Settings;
 import android.util.Log;
 
 import com.getcapacitor.JSObject;
@@ -16,15 +26,16 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import br.com.kiteninja.app.RastreioDownwindService;
 
 /**
- * Plugin Capacitor para gerenciar o rastreamento de downwind.
+ * Plugin Capacitor para o rastreamento em segundo plano de downwind.
  *
- * Permite que o app web (JavaScript) inicie e pare o Foreground Service
- * de rastreamento, e recebe eventos do serviço.
- *
- * Usa o sistema de permissões do Capacitor 8 com @Permission e @PermissionCallback.
+ * Usa TrackingStateStore e TrackingQueueDatabase como fontes unificadas de verdade.
+ * Comunica-se com RastreioDownwindService através de Intents e ResultReceiver.
  */
 @CapacitorPlugin(
     name = "DownwindTracker",
@@ -41,29 +52,21 @@ import br.com.kiteninja.app.RastreioDownwindService;
 public class DownwindTrackerPlugin extends Plugin {
 
     static final String LOCATION = "location";
-
     private static final String TAG = "DownwindTrackerPlugin";
 
-    // SharedPreferences para estado persistente do tracking (sobrevive a plugin recreation)
-    private static final String PREFS_NAME = "downwind_tracker_prefs";
-    private static final String KEY_IS_TRACKING = "is_tracking";
-    private static final String KEY_DOWNWIND_ID = "downwind_id";
-
-    private String currentDownwindId = null;
-    private String currentAuthToken = null;
-    private String apiBaseUrl = null;
+    private TrackingStateStore stateStore;
+    private TrackingQueueDatabase queueDb;
+    private String pendingDownwindId;
+    private String pendingAuthToken;
+    private String pendingBaseUrl;
 
     @Override
     public void load() {
-        Log.i(TAG, "DownwindTrackerPlugin carregado");
+        stateStore = new TrackingStateStore(getContext());
+        queueDb = TrackingQueueDatabase.getInstance(getContext());
+        Log.i(TAG, "DownwindTrackerPlugin carregado com armazenamento persistente.");
     }
 
-    /**
-     * Valida a URL base para garantir segurança em produção.
-     *
-     * Em produção (BuildConfig.DEBUG == false): só aceita https://
-     * Em desenvolvimento (debuggable): aceita http://localhost* e http://10.* (rede local)
-     */
     private boolean validarBaseUrl(String baseUrl) {
         if (baseUrl == null || baseUrl.isEmpty()) {
             return false;
@@ -74,69 +77,30 @@ public class DownwindTrackerPlugin extends Plugin {
             String protocol = url.getProtocol();
             String host = url.getHost();
 
-            // Produção: só HTTPS
             if (!isDebuggable()) {
                 return "https".equalsIgnoreCase(protocol);
             }
 
-            // Desenvolvimento: permite HTTP para localhost e redes locais
             if ("http".equalsIgnoreCase(protocol)) {
-                // localhost ou IP de rede local (10.x.x.x, 192.168.x.x)
                 return "localhost".equalsIgnoreCase(host)
-                    || host.matches("^127\\.\\d+\\.\\d+\\.\\d+$")  // 127.x.x.x
-                    || host.matches("^10\\.\\d+\\.\\d+\\.\\d+$")  // 10.x.x.x
-                    || host.matches("^192\\.168\\.\\d+\\.\\d+$"); // 192.168.x.x
+                    || host.matches("^127\\.\\d+\\.\\d+\\.\\d+$")
+                    || host.matches("^10\\.\\d+\\.\\d+\\.\\d+$")
+                    || host.matches("^192\\.168\\.\\d+\\.\\d+$");
             }
 
             return "https".equalsIgnoreCase(protocol);
         } catch (Exception e) {
-            Log.e(TAG, "Erro ao validar URL: " + baseUrl, e);
+            Log.e(TAG, "Erro ao validar URL base: " + baseUrl, e);
             return false;
         }
     }
 
-    /**
-     * Verifica se o app está em modo debugável.
-     */
     private boolean isDebuggable() {
         return (getContext().getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     /**
-     * Salva o estado de tracking no SharedPreferences.
-     * Usa SharedPreferences pois sobrevive a plugin recreation.
-     */
-    private void saveTrackingState(boolean isTracking, String downwindId) {
-        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        prefs.edit()
-            .putBoolean(KEY_IS_TRACKING, isTracking)
-            .putString(KEY_DOWNWIND_ID, isTracking ? downwindId : null)
-            .apply();
-    }
-
-    /**
-     * Lê o estado de tracking do SharedPreferences.
-     * Retorna true se há um tracking ativo persistido.
-     */
-    private boolean isTrackingPersisted() {
-        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getBoolean(KEY_IS_TRACKING, false);
-    }
-
-    /**
-     * Lê o downwindId persistido.
-     */
-    private String getPersistedDownwindId() {
-        SharedPreferences prefs = getContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-        return prefs.getString(KEY_DOWNWIND_ID, null);
-    }
-
-    /**
-     * Inicia o rastreamento de downwind.
-     *
-     * Requer que o app esteja em primeiro plano para iniciar o Foreground Service.
-     * A permissão de localização é solicitada de forma contextual usando o sistema
-     * do Capacitor 8.
+     * Inicia o rastreamento nativo com confirmação assíncrona do serviço.
      */
     @PluginMethod
     public void startTracking(PluginCall call) {
@@ -149,102 +113,134 @@ public class DownwindTrackerPlugin extends Plugin {
             return;
         }
 
-        // Valida URL: só aceita https em produção, http apenas para localhost/dev em debug
         if (!validarBaseUrl(baseUrl)) {
-            call.reject("URL inválida: use https em produção. HTTP só é permitido para localhost ou quando debuggable.");
+            call.reject("URL inválida: use https em produção. HTTP só é permitido para localhost/dev em debug.");
             return;
         }
 
-        // Salva os dados para usar no callback de permissão
-        this.currentDownwindId = downwindId;
-        this.currentAuthToken = authToken;
-        this.apiBaseUrl = baseUrl;
+        // Idempotência: se já está rastreando o mesmo downwind com o serviço ativo, atualiza token e resolve
+        if (isServicoRodando() && stateStore.isTrackingActive() && downwindId.equals(stateStore.getDownwindId())) {
+            stateStore.saveConfig(downwindId, authToken, baseUrl);
+            JSObject result = new JSObject();
+            result.put("success", true);
+            result.put("downwindId", downwindId);
+            result.put("alreadyRunning", true);
+            call.resolve(result);
+            return;
+        }
 
-        // Verifica permissão de localização usando a API do Capacitor 8
         if (getPermissionState(LOCATION) != PermissionState.GRANTED) {
-            // Solicita permissão usando o sistema do Capacitor
+            pendingDownwindId = downwindId;
+            pendingAuthToken = authToken;
+            pendingBaseUrl = baseUrl;
             requestPermissionForAlias(LOCATION, call, "onLocationPermissionResult");
-            // NÃO chama call.resolve() aqui - o callback faz isso
             return;
         }
 
-        // Já tem permissão, inicia o serviço
-        startTrackingService(call);
+        startTrackingServiceWithConfirmation(call, downwindId, authToken, baseUrl);
     }
 
-    /**
-     * Callback após a permissão de localização ser concedida.
-     * Usa @PermissionCallback conforme Capacitor 8.
-     */
     @PermissionCallback
     private void onLocationPermissionResult(PluginCall call) {
         if (getPermissionState(LOCATION) == PermissionState.GRANTED) {
-            startTrackingService(call);
+            String downwindId = pendingDownwindId;
+            String authToken = pendingAuthToken;
+            String baseUrl = pendingBaseUrl;
+            pendingDownwindId = null;
+            pendingAuthToken = null;
+            pendingBaseUrl = null;
+
+            if (downwindId != null && authToken != null && baseUrl != null) {
+                startTrackingServiceWithConfirmation(call, downwindId, authToken, baseUrl);
+            } else {
+                call.reject("Configuração de rastreamento perdida durante o pedido de permissão.");
+            }
         } else {
+            pendingDownwindId = null;
+            pendingAuthToken = null;
+            pendingBaseUrl = null;
             call.reject("Permissão de localização negada");
         }
     }
 
-    /**
-     * Inicia o Foreground Service de rastreamento.
-     */
-    private void startTrackingService(PluginCall call) {
+    private void startTrackingServiceWithConfirmation(
+            PluginCall call,
+            String downwindId,
+            String authToken,
+            String baseUrl
+    ) {
         try {
-            Intent serviceIntent = new Intent(getContext(), RastreioDownwindService.class);
-            // A configuração vai como extras do Intent, não por uma chamada de
-            // método: o Android instancia o Service sozinho ao processar
-            // startForegroundService(), então uma instância criada aqui com
-            // `new RastreioDownwindService()` nunca seria a mesma que roda de
-            // fato — RastreioDownwindService.onStartCommand() lê estes extras.
-            serviceIntent.putExtra(RastreioDownwindService.EXTRA_DOWNWIND_ID, currentDownwindId);
-            serviceIntent.putExtra(RastreioDownwindService.EXTRA_AUTH_TOKEN, currentAuthToken);
-            serviceIntent.putExtra(RastreioDownwindService.EXTRA_API_BASE_URL, apiBaseUrl);
+            AtomicBoolean resolved = new AtomicBoolean(false);
+            Handler mainHandler = new Handler(Looper.getMainLooper());
 
-            // Inicia o serviço
+            ResultReceiver receiver = new ResultReceiver(mainHandler) {
+                @Override
+                protected void onReceiveResult(int resultCode, Bundle resultData) {
+                    if (resolved.compareAndSet(false, true)) {
+                        if (resultCode == Activity.RESULT_OK) {
+                            JSObject res = new JSObject();
+                            res.put("success", true);
+                            res.put("downwindId", downwindId);
+                            call.resolve(res);
+                        } else {
+                            String err = resultData != null ? resultData.getString("error") : "Erro desconhecido ao iniciar serviço";
+                            call.reject(err);
+                        }
+                    }
+                }
+            };
+
+            // Timeout de segurança para não deixar a Promise do JavaScript pendente
+            mainHandler.postDelayed(() -> {
+                if (resolved.compareAndSet(false, true)) {
+                    stateStore.clearConfig("service_start_timeout");
+                    Intent stopIntent = new Intent(getContext(), RastreioDownwindService.class);
+                    stopIntent.setAction(RastreioDownwindService.ACTION_STOP);
+                    getContext().startService(stopIntent);
+                    call.reject("Tempo limite esgotado antes da confirmação do GPS.");
+                }
+            }, 8000L);
+
+            Intent intent = new Intent(getContext(), RastreioDownwindService.class);
+            intent.putExtra(RastreioDownwindService.EXTRA_DOWNWIND_ID, downwindId);
+            intent.putExtra(RastreioDownwindService.EXTRA_AUTH_TOKEN, authToken);
+            intent.putExtra(RastreioDownwindService.EXTRA_API_BASE_URL, baseUrl);
+            intent.putExtra(RastreioDownwindService.EXTRA_RESULT_RECEIVER, receiver);
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                getContext().startForegroundService(serviceIntent);
+                getContext().startForegroundService(intent);
             } else {
-                getContext().startService(serviceIntent);
+                getContext().startService(intent);
             }
 
-            // Salva estado persistente (sobrevive a plugin recreation)
-            saveTrackingState(true, currentDownwindId);
-
-            JSObject result = new JSObject();
-            result.put("success", true);
-            result.put("downwindId", currentDownwindId);
-            call.resolve(result);
-
-            Log.i(TAG, "Rastreamento iniciado para downwind: " + currentDownwindId);
+            Log.i(TAG, "Solicitação de início do Foreground Service enviada.");
 
         } catch (Exception e) {
-            Log.e(TAG, "Erro ao iniciar rastreamento", e);
-            call.reject("Erro ao iniciar rastreamento: " + e.getMessage());
+            Log.e(TAG, "Exceção ao iniciar RastreioDownwindService", e);
+            // A configuração persistida pertence ao Service. Não a apague aqui:
+            // uma tentativa de trocar/iniciar não pode invalidar uma execução
+            // anterior que o Android ainda mantém viva.
+            call.reject("Falha ao iniciar serviço: " + e.getMessage());
         }
     }
 
     /**
-     * Para o rastreamento de downwind.
+     * Encerra o rastreamento de downwind de forma explícita.
      */
     @PluginMethod
     public void stopTracking(PluginCall call) {
         try {
-            Intent serviceIntent = new Intent(getContext(), RastreioDownwindService.class);
-            serviceIntent.setAction(RastreioDownwindService.ACTION_STOP);
-            getContext().startService(serviceIntent);
+            Intent intent = new Intent(getContext(), RastreioDownwindService.class);
+            intent.setAction(RastreioDownwindService.ACTION_STOP);
+            getContext().startService(intent);
 
-            // Limpa estado persistente
-            saveTrackingState(false, null);
-
-            currentDownwindId = null;
-            currentAuthToken = null;
+            stateStore.clearConfig("user_stopped");
 
             JSObject result = new JSObject();
             result.put("success", true);
             call.resolve(result);
 
-            Log.i(TAG, "Rastreamento parado");
-
+            Log.i(TAG, "Solicitação de parada enviada ao serviço.");
         } catch (Exception e) {
             Log.e(TAG, "Erro ao parar rastreamento", e);
             call.reject("Erro ao parar rastreamento: " + e.getMessage());
@@ -252,48 +248,105 @@ public class DownwindTrackerPlugin extends Plugin {
     }
 
     /**
-     * Verifica se o rastreamento está ativo.
+     * Verifica se o rastreamento está ativo no momento.
      */
     @PluginMethod
     public void isTracking(PluginCall call) {
-        // Fonte de verdade é o serviço realmente rodando (via ActivityManager),
-        // não apenas o SharedPreferences: o serviço pode ter se autoencerrado
-        // (teto de 8h, token inválido, falhas consecutivas — ver
-        // RastreioDownwindService.stopSelfService()) sem que o plugin fosse
-        // avisado, o que deixaria o estado persistido obsoleto.
         boolean servicoRodando = isServicoRodando();
-
-        if (!servicoRodando && isTrackingPersisted()) {
-            // Autocura: o serviço parou por conta própria, mas o estado
-            // persistido ainda dizia "rastreando". Corrige para não reportar
-            // um tracking que não existe mais.
-            saveTrackingState(false, null);
-        }
+        // Não apaga configuração ativa só porque ActivityManager ainda não
+        // lista o serviço: durante START_STICKY/recriação existe uma janela em
+        // que a configuração persistida é justamente o que permite recuperar.
+        boolean trackingAtivo = stateStore.isTrackingActive();
 
         JSObject result = new JSObject();
-        result.put("isTracking", servicoRodando);
-        result.put("downwindId", servicoRodando ? getPersistedDownwindId() : null);
+        result.put("isTracking", servicoRodando && trackingAtivo);
+        result.put("downwindId", (servicoRodando && trackingAtivo) ? stateStore.getDownwindId() : null);
         call.resolve(result);
     }
 
     /**
-     * Verifica se o serviço de rastreamento está rodando.
+     * Retorna a telemetria operacional completa do rastreador (sem dados sensíveis).
      */
-    private boolean isServicoRodando() {
-        android.app.ActivityManager manager = (android.app.ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
-        for (android.app.ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
-            if (RastreioDownwindService.class.getName().equals(service.service.getClassName())) {
-                return true;
+    @PluginMethod
+    public void getTrackingStatus(PluginCall call) {
+        boolean servicoRodando = isServicoRodando();
+        String downwindId = stateStore.getDownwindId();
+        int pendingCount = queueDb.getCount(downwindId);
+
+        boolean batteryIgnored = false;
+        try {
+            PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (pm != null) {
+                batteryIgnored = pm.isIgnoringBatteryOptimizations(getContext().getPackageName());
             }
+        } catch (Exception ignored) {
         }
-        return false;
+
+        boolean networkAvailable = false;
+        try {
+            ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm != null) {
+                android.net.Network active = cm.getActiveNetwork();
+                if (active != null) {
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+                    networkAvailable = caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        Map<String, Object> telemetry = stateStore.toTelemetryMap(
+                servicoRodando,
+                pendingCount,
+                batteryIgnored,
+                networkAvailable
+        );
+
+        JSObject result = new JSObject();
+        for (Map.Entry<String, Object> entry : telemetry.entrySet()) {
+            result.put(entry.getKey(), entry.getValue());
+        }
+
+        call.resolve(result);
     }
 
     /**
-     * Recebe o token de rastreio do servidor (via FCM ou API).
-     *
-     * O app web chama este método para passar o token recebido do servidor
-     * quando o usuário inicia o downwind.
+     * Abre a tela de configurações do aplicativo / bateria para o usuário escolher 'Sem restrições'.
+     */
+    @PluginMethod
+    public void openBatteryOptimizationSettings(PluginCall call) {
+        try {
+            Intent intent = new Intent();
+            String packageName = getContext().getPackageName();
+
+            // Tenta abrir direto detalhes do aplicativo para bateria
+            intent.setAction(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+            intent.setData(Uri.parse("package:" + packageName));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+
+            JSObject res = new JSObject();
+            res.put("success", true);
+            call.resolve(res);
+        } catch (Exception e) {
+            try {
+                // Fallback para configurações gerais de otimização de bateria
+                Intent fallback = new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(fallback);
+
+                JSObject res = new JSObject();
+                res.put("success", true);
+                call.resolve(res);
+            } catch (Exception ex) {
+                Log.e(TAG, "Não foi possível abrir configurações de bateria", ex);
+                call.reject("Não foi possível abrir configurações: " + ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Atualiza o token de autenticação em execução.
      */
     @PluginMethod
     public void setAuthToken(PluginCall call) {
@@ -303,11 +356,30 @@ public class DownwindTrackerPlugin extends Plugin {
             return;
         }
 
-        // O token será usado nas próximas chamadas de localização
-        this.currentAuthToken = token;
+        String downwindId = stateStore.getDownwindId();
+        String baseUrl = stateStore.getApiBaseUrl();
+        if (downwindId != null && baseUrl != null) {
+            stateStore.saveConfig(downwindId, token, baseUrl);
+        }
 
         JSObject result = new JSObject();
         result.put("success", true);
         call.resolve(result);
+    }
+
+    private boolean isServicoRodando() {
+        try {
+            ActivityManager manager = (ActivityManager) getContext().getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager != null) {
+                for (ActivityManager.RunningServiceInfo service : manager.getRunningServices(Integer.MAX_VALUE)) {
+                    if (RastreioDownwindService.class.getName().equals(service.service.getClassName())) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao verificar status do serviço", e);
+        }
+        return false;
     }
 }

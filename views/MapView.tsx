@@ -9,6 +9,9 @@ import { nearestSpot } from '../lib/geo';
 import { UserPosition } from '@/components/LeafletMap';
 import { ModoNavegacao, ResumoNavegacao } from '@/components/ModoNavegacao';
 import { paraPrefillLogbook, valePenaRegistrarSessao } from '@/lib/trilhaSessao';
+import { useDownwind } from '@/context/DownwindContext';
+import { IniciarAtividadeSheet } from '@/components/activity/IniciarAtividadeSheet';
+import { CriarDownwindModal } from '@/components/activity/CriarDownwindModal';
 
 // Carregar Leaflet apenas no cliente (SSR = false) — Leaflet depende de window
 const LeafletMap = dynamic(
@@ -47,6 +50,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     setLastKnownPosition,
     abrirLoggerComResumo,
   } = useKiteData();
+  const { downwindAtivo, recarregar: recarregarDownwind } = useDownwind();
   const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
   const [locateStatus, setLocateStatus] = useState<
     'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout'
@@ -59,10 +63,46 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   // durante uma travessia. Entra a partir daqui (aba Mapa) porque é onde o
   // velejador está antes de ir para a água — ver components/ModoNavegacao.tsx.
   const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
+  const [sheetIniciarAberto, setSheetIniciarAberto] = useState(false);
+  const [modalCriarDwAberto, setModalCriarDwAberto] = useState(false);
   // Incrementado a cada clique manual no botão "Minha localização", para o
   // LeafletMap recentralizar mesmo quando o watch de GPS já está rodando (ver
   // handleLocateButtonClick abaixo).
   const [recenterTick, setRecenterTick] = useState(0);
+
+  const handleEntrarConvite = useCallback(async (token: string) => {
+    try {
+      const res = await fetch(`/api/downwind/invite/${token}`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Falha ao entrar no downwind.' };
+      await recarregarDownwind();
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Erro de conexão ao validar convite.' };
+    }
+  }, [recarregarDownwind]);
+
+  const handleCriarDownwind = useCallback(async (dados: {
+    nome: string;
+    spotSaida: string;
+    spotChegada?: string;
+    previstoPara?: string;
+    visibilidade: 'privado' | 'comunidade';
+  }) => {
+    try {
+      const res = await fetch('/api/downwind', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Falha ao criar downwind.' };
+      await recarregarDownwind();
+      return { ok: true, downwindId: data.id };
+    } catch {
+      return { ok: false, error: 'Erro de conexão ao criar downwind.' };
+    }
+  }, [recarregarDownwind]);
 
   /**
    * Registro pessoal: ao sair do Modo Navegação a partir DESTE mapa (sempre
@@ -314,14 +354,58 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       {!modoNavegacaoAtivo && (
         <button
           type="button"
-          onClick={() => setModoNavegacaoAtivo(true)}
+          onClick={() => setSheetIniciarAberto(true)}
           className="absolute right-3 top-1/2 -translate-y-1/2 z-map-ui flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 border border-cyan-300/40 text-slate-950 shadow-2xl shadow-cyan-500/30 active:scale-95 transition-all"
-          aria-label="Entrar no Modo Navegação"
-          title="Iniciar Modo Navegação"
+          aria-label="Iniciar atividade no mapa"
+          title="Iniciar Velejo ou Downwind"
         >
           <Navigation size={20} className="fill-current stroke-[1.5]" />
           <span className="text-[9px] font-black leading-none tracking-tight">INICIAR</span>
         </button>
+      )}
+
+      {sheetIniciarAberto && (
+        <IniciarAtividadeSheet
+          isOpen={sheetIniciarAberto}
+          onClose={() => setSheetIniciarAberto(false)}
+          selectedSpot={selectedMapSpot}
+          downwindAtivo={downwindAtivo}
+          modoNavegacaoAtivo={modoNavegacaoAtivo}
+          onIniciarVelejoSolo={() => setModoNavegacaoAtivo(true)}
+          onAbrirCriarDownwind={() => setModalCriarDwAberto(true)}
+          onAbrirEntrarPorLink={() => {
+            const token = window.prompt('Cole o link ou token do convite de downwind:');
+            if (token) handleEntrarConvite(token.trim().replace(/^.*dw_invite=/, ''));
+          }}
+          onContinuarDownwindAtivo={() => {
+            setSheetIniciarAberto(false);
+          }}
+          onCompartilharSoloLink={async () => {
+            const shareData = {
+              title: 'Acompanhar Velejo KiteNinja',
+              text: `Estou iniciando um velejo solo em ${selectedMapSpot?.name || 'KiteNinja'}! Acompanhe comigo.`,
+              url: typeof window !== 'undefined' ? window.location.origin : '',
+            };
+            if (navigator.share) {
+              try {
+                await navigator.share(shareData);
+              } catch {}
+            } else if (navigator.clipboard) {
+              await navigator.clipboard.writeText(shareData.url);
+              alert('Link copiado para a área de transferência!');
+            }
+          }}
+        />
+      )}
+
+      {modalCriarDwAberto && (
+        <CriarDownwindModal
+          isOpen={modalCriarDwAberto}
+          onClose={() => setModalCriarDwAberto(false)}
+          spots={spots}
+          defaultSpotId={selectedMapSpot?.id}
+          onCriarDownwind={handleCriarDownwind}
+        />
       )}
 
       {modoNavegacaoAtivo && (

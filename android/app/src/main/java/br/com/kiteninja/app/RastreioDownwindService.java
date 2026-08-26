@@ -1,20 +1,29 @@
 package br.com.kiteninja.app;
 
 import android.Manifest;
+import android.app.Activity;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
 import android.os.Binder;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.ResultReceiver;
 import android.util.Log;
 
 import androidx.annotation.NonNull;
@@ -35,25 +44,29 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import br.com.kiteninja.app.tracking.TrackingQueueDatabase;
+import br.com.kiteninja.app.tracking.TrackingQueueDatabase.PendingPosition;
+import br.com.kiteninja.app.tracking.TrackingRetryPolicy;
+import br.com.kiteninja.app.tracking.TrackingStateStore;
 
 /**
- * Foreground Service para rastreamento de downwind com o app fechado.
+ * Foreground Service resiliente para rastreamento de downwind com o app fechado.
  *
- * Este serviço coleta a localização do usuário a cada 45 segundos (mesma cadência
- * do beacon web) e a envia para o servidor. Continua funcionando mesmo quando o
- * app é removido dos recentes.
- *
- * O serviço é iniciado pelo app web quando o usuário inicia um downwind em primeiro
- * plano. O token de autenticação é recebido via FCM.
- *
- * Limitações:
- * - Não funciona após force-stop do app (padrão do Android)
- * - Pode ser morto por fabricantes agressivos (Xiaomi, Samsung, etc)
- * - Requer que o app esteja em primeiro plano ao iniciar
+ * Características de Resiliência:
+ * 1. START_STICKY com recuperação automática do estado persistido em TrackingStateStore.
+ * 2. Fila SQLite persistente (TrackingQueueDatabase) que sobrevive a morte do processo e offline prolongado.
+ * 3. Drenagem automática e FIFO da fila quando a conectividade é restaurada (ConnectivityManager.NetworkCallback).
+ * 4. Backoff exponencial e tolerância a quedas normais de sinal no mar (NÃO encerra por 10 falhas comuns).
+ * 5. Encerramento automático apenas em causas estritamente terminais:
+ *    - Ação explícita do usuário (botão "Parar" na notificação ou no app).
+ *    - Token revogado ou expirado (HTTP 401/403 do backend).
+ *    - Teto de segurança de 8 horas baseado no startedAt original.
+ * 6. Confirmação explícita de inicialização para o plugin via ResultReceiver.
  */
 public class RastreioDownwindService extends Service {
 
@@ -61,51 +74,43 @@ public class RastreioDownwindService extends Service {
     private static final String CHANNEL_ID = "rastreio_downwind";
     private static final int NOTIFICATION_ID = 1001;
 
-    // Intervalo de coleta de GPS (45 segundos, mesma cadência do beacon web)
-    private static final long LOCATION_INTERVAL_MS = 45_000;
-    private static final long FASTEST_INTERVAL_MS = 30_000;
+    // Intervalo de coleta de GPS (45s normal, 30s fastest)
+    private static final long LOCATION_INTERVAL_MS = 45_000L;
+    private static final long FASTEST_INTERVAL_MS = 30_000L;
 
-    // Rede de segurança independente do FCM: nenhuma travessia dura mais que
-    // isso, então o serviço se desliga sozinho mesmo se a mensagem de
-    // encerramento (FCM) se perder — o cenário exatamente descrito no plano
-    // como "o serviço nunca ficar preso caso a mensagem se perca". Sem este
-    // teto, um downwind cujo FCM de encerramento falhar deixaria o GPS e a
-    // notificação ligados indefinidamente, drenando bateria sem propósito.
-    private static final long MAX_SERVICE_DURATION_MS = 8 * 60 * 60 * 1000; // 8h
+    // Teto máximo de segurança: 8 horas a partir do startedAt original
+    public static final long MAX_SERVICE_DURATION_MS = 8 * 60 * 60 * 1000L; // 8h
 
-    // Depois de N falhas consecutivas de rede/servidor ao enviar posição, para
-    // de tentar. Cobre o caso do token ter sido revogado/expirado (downwind
-    // encerrou e o FCM de aviso não chegou) ou o app ter sido desautorizado —
-    // continuar batendo num endpoint que sempre rejeita só gasta bateria e
-    // dados do usuário sem nenhuma chance de sucesso.
-    private static final int MAX_CONSECUTIVE_FAILURES = 10;
-
-    /** Ação enviada pelo plugin/notificação para encerrar o rastreamento. */
     public static final String ACTION_STOP = "ACTION_STOP";
-    /** Chaves dos extras do Intent que inicia o serviço (ver DownwindTrackerPlugin). */
     public static final String EXTRA_DOWNWIND_ID = "downwindId";
     public static final String EXTRA_AUTH_TOKEN = "authToken";
     public static final String EXTRA_API_BASE_URL = "apiBaseUrl";
+    public static final String EXTRA_RESULT_RECEIVER = "resultReceiver";
 
-    // Configuração do serviço
-    private String downwindId;
-    private String authToken;
-    private String apiBaseUrl;
+    private TrackingStateStore stateStore;
+    private TrackingQueueDatabase queueDb;
 
     private FusedLocationProviderClient fusedLocationClient;
     private LocationCallback locationCallback;
+    private ConnectivityManager connectivityManager;
+    private ConnectivityManager.NetworkCallback networkCallback;
+
     private ExecutorService executor;
+    /** true desde o agendamento até o fim do flush; impede acumular tarefas no executor. */
+    private final AtomicBoolean flushScheduledOrRunning = new AtomicBoolean(false);
+    private final Handler retryHandler = new Handler(Looper.getMainLooper());
+    private long nextFlushAllowedAt = 0L;
+    private final Runnable retryFlushRunnable = () -> {
+        nextFlushAllowedAt = 0L;
+        triggerFlush();
+    };
     private boolean isRunning = false;
-    private int consecutiveFailures = 0;
 
     private final Handler timeoutHandler = new Handler(Looper.getMainLooper());
     private final Runnable maxDurationRunnable = () -> {
-        Log.w(TAG, "Teto de duração atingido (" + MAX_SERVICE_DURATION_MS + "ms). Encerrando por segurança.");
-        stopSelfService();
+        Log.w(TAG, "Teto de duração de 8 horas atingido. Encerrando serviço por segurança.");
+        stopSelfService("duration_limit_reached");
     };
-
-    // Fila local para posições offline
-    private final List<PendingLocation> pendingLocations = new ArrayList<>();
 
     private final IBinder binder = new LocalBinder();
 
@@ -115,72 +120,107 @@ public class RastreioDownwindService extends Service {
         }
     }
 
-
     @Override
     public void onCreate() {
         super.onCreate();
+        stateStore = new TrackingStateStore(this);
+        queueDb = TrackingQueueDatabase.getInstance(this);
+
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
         executor = Executors.newSingleThreadExecutor();
 
         createNotificationChannel();
         setupLocationCallback();
+        setupNetworkCallback();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        // A notificação (ação "Parar") e o plugin (stopTracking) enviam este
-        // Intent para a MESMA instância de serviço que o Android já mantém
-        // rodando. Precisa ser verificado antes de qualquer outra coisa: se
-        // não checarmos a ação aqui, "Parar" reinicia o rastreamento em vez
-        // de encerrá-lo, porque cai direto no startForeground() abaixo.
+        // Ação explícita de parada (notificação ou plugin)
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
-            stopSelfService();
+            stopSelfService("user_stopped");
             return START_NOT_STICKY;
         }
 
-        // Os dados de configuração chegam como extras do Intent, não por uma
-        // chamada de método em outra instância — o Android instancia este
-        // Service sozinho ao processar startForegroundService(); qualquer
-        // `new RastreioDownwindService()` criado fora daqui é descartado e
-        // nunca recebe eventos do sistema.
+        ResultReceiver receiver = intent != null ? intent.getParcelableExtra(EXTRA_RESULT_RECEIVER) : null;
+
+        // Atualiza configuração se veio no Intent
         if (intent != null) {
             String id = intent.getStringExtra(EXTRA_DOWNWIND_ID);
             String token = intent.getStringExtra(EXTRA_AUTH_TOKEN);
             String base = intent.getStringExtra(EXTRA_API_BASE_URL);
-            if (id != null) downwindId = id;
-            if (token != null) authToken = token;
-            if (base != null) apiBaseUrl = base;
+
+            if (id != null && token != null && base != null) {
+                String previousId = stateStore.isTrackingActive() ? stateStore.getDownwindId() : null;
+                if (previousId != null && !previousId.equals(id)) {
+                    // Troca atômica de travessia na mesma instância do Service.
+                    // Mandar ACTION_STOP antes do novo start criava uma corrida:
+                    // a parada antiga podia apagar a configuração recém-salva.
+                    stopLocationUpdates();
+                    queueDb.clearForDownwind(previousId);
+                    isRunning = false;
+                }
+                stateStore.saveConfig(id, token, base);
+            }
         }
 
-        if (downwindId == null || authToken == null || apiBaseUrl == null) {
-            Log.e(TAG, "Serviço não configurado. Encerrando.");
+        // Se o serviço foi recriado pelo sistema (intent == null ou sem extras), restaura da store
+        String downwindId = stateStore.getDownwindId();
+        String authToken = stateStore.getAuthToken();
+        String apiBaseUrl = stateStore.getApiBaseUrl();
+
+        if (downwindId == null || authToken == null || apiBaseUrl == null || !stateStore.isTrackingActive()) {
+            Log.w(TAG, "Serviço iniciado sem configuração ativa válida. Encerrando.");
+            if (receiver != null) {
+                Bundle b = new Bundle();
+                b.putString("error", "Configuração de rastreamento ausente ou inativa.");
+                receiver.send(Activity.RESULT_CANCELED, b);
+            }
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        // Inicia como foreground service com notificação
-        Notification notification = buildNotification();
+        // Valida teto de 8 horas baseado no startedAt original
+        long startedAt = stateStore.getStartedAt();
+        long now = System.currentTimeMillis();
+        long elapsed = now - startedAt;
+        long remaining = MAX_SERVICE_DURATION_MS - elapsed;
 
+        if (remaining <= 0) {
+            Log.w(TAG, "Teto de 8 horas já expirou desde o início do rastreamento (" + elapsed + "ms decorridos).");
+            if (receiver != null) {
+                Bundle b = new Bundle();
+                b.putString("error", "Teto máximo de 8 horas já foi atingido.");
+                receiver.send(Activity.RESULT_CANCELED, b);
+            }
+            stopSelfService("duration_limit_reached");
+            return START_NOT_STICKY;
+        }
+
+        // Inicia Foreground Service imediatamente com notificação
+        Notification notification = buildNotification();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
 
+        // Agenda o timer de segurança para o tempo restante das 8 horas originais
+        timeoutHandler.removeCallbacks(maxDurationRunnable);
+        timeoutHandler.postDelayed(maxDurationRunnable, remaining);
+
         if (!isRunning) {
-            startLocationUpdates();
+            startLocationUpdates(receiver);
             isRunning = true;
-            consecutiveFailures = 0;
-            // Agenda o desligamento de segurança independente do FCM — ver
-            // MAX_SERVICE_DURATION_MS. Reagendar aqui (não só no onCreate)
-            // garante que um reinício do serviço (START_NOT_STICKY após o
-            // sistema matá-lo) também ganhe um teto novo, em vez de herdar
-            // um relógio que já tinha zerado.
-            timeoutHandler.removeCallbacks(maxDurationRunnable);
-            timeoutHandler.postDelayed(maxDurationRunnable, MAX_SERVICE_DURATION_MS);
+        } else {
+            if (receiver != null) {
+                receiver.send(Activity.RESULT_OK, null);
+            }
+            // Dispara tentativa de drenagem da fila existente
+            triggerFlush();
         }
 
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     @Nullable
@@ -190,26 +230,33 @@ public class RastreioDownwindService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // App foi removido dos recentes. O serviço DEVE continuar ativo.
+        Log.i(TAG, "Activity removida dos recentes. RastreioDownwindService continua em execução.");
+        super.onTaskRemoved(rootIntent);
+    }
+
+    @Override
     public void onDestroy() {
         stopLocationUpdates();
-        isRunning = false;
+        unregisterNetworkCallback();
         timeoutHandler.removeCallbacks(maxDurationRunnable);
+        retryHandler.removeCallbacks(retryFlushRunnable);
+        isRunning = false;
+
         if (executor != null) {
             executor.shutdown();
         }
         super.onDestroy();
     }
 
-    /**
-     * Cria o canal de notificação (obrigatório no Android 8+).
-     */
     private void createNotificationChannel() {
         NotificationChannel channel = new NotificationChannel(
-            CHANNEL_ID,
-            "Rastreamento de Downwind",
-            NotificationManager.IMPORTANCE_LOW
+                CHANNEL_ID,
+                "Rastreamento de Downwind",
+                NotificationManager.IMPORTANCE_LOW
         );
-        channel.setDescription("Notificação persistente durante o rastreamento de travessia");
+        channel.setDescription("Notificação persistente durante o rastreamento da travessia");
         channel.setShowBadge(false);
 
         NotificationManager manager = getSystemService(NotificationManager.class);
@@ -218,277 +265,338 @@ public class RastreioDownwindService extends Service {
         }
     }
 
-    /**
-     * Constrói a notificação persistente do foreground service.
-     */
     private Notification buildNotification() {
         Intent notificationIntent = new Intent(this, MainActivity.class);
         notificationIntent.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
         PendingIntent pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                this,
+                0,
+                notificationIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
-        // Ação para encerrar o rastreamento
         Intent stopIntent = new Intent(this, RastreioDownwindService.class);
         stopIntent.setAction(ACTION_STOP);
         PendingIntent stopPendingIntent = PendingIntent.getService(
-            this,
-            1,
-            stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                this,
+                1,
+                stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Rastreando downwind")
-            .setContentText("Sua localização está sendo compartilhada com o grupo")
-            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
-            .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", stopPendingIntent)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build();
+                .setContentTitle("Rastreando downwind")
+                .setContentText("Sua localização está sendo compartilhada com o grupo")
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setContentIntent(pendingIntent)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", stopPendingIntent)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .build();
     }
 
-    /**
-     * Configura o callback de localização.
-     */
     private void setupLocationCallback() {
         locationCallback = new LocationCallback() {
             @Override
             public void onLocationResult(@NonNull LocationResult locationResult) {
                 Location location = locationResult.getLastLocation();
                 if (location != null) {
-                    Log.d(TAG, "Localização obtida: " + location.getLatitude() + ", " + location.getLongitude());
-                    sendLocation(location);
+                    onNewLocationCaptured(location);
                 }
             }
         };
     }
 
-    /**
-     * Inicia as atualizações de localização.
-     */
-    private void startLocationUpdates() {
+    private void setupNetworkCallback() {
+        try {
+            connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (connectivityManager != null) {
+                networkCallback = new ConnectivityManager.NetworkCallback() {
+                    @Override
+                    public void onAvailable(@NonNull Network network) {
+                        Log.i(TAG, "Conectividade de rede restabelecida. Disparando drenagem da fila.");
+                        triggerFlush();
+                    }
+                };
+
+                NetworkRequest request = new NetworkRequest.Builder()
+                        .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                        .build();
+
+                connectivityManager.registerNetworkCallback(request, networkCallback);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Erro ao registrar NetworkCallback", e);
+        }
+    }
+
+    private void unregisterNetworkCallback() {
+        if (connectivityManager != null && networkCallback != null) {
+            try {
+                connectivityManager.unregisterNetworkCallback(networkCallback);
+            } catch (Exception ignored) {
+            }
+            networkCallback = null;
+        }
+    }
+
+    private void startLocationUpdates(ResultReceiver receiver) {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "Permissão de localização não concedida");
-            stopSelf();
+            stateStore.recordFailure(0, "Permissão de localização não concedida");
+            if (receiver != null) {
+                Bundle b = new Bundle();
+                b.putString("error", "Permissão de localização não concedida");
+                receiver.send(Activity.RESULT_CANCELED, b);
+            }
+            stopSelfService("permission_missing");
             return;
         }
 
         LocationRequest locationRequest = new LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, LOCATION_INTERVAL_MS)
-            .setMinUpdateIntervalMillis(FASTEST_INTERVAL_MS)
-            .build();
+                .setMinUpdateIntervalMillis(FASTEST_INTERVAL_MS)
+                .build();
 
         fusedLocationClient.requestLocationUpdates(
-            locationRequest,
-            locationCallback,
-            Looper.getMainLooper()
-        );
-
-        Log.i(TAG, "Atualizações de localização iniciadas");
+                locationRequest,
+                locationCallback,
+                Looper.getMainLooper()
+        ).addOnSuccessListener(aVoid -> {
+            Log.i(TAG, "Registro de atualizações de localização concluído com sucesso");
+            if (receiver != null) {
+                receiver.send(Activity.RESULT_OK, null);
+            }
+            triggerFlush();
+        }).addOnFailureListener(e -> {
+            Log.e(TAG, "Falha ao registrar atualizações de localização", e);
+            stateStore.recordFailure(0, "Falha ao registrar GPS: " + e.getMessage());
+            if (receiver != null) {
+                Bundle b = new Bundle();
+                b.putString("error", e.getMessage());
+                receiver.send(Activity.RESULT_CANCELED, b);
+            }
+            stopSelfService("gps_registration_failed");
+        });
     }
 
-    /**
-     * Para as atualizações de localização.
-     */
     private void stopLocationUpdates() {
         if (fusedLocationClient != null && locationCallback != null) {
-            fusedLocationClient.removeLocationUpdates(locationCallback);
-            Log.i(TAG, "Atualizações de localização paradas");
+            try {
+                fusedLocationClient.removeLocationUpdates(locationCallback);
+                Log.i(TAG, "Atualizações de localização encerradas");
+            } catch (Exception ignored) {
+            }
         }
     }
 
-    /**
-     * Envia a localização para o servidor.
-     */
-    private void sendLocation(Location location) {
+    private void onNewLocationCaptured(Location location) {
+        String downwindId = stateStore.getDownwindId();
+        if (downwindId == null || !stateStore.isTrackingActive()) {
+            return;
+        }
+
+        long timestamp = location.getTime();
+        stateStore.setLastLocationAt(System.currentTimeMillis());
+
+        // Enfileira no SQLite persistente
+        long rowId = queueDb.enqueue(
+                downwindId,
+                location.getLatitude(),
+                location.getLongitude(),
+                location.getAccuracy(),
+                timestamp,
+                stateStore
+        );
+
+        if (rowId < 0) {
+            stateStore.recordFailure(0, "Não foi possível preservar a posição no armazenamento local.");
+            Log.e(TAG, "Falha ao persistir posição no SQLite; envio não será tentado sem cópia durável.");
+            return;
+        }
+
+        Log.d(TAG, "Posição capturada e enfileirada no SQLite (timestamp: " + timestamp + ")");
+
+        // Tenta enviar o lote pendente
+        triggerFlush();
+    }
+
+    private void triggerFlush() {
+        if (executor == null || executor.isShutdown() || !stateStore.isTrackingActive()) return;
+
+        long delayMs = Math.max(0L, nextFlushAllowedAt - System.currentTimeMillis());
+        if (delayMs > 0L) {
+            retryHandler.removeCallbacks(retryFlushRunnable);
+            retryHandler.postDelayed(retryFlushRunnable, delayMs);
+            return;
+        }
+
+        // Marca antes de enfileirar: chamadas de GPS/conectividade não podem
+        // acumular dezenas de no-ops atrás de um HTTP lento no executor único.
+        if (!flushScheduledOrRunning.compareAndSet(false, true)) return;
+
         executor.execute(() -> {
             try {
-                JSONObject json = new JSONObject();
-                json.put("lat", location.getLatitude());
-                json.put("lng", location.getLongitude());
-                json.put("accuracyM", location.getAccuracy());
-                // Enviamos o timestamp de quando a posição foi coletada,
-                // não de quando está sendo enviada (importante para offline)
-                json.put("registradoEm", location.getTime());
-
-                String urlString = apiBaseUrl + "/api/downwind/" + downwindId + "/posicoes";
-                URL url = new URL(urlString);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setRequestProperty("Authorization", "Bearer " + authToken);
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(15000);  // 15s - tempo razoável para rede móvil
-                conn.setReadTimeout(15000);     // 15s - tempo para resposta do servidor
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    byte[] input = json.toString().getBytes(StandardCharsets.UTF_8);
-                    os.write(input, 0, input.length);
-                }
-
-                int responseCode;
-                try {
-                    responseCode = conn.getResponseCode();
-                } finally {
-                    conn.disconnect();  // Sempre desconecta, mesmo em caso de exceção
-                }
-
-                if (responseCode == 200 || responseCode == 201) {
-                    Log.d(TAG, "Posição enviada com sucesso");
-                    consecutiveFailures = 0;
-                    // Se havia posições na fila offline, tenta enviar agora
-                    flushPendingLocations();
-                } else if (responseCode == 401 || responseCode == 403) {
-                    // Token revogado/expirado (downwind encerrou e o FCM de
-                    // aviso não chegou, ou o token venceu). Retentar é inútil:
-                    // esta credencial nunca vai voltar a funcionar. Encerra
-                    // já, sem enfileirar — não há como "reenviar depois" uma
-                    // posição que nenhum token vai conseguir autenticar.
-                    Log.w(TAG, "Token de rastreio inválido (HTTP " + responseCode + "). Encerrando serviço.");
-                    stopSelfService();
-                } else {
-                    Log.w(TAG, "Falha ao enviar posição: " + responseCode);
-                    addToPending(location);
-                    registrarFalhaEChecarTeto();
-                }
-
-            } catch (Exception e) {
-                Log.e(TAG, "Erro ao enviar posição", e);
-                addToPending(location);
-                registrarFalhaEChecarTeto();
+                flushPendingQueue();
+            } finally {
+                flushScheduledOrRunning.set(false);
             }
         });
     }
 
     /**
-     * Conta falhas consecutivas de envio (rede instável, servidor fora do
-     * ar) e encerra o serviço se passar do teto — ver MAX_CONSECUTIVE_FAILURES.
-     * Sem isso, uma queda de sinal prolongada mantém o GPS ligado e a fila
-     * offline crescendo indefinidamente (até o limite de 100 itens) sem
-     * nenhum sinal para quem está em terra de que o rastreio parou de valer.
+     * Drena as posições pendentes em FIFO estrito.
+     * Interrompe o envio e preserva a fila em caso de erro temporário (aplicando backoff).
+     * Encerra o serviço apenas se o token for terminalmente inválido (401/403).
      */
-    private synchronized void registrarFalhaEChecarTeto() {
-        consecutiveFailures++;
-        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-            Log.w(TAG, consecutiveFailures + " falhas consecutivas. Encerrando serviço.");
-            stopSelfService();
+    private void flushPendingQueue() {
+        String downwindId = stateStore.getDownwindId();
+        String authToken = stateStore.getAuthToken();
+        String apiBaseUrl = stateStore.getApiBaseUrl();
+
+        if (downwindId == null || authToken == null || apiBaseUrl == null || !stateStore.isTrackingActive()) {
+            return;
         }
-    }
 
-    /**
-     * Adiciona posição à fila offline.
-     */
-    private synchronized void addToPending(Location location) {
-        if (pendingLocations.size() < 100) { // Limite para não usar muita memória
-            pendingLocations.add(new PendingLocation(
-                location.getLatitude(),
-                location.getLongitude(),
-                location.getAccuracy(),
-                location.getTime()
-            ));
+        // Verifica se há rede disponível antes de tentar requisições HTTP
+        if (!isNetworkAvailable()) {
+            Log.d(TAG, "Sem rede ativa no momento. Posições permanecem salvas no SQLite.");
+            return;
         }
-    }
 
-    /**
-     * Tenta enviar posições offline que estão na fila.
-     */
-    private synchronized void flushPendingLocations() {
-        if (pendingLocations.isEmpty()) return;
+        // Drena em lotes de até 20 posições
+        while (true) {
+            List<PendingPosition> batch = queueDb.peekBatch(downwindId, 20);
+            if (batch.isEmpty()) {
+                break;
+            }
 
-        List<PendingLocation> toSend = new ArrayList<>(pendingLocations);
-        pendingLocations.clear();
+            boolean abortBatch = false;
 
-        for (PendingLocation pending : toSend) {
-            try {
-                JSONObject json = new JSONObject();
-                json.put("lat", pending.lat);
-                json.put("lng", pending.lng);
-                json.put("accuracyM", pending.accuracy);
-                json.put("registradoEm", pending.timestamp);
+            for (PendingPosition item : batch) {
+                int status = sendPositionHttp(item, downwindId, authToken, apiBaseUrl);
 
-                String urlString = apiBaseUrl + "/api/downwind/" + downwindId + "/posicoes";
-                URL url = new URL(urlString);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json");
-                conn.setRequestProperty("Authorization", "Bearer " + authToken);
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(15000);  // 15s - tempo razoável para rede móvil
-                conn.setReadTimeout(15000);     // 15s - tempo para resposta do servidor
-
-                try (OutputStream os = conn.getOutputStream()) {
-                    byte[] input = json.toString().getBytes(StandardCharsets.UTF_8);
-                    os.write(input, 0, input.length);
-                }
-
-                int responseCode;
-                try {
-                    responseCode = conn.getResponseCode();
-                } finally {
-                    conn.disconnect();  // Sempre desconecta, mesmo em caso de exceção
-                }
-
-                if (responseCode == 200 || responseCode == 201) {
-                    Log.d(TAG, "Posição offline enviada");
-                } else if (responseCode == 401 || responseCode == 403) {
-                    // Mesmo raciocínio de sendLocation(): token morto, nenhum
-                    // reenvio vai funcionar. Descarta o restante da fila (não
-                    // há para onde mandar) e encerra.
-                    Log.w(TAG, "Token de rastreio inválido ao esvaziar fila (HTTP " + responseCode + "). Encerrando serviço.");
-                    stopSelfService();
+                if (TrackingRetryPolicy.isSuccess(status)) {
+                    queueDb.delete(item.id);
+                    stateStore.recordSuccess(status);
+                    nextFlushAllowedAt = 0L;
+                } else if (TrackingRetryPolicy.isTerminal(status)) {
+                    Log.w(TAG, "Token de rastreio inválido/revogado (HTTP " + status + "). Limpando e encerrando serviço.");
+                    stateStore.clearConfig("token_invalid_or_revoked");
+                    queueDb.clearForDownwind(downwindId);
+                    stopSelfService("token_invalid_or_revoked");
                     return;
                 } else {
-                    // Se falhar, adiciona de volta
-                    pendingLocations.add(pending);
+                    // Qualquer resposta não terminal permanece na fila. Em
+                    // especial, 409/422 podem refletir estado transitório do
+                    // backend e não autorizam perder pontos localmente.
+                    String error = "Falha de envio temporária (HTTP " + status + ")";
+                    queueDb.recordAttemptFailure(item.id, error);
+                    stateStore.recordFailure(status, error);
+                    long backoff = TrackingRetryPolicy.calculateBackoffMs(stateStore.getConsecutiveFailures());
+                    nextFlushAllowedAt = System.currentTimeMillis() + backoff;
+                    retryHandler.removeCallbacks(retryFlushRunnable);
+                    retryHandler.postDelayed(retryFlushRunnable, backoff);
+                    Log.w(TAG, "Envio adiado por " + backoff + "ms após HTTP " + status + ".");
+                    abortBatch = true;
+                    break;
                 }
+            }
 
-            } catch (Exception e) {
-                Log.e(TAG, "Erro ao enviar posição offline", e);
-                pendingLocations.add(pending);
-                break; // Para não sobrecarregar
+            if (abortBatch) {
+                break;
             }
         }
     }
 
     /**
-     * Para o serviço (ação da notificação).
+     * Executa o POST HTTP de uma posição.
      */
-    public void stopSelfService() {
-        Log.i(TAG, "Encerrando serviço (ação do usuário, FCM, teto de tempo ou token inválido)");
+    private int sendPositionHttp(PendingPosition item, String downwindId, String authToken, String apiBaseUrl) {
+        stateStore.recordSendAttempt(System.currentTimeMillis());
+        HttpURLConnection conn = null;
+        PowerManager.WakeLock wakeLock = null;
+        try {
+            PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK,
+                        getPackageName() + ":tracking-upload"
+                );
+                // A soma dos timeouts HTTP é 30s; 35s evita lock órfão mesmo
+                // se o fluxo de exceção falhar antes do finally.
+                wakeLock.acquire(35_000L);
+            }
+
+            JSONObject json = new JSONObject();
+            json.put("lat", item.lat);
+            json.put("lng", item.lng);
+            json.put("accuracyM", item.accuracyM);
+            json.put("registradoEm", item.registradoEm);
+
+            String urlString = apiBaseUrl + "/api/downwind/" + downwindId + "/posicoes";
+            URL url = new URL(urlString);
+            conn = (HttpURLConnection) url.openConnection();
+
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestProperty("Authorization", "Bearer " + authToken);
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(15_000);
+
+            try (OutputStream os = conn.getOutputStream()) {
+                byte[] input = json.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(input, 0, input.length);
+            }
+
+            return conn.getResponseCode();
+        } catch (Exception e) {
+            Log.w(TAG, "Exceção de rede ao enviar posição: " + e.getMessage());
+            return -1;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.disconnect();
+                } catch (Exception ignored) {
+                }
+            }
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
+        }
+    }
+
+    private boolean isNetworkAvailable() {
+        if (connectivityManager == null) return false;
+        try {
+            Network activeNetwork = connectivityManager.getActiveNetwork();
+            if (activeNetwork == null) return false;
+            NetworkCapabilities caps = connectivityManager.getNetworkCapabilities(activeNetwork);
+            return caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public void stopSelfService(String reason) {
+        Log.i(TAG, "Encerrando RastreioDownwindService. Motivo: " + reason);
         stopLocationUpdates();
+        unregisterNetworkCallback();
+        timeoutHandler.removeCallbacks(maxDurationRunnable);
+        retryHandler.removeCallbacks(retryFlushRunnable);
         isRunning = false;
+
+        String activeDownwindId = stateStore.getDownwindId();
+        if (activeDownwindId != null) {
+            // Toda chamada a este método representa parada explícita/terminal.
+            // onDestroy(), usado numa morte recuperável do processo, NÃO passa
+            // aqui e portanto preserva configuração e fila para START_STICKY.
+            queueDb.clearForDownwind(activeDownwindId);
+        }
+        stateStore.clearConfig(reason);
+
         stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
-    }
-
-    /**
-     * Retorna se o serviço está rodando.
-     */
-    public boolean isRunning() {
-        return isRunning;
-    }
-
-    /**
-     * Classe auxiliar para posição offline.
-     */
-    private static class PendingLocation {
-        double lat;
-        double lng;
-        float accuracy;
-        long timestamp;
-
-        PendingLocation(double lat, double lng, float accuracy, long timestamp) {
-            this.lat = lat;
-            this.lng = lng;
-            this.accuracy = accuracy;
-            this.timestamp = timestamp;
-        }
     }
 }

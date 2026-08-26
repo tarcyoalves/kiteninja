@@ -6,6 +6,7 @@ import { podeResponderSos } from '@/lib/authz';
 import { haversineKm } from '@/lib/geo';
 import { JANELA_PRESENCA_MS } from '@/lib/sos';
 import { logSos } from '@/lib/sosLog';
+import { sendPushToUsers } from '@/lib/push';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,12 +54,13 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const statusSos = String(alerta.status) as 'ativo' | 'em_atendimento' | 'resolvido' | 'cancelado' | 'falso_alarme';
 
     // --- Já foi notificado? (caminho normal de elegibilidade) ---
-    const jaNotificado = await sql`
-      SELECT 1 FROM sos_responders
+    const prevResponderRows = await sql`
+      SELECT state FROM sos_responders
       WHERE sos_id = ${sosId} AND user_id = ${user.id}
       LIMIT 1
     `;
-    const foiNotificado = jaNotificado.length > 0;
+    const foiNotificado = prevResponderRows.length > 0;
+    const prevState = foiNotificado ? String((prevResponderRows[0] as Record<string, unknown>).state) : null;
 
     // --- Está dentro do raio? ---
     // A posição usada é a que o SERVIDOR gravou em user_presence, nunca a que
@@ -163,6 +165,65 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         RETURNING id
       `;
       if (r.length > 0) novoStatus = 'ativo';
+    }
+
+    // --- Notificação e Evento In-App ao Autor do SOS ---
+    // Se o estado mudou para 'a_caminho' ou 'no_local', avisa o autor imediatamente via Push e sos_events.
+    const mudouParaAtendimento = (state === 'a_caminho' || state === 'no_local') && prevState !== state;
+
+    if (mudouParaAtendimento) {
+      const eventKind = state === 'a_caminho' ? 'responder_a_caminho' : 'responder_no_local';
+      let inserted = false;
+      try {
+        const eventRows = await sql`
+          INSERT INTO sos_events (sos_id, recipient_id, actor_id, actor_name, kind)
+          VALUES (${sosId}, ${sosAuthorId}, ${user.id}, ${user.name}, ${eventKind})
+          ON CONFLICT (sos_id, actor_id, kind) DO NOTHING
+          RETURNING id
+        `;
+        inserted = eventRows.length > 0;
+      } catch (err) {
+        logSos({
+          etapa: 'respond.event_db_falhou',
+          sosId,
+          userId: user.id,
+          detalhe: { erro: err instanceof Error ? err.message : 'Erro ao gravar sos_events' },
+        });
+      }
+
+      // Dispara push apenas se o evento foi inserido de fato (idempotência rigorosa)
+      if (inserted) {
+        const pushTitle = state === 'a_caminho' ? `${user.name} está a caminho` : `${user.name} chegou ao local`;
+        const pushBody = 'Alguém respondeu ao seu SOS. Acompanhe no mapa e mantenha contato com 193/185.';
+
+        try {
+          await sendPushToUsers([sosAuthorId], {
+            title: pushTitle,
+            body: pushBody,
+            tag: `sos-resposta-${sosId}`,
+            url: `/?tab=mapa&sos=${sosId}`,
+            requireInteraction: true,
+          });
+        } catch (pushErr) {
+          logSos({
+            etapa: 'respond.push_falhou',
+            sosId,
+            userId: user.id,
+            detalhe: { erro: pushErr instanceof Error ? pushErr.message : 'Erro ao enviar push' },
+          });
+        }
+      }
+    } else if (state === 'nao_posso' && prevState === 'a_caminho' && !temResponsavelVivo) {
+      // Se era o último responsável e desistiu, grava evento de abandono
+      try {
+        await sql`
+          INSERT INTO sos_events (sos_id, recipient_id, actor_id, actor_name, kind)
+          VALUES (${sosId}, ${sosAuthorId}, ${user.id}, ${user.name}, 'responder_desistiu')
+          ON CONFLICT DO NOTHING
+        `;
+      } catch {
+        // Best-effort
+      }
     }
 
     logSos({

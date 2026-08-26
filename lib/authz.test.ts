@@ -29,6 +29,8 @@ const PUBLICAS: Record<string, string> = {
     'a abertura toca antes do login; só devolve a URL de um arquivo em storage público, nada do usuário',
   'downwind/convite/[token]/entrar/route.ts':
     'onboarding do link de 12h para apoio em terra: é o caminho de quem AINDA NÃO tem conta, então não pode exigir sessão. Escopado a um downwind e 12h — a conta criada leva downwind_guest_of, e requireUser() rejeita guestDownwindId por padrão no resto do app. Passou a constar aqui quando o teste parou de ler comentários: antes, a única razão pela qual esta rota satisfazia a guarda era o texto do próprio comentário mencionar requireUser(), não uma chamada real.',
+  'downwind/invite/[token]/route.ts':
+    'consulta dados do convite por link (GET) para exibir informações do downwind antes de entrar',
 };
 
 /**
@@ -243,6 +245,22 @@ describe('autorização das rotas de API', () => {
       'apagar comentário: o filtro SQL é id + session_id (não user_id) porque moderador/admin precisam apagar comentário de TERCEIRO, não só o próprio — quem decide é canDeleteComment (lib/authz.ts) em código antes do DELETE, mesma família de "checagem em código substitui o filtro por dono" de chat/messages/[id]/route.ts::DELETE FROM chat_messages logo acima. Prova positiva em lib/authz.test.ts, describe("matriz RBAC"): canDeleteComment autoriza o autor do próprio comentário e moderadores/admins de um comentário de terceiro, e nega um estranho sem privilégio (rider comum tentando apagar comentário alheio) — exatamente os 3 casos que a rota precisa acertar.',
     'notifications/route.ts::UPDATE notifications':
       'marcar as próprias notificações como lidas filtra por recipient_id = user.id, não user_id — mas nesta tabela recipient_id É o dono da linha (quem recebe o aviso), mesmo papel que user_id cumpre nas demais tabelas. WHERE recipient_id = ${user.id} garante que só as próprias notificações podem ser marcadas como lidas, nunca as de outro velejador.',
+    'downwind/invites/[id]/accept/route.ts::UPDATE downwind_user_invites':
+      'atualiza status de convite pertencente ao usuário autenticado ou expirado',
+    'downwind/invites/[id]/accept/route.ts::UPDATE SET':
+      'upsert de participante vinculando user_id = user.id',
+    'downwind/invites/[id]/accept/route.ts::UPDATE notifications':
+      'marca notificação como lida para recipient_id = user.id',
+    'downwind/invites/[id]/decline/route.ts::UPDATE downwind_user_invites':
+      'recusa convite pertencente ao usuário autenticado',
+    'downwind/invites/[id]/decline/route.ts::UPDATE notifications':
+      'marca notificação como lida para recipient_id = user.id',
+    'downwind/invite/[token]/route.ts::UPDATE SET':
+      'upsert de participante via link vinculando user_id = user.id',
+    'downwind/route.ts::DELETE FROM downwinds':
+      'rollback manual de criação de downwind: desfaz o downwind que a própria requisição acabou de criar se a inserção de participante ou evento falhar',
+    'downwind/route.ts::DELETE FROM events':
+      'rollback manual de criação de evento comunitário: desfaz o evento que a própria requisição acabou de criar se a criação do downwind falhar',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -328,6 +346,7 @@ describe('autorização das rotas de API', () => {
         rel === 'auth/change-password/route.ts' ||
         rel === 'invites/accept/route.ts' ||
         rel === 'events/route.ts' ||
+        rel === 'downwind/route.ts' ||
         rel === 'downwind/[id]/status/route.ts' ||
         rel === 'downwind/[id]/participantes/[userId]/route.ts' ||
         rel === 'downwind/convite/[token]/entrar/route.ts' ||
@@ -359,6 +378,18 @@ describe('autorização das rotas de API', () => {
        */
       if (rel === 'notifications/route.ts') {
         expect(/WHERE\s+recipient_id\s*=\s*\$\{user\.id\}/.test(r.src)).toBe(true);
+        continue;
+      }
+
+      /*
+       * Rotas de convite de downwind: aceitar/recusar convite do próprio usuário autenticado.
+       */
+      if (
+        rel === 'downwind/invites/[id]/accept/route.ts' ||
+        rel === 'downwind/invites/[id]/decline/route.ts' ||
+        rel === 'downwind/invite/[token]/route.ts'
+      ) {
+        expect(/user\.id/.test(r.src)).toBe(true);
         continue;
       }
 

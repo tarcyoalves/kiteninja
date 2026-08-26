@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { MapPin, Navigation, X, AlertTriangle, Wind, ShieldAlert } from 'lucide-react';
+import { MapPin, Navigation, X, AlertTriangle, Wind, ShieldAlert, Loader2, CheckCircle2 } from 'lucide-react';
 import { BotoesEmergencia } from './BotoesEmergencia';
 
 /**
@@ -30,7 +30,7 @@ interface IncomingSos {
 
 interface SosIncomingAlertProps {
   sos: IncomingSos | null;
-  onRespond: (sosId: string, state: 'a_caminho' | 'nao_posso') => void;
+  onRespond: (sosId: string, state: 'a_caminho' | 'nao_posso') => Promise<{ ok: boolean; error?: string }>;
   onViewMap: () => void;
   onDismiss: () => void;
 }
@@ -50,7 +50,9 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
   onViewMap,
   onDismiss,
 }) => {
-  const [responding, setResponding] = useState(false);
+  const [respondingState, setRespondingState] = useState<'a_caminho' | 'nao_posso' | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // Vibração de urgência ao aparecer
   useEffect(() => {
@@ -63,11 +65,30 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
   if (!sos) return null;
 
   const handleRespond = async (state: 'a_caminho' | 'nao_posso') => {
-    setResponding(true);
+    if (respondingState) return;
+    setRespondingState(state);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
     try {
-      onRespond(sos.id, state);
+      const res = await onRespond(sos.id, state);
+      if (res && res.ok) {
+        if (state === 'a_caminho') {
+          setSuccessMessage(`Resposta enviada! ${sos.authorName} foi avisado que você está a caminho.`);
+          setTimeout(() => {
+            onViewMap();
+            onDismiss();
+          }, 1800);
+        } else {
+          onDismiss();
+        }
+      } else {
+        setErrorMessage(res?.error || 'Não foi possível registrar a resposta. Tente novamente.');
+      }
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : 'Falha na conexão ao responder.');
     } finally {
-      setResponding(false);
+      setRespondingState(null);
     }
   };
 
@@ -183,29 +204,58 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
             </p>
           </div>
 
+          {/* Feedback de Sucesso */}
+          {successMessage && (
+            <div className="flex items-center gap-2 py-2 px-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 animate-in fade-in">
+              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+              <p className="text-xs font-bold text-emerald-200">{successMessage}</p>
+            </div>
+          )}
+
+          {/* Feedback de Erro */}
+          {errorMessage && (
+            <div className="flex items-start gap-2 py-2 px-3 rounded-xl bg-rose-950/60 border border-rose-500/40 animate-in fade-in">
+              <AlertTriangle size={16} className="text-rose-400 shrink-0 mt-0.5" />
+              <p className="text-xs font-medium text-rose-200">{errorMessage}</p>
+            </div>
+          )}
+
           {/* Ações */}
           <div className="space-y-2 pt-1">
             <button
               type="button"
               onClick={() => handleRespond('a_caminho')}
-              disabled={responding}
-              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-base flex items-center justify-center gap-2.5 active:scale-95 transition-all shadow-lg shadow-emerald-600/30"
+              disabled={respondingState !== null || successMessage !== null}
+              className="w-full py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-base flex items-center justify-center gap-2.5 active:scale-95 transition-all shadow-lg shadow-emerald-600/30"
             >
-              <Navigation size={20} />
-              Estou indo!
+              {respondingState === 'a_caminho' ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  Avisando velejador...
+                </>
+              ) : (
+                <>
+                  <Navigation size={20} />
+                  Estou indo!
+                </>
+              )}
             </button>
 
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  handleRespond('nao_posso');
-                  onDismiss();
-                }}
-                disabled={responding}
-                className="py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                onClick={() => handleRespond('nao_posso')}
+                disabled={respondingState !== null || successMessage !== null}
+                className="py-2.5 rounded-xl bg-slate-800 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-300 font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
               >
-                Não posso
+                {respondingState === 'nao_posso' ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  'Não posso'
+                )}
               </button>
 
               {sos.temCoordenada && (
@@ -215,7 +265,8 @@ export const SosIncomingAlert: React.FC<SosIncomingAlertProps> = ({
                     onViewMap();
                     onDismiss();
                   }}
-                  className="py-2.5 rounded-xl bg-cyan-600/20 border border-cyan-500/30 text-cyan-300 font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                  disabled={respondingState !== null}
+                  className="py-2.5 rounded-xl bg-cyan-600/20 border border-cyan-500/30 disabled:opacity-50 text-cyan-300 font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                 >
                   <MapPin size={14} />
                   Ver no mapa

@@ -284,7 +284,7 @@ export interface SessionComment {
  */
 export interface AppNotification {
   id: string;
-  type: 'curtida_sessao' | 'comentario_sessao' | 'resposta_comentario' | 'novo_seguidor';
+  type: 'curtida_sessao' | 'comentario_sessao' | 'resposta_comentario' | 'novo_seguidor' | 'convite_downwind';
   actorId: string;
   actorName: string;
   actorAvatarUrl?: string;
@@ -292,6 +292,9 @@ export interface AppNotification {
   spotName?: string;
   commentId?: string;
   commentText?: string;
+  downwindId?: string;
+  inviteId?: string;
+  downwindNome?: string;
   readAt: string | null;
   createdAt: string;
 }

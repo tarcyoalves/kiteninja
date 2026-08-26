@@ -33,6 +33,9 @@ export async function GET() {
         ) THEN true ELSE false END AS is_registered
       FROM events e
       LEFT JOIN downwinds d ON d.event_id = e.id
+      WHERE d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = ${user.id} OR EXISTS (
+        SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
+      )
       ORDER BY e.event_date ASC
     `;
 

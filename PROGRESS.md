@@ -4,6 +4,40 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
+## Atualização — 26/08/2026 (rastreamento resiliente, convites, início rápido e logbook)
+
+Entrega completa e integrada do ecossistema de atividades, convites e rastreamento nativo/web:
+
+1. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
+   - Foreground Service nativo coletando localização com app em background e tela apagada.
+   - Fila local SQLite persistente (`TrackingQueueDatabase`) para armazenamento de posições offline e drenagem automática ao restabelecer rede.
+   - Política de retry exponencial e parada segura em cancelamento/encerramento de downwind ou revogação de token.
+   - Integração FCM para envio de push de socorro e convites com canais dedicados no Android.
+
+2. **Início Rápido Centralizado no Mapa (`IniciarAtividadeSheet`):**
+   - **Velejo Solo:** Início rápido do Modo Navegação com odômetro e velocidade, mais compartilhamento de link para apoio em terra.
+   - **Criar Downwind em Grupo (DW):** Modal de criação rápida com suporte a travessias privadas ou eventos comunitários (`events`).
+   - **Entrar por Link/Convite:** Modal dedicado com preview rico de spot de saída/chegada, data e organizador.
+   - **Máquina de Atividades (`lib/activity.ts`):** Invariante que proíbe atividades simultâneas e oferece atalho para "Continuar Downwind Ativo".
+
+3. **Segurança Estrita de Convites e Moderação:**
+   - Convites in-app e por link restritos a organizadores e moderadores.
+   - Aceite/recusa atômicos condicionados a `status = 'pendente'`.
+   - Proteção de token hash em convites por link, impedindo bypass via ID.
+   - Ações diretas de Aceitar e Recusar integradas na Central de Notificações (`NotificationCenterModal`).
+
+4. **Logbook com Telemetria Real de GPS:**
+   - Função `calcularMetricasTrilha` calculando distância Haversine acumulada, velocidade máxima e duração a partir das leituras reais de GPS (`minhaTrilha`).
+   - Ao encerrar a travessia, dispara `abrirLoggerComResumo` com horário inicial e métricas reais, pronto para salvar no histórico e publicar no Feed social.
+
+5. **Validação Completa:**
+   - `npm run test:sql`: **265/265** testes passando.
+   - `npm test`: **47 arquivos, 745/745** testes passando.
+   - `npm run typecheck`: **0 erros**.
+   - Next.js Production Build: **36 rotas compiladas**.
+   - Android Gradle: `testDebugUnitTest` e `assembleDebug` concluídos com sucesso.
+   - APK instalado no aparelho Samsung SM-A075M via ADB.
+
 ## Atualização — 24/08/2026 (restauração do menu flutuante)
 
 Correção urgente após relato do dono: o `BottomNav` não havia sido apagado do

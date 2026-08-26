@@ -21,6 +21,7 @@ import { ChamadosModal } from "../components/ChamadosModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
+import { EntrarDownwindModal } from "../components/activity/EntrarDownwindModal";
 import { SpotsView } from "../views/SpotsView";
 import { MapView } from "../views/MapView";
 import { FeedView } from "../views/FeedView";
@@ -83,6 +84,17 @@ const MainContent: React.FC = () => {
       setIsSosPanelOpen(true);
     }
   }, [myActiveSos]);
+
+  const [tokenConviteUrl, setTokenConviteUrl] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const inviteToken = params.get('dw_invite');
+    if (inviteToken) {
+      setTokenConviteUrl(inviteToken);
+    }
+  }, []);
 
   return (
     /*
@@ -231,7 +243,27 @@ const MainContent: React.FC = () => {
         onAbrirPerfil={setRiderIdAberto}
         totalChatUnread={unreadChatCount + dmUnreadCount}
         onIrParaChat={() => setActiveTab('chat')}
+        onAbrirDownwind={() => setActiveTab('mapa')}
       />
+
+      {tokenConviteUrl && (
+        <EntrarDownwindModal
+          token={tokenConviteUrl}
+          isOpen={Boolean(tokenConviteUrl)}
+          onClose={() => {
+            setTokenConviteUrl(null);
+            if (typeof window !== 'undefined') {
+              const url = new URL(window.location.href);
+              url.searchParams.delete('dw_invite');
+              window.history.replaceState({}, '', url.pathname + url.search);
+            }
+          }}
+          spots={useKiteData().spots}
+          onEntrou={() => {
+            setActiveTab('mapa');
+          }}
+        />
+      )}
 
       {/* Central de chamados (reportar bug/melhoria) — aberta pelo menu
           lateral, mesmo padrão de estado único controlado aqui. */}

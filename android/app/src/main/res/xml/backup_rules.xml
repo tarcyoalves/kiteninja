@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Exclui credenciais temporárias de rastreio e fila local de posições GPS do backup tradicional -->
+    <exclude domain="sharedpref" path="kiteninja_tracking_state.xml" />
+    <exclude domain="database" path="kiteninja_tracking_queue.db" />
+    <exclude domain="database" path="kiteninja_tracking_queue.db-journal" />
+    <exclude domain="database" path="kiteninja_tracking_queue.db-wal" />
+    <exclude domain="database" path="kiteninja_tracking_queue.db-shm" />
+</full-backup-content>

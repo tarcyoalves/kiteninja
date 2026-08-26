@@ -636,26 +636,32 @@ export const EventsAndAlertsView: React.FC = () => {
                     {event.participantsCount} riders confirmados
                   </span>
 
-                  <button
-                    onClick={() => toggleEventRegistration(event.id)}
-                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 ${
-                      event.isRegistered
-                        ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
-                        : 'bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/20'
-                    }`}
-                  >
-                    {event.isRegistered ? (
-                      <>
-                        <CheckCircle2 size={15} />
-                        <span>Presença Confirmada</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus size={15} className="stroke-[3]" />
-                        <span>Quero Participar</span>
-                      </>
-                    )}
-                  </button>
+                  {event.type === 'Downwind' && (event.downwindStatus === 'encerrado' || event.downwindStatus === 'cancelado') ? (
+                    <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">
+                      Encerrado
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => toggleEventRegistration(event.id)}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all active:scale-95 flex items-center gap-1.5 ${
+                        event.isRegistered
+                          ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20'
+                          : 'bg-rose-600 hover:bg-rose-500 text-white shadow-md shadow-rose-600/20'
+                      }`}
+                    >
+                      {event.isRegistered ? (
+                        <>
+                          <CheckCircle2 size={15} />
+                          <span>Presença Confirmada</span>
+                        </>
+                      ) : (
+                        <>
+                          <Plus size={15} className="stroke-[3]" />
+                          <span>Quero Participar</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
 
                 {/* Entrada no mapa ao vivo do downwind — só em eventos tipo

@@ -391,6 +391,10 @@ export interface PrefillLogbook {
    * expor um input para isto — ver comentário lá.
    */
   trilhaReduzida: PontoTrilha[];
+  spotId?: string;
+  spotName?: string;
+  customSpotName?: string;
+  notes?: string;
 }
 
 /**

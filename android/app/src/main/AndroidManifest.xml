@@ -3,6 +3,8 @@
 
     <application
         android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -34,28 +36,22 @@
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
 
-        <!-- O serviço de Firebase Cloud Messaging (MessagingService) é
-             registrado automaticamente pelo AndroidManifest.xml embutido no
-             AAR de @capacitor/push-notifications, via merge do Gradle — não
-             precisa (e não deve) ser declarado aqui de novo. Uma declaração
-             manual com o nome de classe errado (com.getcapacitor.Capacitor...
-             em vez de com.capacitorjs.plugins.pushnotifications.MessagingService)
-             chegou a existir aqui e foi removida: duas entradas escutando
-             com.google.firebase.MESSAGING_EVENT, uma delas apontando para uma
-             classe inexistente, arriscava crash ao receber um push. -->
-
         <!-- Foreground Service para rastreamento de downwind com app fechado.
-             Usado quando o velejador inicia a travessia em primeiro plano.
-             O serviço continua rodando após o app ser removido dos recentes. -->
+             stopWithTask="false" garante que o serviço não seja destruído
+             automaticamente quando a Activity for removida dos recentes. -->
         <service
             android:name=".RastreioDownwindService"
             android:foregroundServiceType="location"
+            android:stopWithTask="false"
             android:exported="false" />
     </application>
 
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Wake lock curto somente durante cada POST da fila; nunca durante toda a travessia. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Foreground Service: obrigatório para Android 14+ (API 34+) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />

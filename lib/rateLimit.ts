@@ -143,4 +143,12 @@ export const rateLimiters = {
       60 * 1000,
       'Muitas tentativas de entrar no downwind.'
     ),
+
+  downwindCriar: (userId: string) =>
+    enforceRateLimit(
+      `dw_criar:${userId}`,
+      5,
+      60 * 60 * 1000,
+      'Limite de criação de downwinds excedido. Aguarde 1 hora.'
+    ),
 };

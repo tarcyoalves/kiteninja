@@ -67,9 +67,10 @@ async function main() {
     const statements = splitSqlStatements(schema);
     for (const statement of statements) await db.exec(statement);
     check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', true);
+    const totalDoInSchema = (schema.match(/DO \$\$/g) || []).length;
     check(
-      'separador preserva os 3 blocos DO $$ do schema como instruções inteiras',
-      statements.filter((statement) => statement.trimStart().startsWith('DO $$')).length === 3
+      `separador preserva todos os ${totalDoInSchema} blocos DO $$ do schema como instruções inteiras`,
+      statements.filter((statement) => statement.trimStart().startsWith('DO $$')).length === totalDoInSchema
     );
   } catch (err) {
     check('lib/schema.sql aplica sem erro pelo mesmo separador da migração', false, err instanceof Error ? err.message : '');
@@ -110,6 +111,8 @@ async function main() {
     'downwind_silencio_alertas',
     'notifications',
     'chamados',
+    'sos_events',
+    'downwind_user_invites',
   ]) {
     check(`tabela ${t}`, found.has(t));
   }
@@ -1425,6 +1428,44 @@ async function main() {
   );
   check('sos_responders mantém 1 linha por usuário após upsert', Number(respondersCount.rows[0].cnt) === 1);
 
+  // ----------------------------------------------------------------- sos_events
+  const sosEvent = await expectOk(
+    db,
+    'sos_events: registro de socorrista a caminho para o autor do SOS',
+    `INSERT INTO sos_events (sos_id, recipient_id, actor_id, actor_name, kind)
+     VALUES ($1, $2, $3, 'Rider B', 'responder_a_caminho')
+     RETURNING id, kind`,
+    [sosId, riderA, riderB]
+  );
+  check('evento de SOS criado com sucesso', sosEvent.length === 1);
+
+  await expectFail(
+    db,
+    'sos_events: kind fora do CHECK é rejeitado',
+    `INSERT INTO sos_events (sos_id, recipient_id, actor_id, actor_name, kind)
+     VALUES ($1, $2, $3, 'Rider B', 'curtiu')`,
+    [sosId, riderA, riderB]
+  );
+
+  await expectFail(
+    db,
+    'sos_events: uniq_sos_events_dedup rejeita evento duplicado para mesmo sos, ator e kind',
+    `INSERT INTO sos_events (sos_id, recipient_id, actor_id, actor_name, kind)
+     VALUES ($1, $2, $3, 'Rider B', 'responder_a_caminho')`,
+    [sosId, riderA, riderB]
+  );
+
+  const eventosDoAutor = await expectOk(
+    db,
+    'sos_events: consulta de eventos do autor via recipient_id',
+    `SELECT id, actor_name, kind, created_at
+     FROM sos_events
+     WHERE recipient_id = $1
+     ORDER BY created_at DESC`,
+    [riderA]
+  );
+  check('eventos do autor listam 1 evento recente', eventosDoAutor.length === 1);
+
   await expectOk(
     db,
     'inscrição de Web Push criada com sucesso',
@@ -1943,6 +1984,47 @@ async function main() {
      VALUES ($1, 'dw-convite-hash-invalido', $2, 'organizador', NOW() + INTERVAL '7 days')`,
     [dwId, adminId]
   );
+
+  // ---------------------------------------------------- downwind_user_invites
+  const userInvite = await expectOk(
+    db,
+    'downwind_user_invites: criação de convite para velejador cadastrado',
+    `INSERT INTO downwind_user_invites (downwind_id, inviter_id, invitee_id, role, expires_at)
+     VALUES ($1, $2, $3, 'velejador', NOW() + INTERVAL '7 days')
+     RETURNING id, role, status`,
+    [dwId, adminId, riderB]
+  );
+  check('convite de usuário cadastrado criado com sucesso', userInvite.length === 1 && userInvite[0].status === 'pendente');
+
+  const userInviteLink = await expectOk(
+    db,
+    'downwind_user_invites: criação de convite por link com token_hash',
+    `INSERT INTO downwind_user_invites (downwind_id, inviter_id, token_hash, role, expires_at)
+     VALUES ($1, $2, 'hash-link-dw-123', 'velejador', NOW() + INTERVAL '7 days')
+     RETURNING id, token_hash`,
+    [dwId, adminId]
+  );
+  check('convite por link criado', userInviteLink.length === 1);
+
+  await expectFail(
+    db,
+    'downwind_user_invites: status fora do CHECK é rejeitado',
+    `INSERT INTO downwind_user_invites (downwind_id, inviter_id, invitee_id, status, expires_at)
+     VALUES ($1, $2, $3, 'invalido', NOW() + INTERVAL '7 days')`,
+    [dwId, adminId, riderA]
+  );
+
+  const convitesPendentesB = await expectOk(
+    db,
+    'downwind_user_invites: consulta de convites pendentes de um usuário (usa idx_dw_user_invites_invitee)',
+    `SELECT dui.id, dui.downwind_id, d.nome, u.name AS inviter_name
+     FROM downwind_user_invites dui
+     JOIN downwinds d ON d.id = dui.downwind_id
+     JOIN users u ON u.id = dui.inviter_id
+     WHERE dui.invitee_id = $1 AND dui.status = 'pendente' AND dui.expires_at > NOW()`,
+    [riderB]
+  );
+  check('usuário B tem 1 convite pendente', convitesPendentesB.length === 1);
 
   console.log('\nDownwind — mapa ao vivo (posições, trilha, apoio, status):');
 

@@ -14,11 +14,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const startTrackingMock = vi.fn();
 const stopTrackingMock = vi.fn();
+const getTrackingStatusMock = vi.fn();
+const openBatteryOptimizationSettingsMock = vi.fn();
 
 vi.mock('@capacitor/core', () => ({
   registerPlugin: () => ({
     startTracking: startTrackingMock,
     stopTracking: stopTrackingMock,
+    getTrackingStatus: getTrackingStatusMock,
+    openBatteryOptimizationSettings: openBatteryOptimizationSettingsMock,
     isTracking: vi.fn(),
     setAuthToken: vi.fn(),
   }),
@@ -27,13 +31,22 @@ vi.mock('@capacitor/core', () => ({
   },
 }));
 
-const { decidirTracking, iniciarTrackingNativo, pararTrackingNativo, estaNoAppNativo, PermissaoLocalizacaoNegadaError } =
-  await import('./downwindTracker');
+const {
+  decidirTracking,
+  iniciarTrackingNativo,
+  pararTrackingNativo,
+  obterStatusTrackingNativo,
+  abrirConfiguracoesBateria,
+  estaNoAppNativo,
+  PermissaoLocalizacaoNegadaError,
+} = await import('./downwindTracker');
 
 afterEach(() => {
   vi.restoreAllMocks();
   startTrackingMock.mockReset();
   stopTrackingMock.mockReset();
+  getTrackingStatusMock.mockReset();
+  openBatteryOptimizationSettingsMock.mockReset();
 });
 
 describe('decidirTracking', () => {
@@ -185,5 +198,19 @@ describe('PermissaoLocalizacaoNegadaError', () => {
     const err = new PermissaoLocalizacaoNegadaError();
     expect(err.name).toBe('PermissaoLocalizacaoNegadaError');
     expect(err.message).toMatch(/permiss/i);
+  });
+});
+
+describe('obterStatusTrackingNativo', () => {
+  it('retorna null quando não está no app nativo (ambiente node/test sem window)', async () => {
+    const status = await obterStatusTrackingNativo();
+    expect(status).toBeNull();
+  });
+});
+
+describe('abrirConfiguracoesBateria', () => {
+  it('retorna false quando não está no app nativo (ambiente node/test sem window)', async () => {
+    const ok = await abrirConfiguracoesBateria();
+    expect(ok).toBe(false);
   });
 });

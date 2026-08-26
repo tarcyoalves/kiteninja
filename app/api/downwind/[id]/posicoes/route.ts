@@ -200,7 +200,7 @@ export async function GET(request: Request, ctx: Params) {
  *
  * Rejeita:
  * - timestamp no futuro (relógio desconfigurado)
- * - timestamp mais velho que 6 horas (dado obsoleto, não é rastreamento real)
+ * - timestamp mais velho que 9 horas (fora do teto nativo de 8h + margem de drenagem/relógio)
  *
  * Retorna Date válido ou null (usa default do banco).
  */
@@ -218,12 +218,14 @@ function validarRegistroEm(raw: unknown): Date | null {
   if (!Number.isFinite(ts)) return null;
 
   const agora = Date.now();
-  const seisHorasMs = 6 * 60 * 60 * 1000;
+  // O serviço nativo pode coletar por até 8h sem rede. Uma hora adicional
+  // cobre a drenagem e pequena divergência de relógio sem aceitar trilha antiga.
+  const noveHorasMs = 9 * 60 * 60 * 1000;
 
   // Rejeita timestamp no futuro
   if (ts > agora) return null;
-  // Rejeita mais velho que 6h (dado obsoleto)
-  if (agora - ts > seisHorasMs) return null;
+  // Rejeita pontos fora do teto operacional do rastreador
+  if (agora - ts > noveHorasMs) return null;
 
   return new Date(ts);
 }

@@ -30,13 +30,34 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 import type { DownwindPapel, DownwindParticipanteEstado, DownwindStatus } from '../context/DownwindContext';
 
+export interface TrackingStatus {
+  isServiceRunning: boolean;
+  isTrackingConfigured: boolean;
+  downwindId: string | null;
+  startedAt: number;
+  lastLocationAt: number;
+  lastSendAttemptAt: number;
+  lastSuccessfulSendAt: number;
+  lastHttpStatus: number;
+  lastError: string | null;
+  pendingCount: number;
+  consecutiveFailures: number;
+  droppedCount: number;
+  lastStopReason: string | null;
+  batteryOptimizationIgnored: boolean;
+  networkAvailable: boolean;
+}
+
 export interface DownwindTrackerPlugin {
   startTracking(options: { downwindId: string; authToken: string; baseUrl: string }): Promise<{
     success: boolean;
     downwindId: string;
+    alreadyRunning?: boolean;
   }>;
   stopTracking(): Promise<{ success: boolean }>;
   isTracking(): Promise<{ isTracking: boolean; downwindId: string | null }>;
+  getTrackingStatus(): Promise<TrackingStatus>;
+  openBatteryOptimizationSettings(): Promise<{ success: boolean }>;
   setAuthToken(options: { token: string }): Promise<{ success: boolean }>;
 }
 
@@ -192,5 +213,32 @@ export async function pararTrackingNativo(): Promise<void> {
     await DownwindTracker.stopTracking();
   } catch {
     // Best-effort — ver comentário acima.
+  }
+}
+
+/**
+ * Consulta a telemetria operacional do serviço nativo no Android.
+ * Devolve null se estiver em PWA/web ou se o plugin falhar.
+ */
+export async function obterStatusTrackingNativo(): Promise<TrackingStatus | null> {
+  if (!estaNoAppNativo()) return null;
+  try {
+    return await DownwindTracker.getTrackingStatus();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Solicita ao Android abrir a página de configurações de bateria do app
+ * para permitir que o usuário configure o modo "Sem restrições".
+ */
+export async function abrirConfiguracoesBateria(): Promise<boolean> {
+  if (!estaNoAppNativo()) return false;
+  try {
+    const res = await DownwindTracker.openBatteryOptimizationSettings();
+    return res.success;
+  } catch {
+    return false;
   }
 }

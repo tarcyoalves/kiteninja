@@ -78,6 +78,9 @@ export const SessionLoggerModal: React.FC = () => {
     setDurationMinutes(loggerPrefill.durationMinutes);
     setDate(loggerPrefill.date);
     setStartTime(loggerPrefill.startTime);
+    if (loggerPrefill.spotId) setSelectedSpotId(loggerPrefill.spotId);
+    if (loggerPrefill.customSpotName) setCustomSpotName(loggerPrefill.customSpotName);
+    if (loggerPrefill.notes) setNotes(loggerPrefill.notes);
     setPrefilledFromGps(true);
     setTrilhaReduzida(loggerPrefill.trilhaReduzida);
     limparLoggerPrefill();

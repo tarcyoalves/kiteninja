@@ -39,13 +39,14 @@ export async function GET() {
 
     const [rows, naoLidasRows] = await Promise.all([
       sql`
-        SELECT n.id, n.type, n.actor_id, n.session_id, n.comment_id, n.read_at, n.created_at,
+        SELECT n.id, n.type, n.actor_id, n.session_id, n.comment_id, n.downwind_id, n.invite_id, n.read_at, n.created_at,
                u.name AS actor_name, u.avatar_url AS actor_avatar_url,
-               s.spot_name, c.text AS comment_text
+               s.spot_name, c.text AS comment_text, d.nome AS downwind_nome
         FROM notifications n
         JOIN users u ON u.id = n.actor_id
         LEFT JOIN sessions_log s ON s.id = n.session_id
         LEFT JOIN session_comments c ON c.id = n.comment_id
+        LEFT JOIN downwinds d ON d.id = n.downwind_id
         WHERE n.recipient_id = ${user.id}
         ORDER BY n.created_at DESC
         LIMIT ${LIMITE_NOTIFICACOES}
@@ -56,7 +57,7 @@ export async function GET() {
       `,
     ]);
 
-    const notificacoes: AppNotification[] = (rows as NotificacaoRow[]).map((r) => ({
+    const notificacoes: AppNotification[] = (rows as (NotificacaoRow & { downwind_id?: unknown; invite_id?: unknown; downwind_nome?: unknown })[]).map((r) => ({
       id: String(r.id),
       type: r.type as AppNotification['type'],
       actorId: String(r.actor_id),
@@ -66,6 +67,9 @@ export async function GET() {
       spotName: r.spot_name ? String(r.spot_name) : undefined,
       commentId: r.comment_id ? String(r.comment_id) : undefined,
       commentText: r.comment_text ? String(r.comment_text).slice(0, MAX_PREVIEW_TEXTO) : undefined,
+      downwindId: r.downwind_id ? String(r.downwind_id) : undefined,
+      inviteId: r.invite_id ? String(r.invite_id) : undefined,
+      downwindNome: r.downwind_nome ? String(r.downwind_nome) : undefined,
       readAt: r.read_at ? String(r.read_at) : null,
       createdAt: String(r.created_at),
     }));

@@ -105,7 +105,7 @@ interface KiteDataContextType {
   allActiveSosList: SosAlertData[];
   setMyActiveSos: (sos: SosAlertData | null) => void;
   dismissIncomingSos: () => void;
-  respondToSos: (sosId: string, state: 'a_caminho' | 'nao_posso') => Promise<void>;
+  respondToSos: (sosId: string, state: 'a_caminho' | 'nao_posso') => Promise<{ ok: boolean; error?: string }>;
   cancelMySos: () => Promise<void>;
   fetchActiveSos: () => Promise<void>;
 
@@ -321,6 +321,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [incomingSosAlert, setIncomingSosAlert] = useState<SosAlertData | null>(null);
   const [allActiveSosList, setAllActiveSosList] = useState<SosAlertData[]>([]);
   const dismissedSosIdsRef = useRef<Set<string>>(new Set());
+  const seenResponderStatesRef = useRef<Map<string, string>>(new Map());
+  const sosBaselineDoneRef = useRef(false);
 
   // Modais e navegação
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -979,6 +981,40 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       );
       setMyActiveSos(mySos || null);
 
+      // Monitoramento de transição de socorristas para aviso imediato ao autor
+      if (mySos && Array.isArray(mySos.responders)) {
+        if (!sosBaselineDoneRef.current) {
+          for (const r of mySos.responders) {
+            seenResponderStatesRef.current.set(`${mySos.id}:${r.userId}`, r.state);
+          }
+          sosBaselineDoneRef.current = true;
+        } else {
+          for (const r of mySos.responders) {
+            const key = `${mySos.id}:${r.userId}`;
+            const prevState = seenResponderStatesRef.current.get(key);
+            if (prevState !== r.state) {
+              seenResponderStatesRef.current.set(key, r.state);
+              if (r.state === 'a_caminho' || r.state === 'no_local') {
+                if (
+                  typeof window !== 'undefined' &&
+                  'Notification' in window &&
+                  Notification.permission === 'granted'
+                ) {
+                  try {
+                    new Notification(`${r.name} está a caminho!`, {
+                      body: 'Alguém respondeu ao seu SOS. Acompanhe no mapa.',
+                      icon: '/brand/logo.png',
+                    });
+                  } catch {
+                    // Fallback silencioso
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       // SOS recebido de outro velejador (ainda não dispensado pelo usuário)
       const incoming = list.find(
         (a) =>
@@ -1000,18 +1036,30 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [incomingSosAlert]);
 
   const respondToSos = useCallback(
-    async (sosId: string, state: 'a_caminho' | 'nao_posso') => {
+    async (sosId: string, state: 'a_caminho' | 'nao_posso'): Promise<{ ok: boolean; error?: string }> => {
       try {
+        let lat: number | undefined;
+        let lng: number | undefined;
+        if (lastKnownPosition && state === 'a_caminho') {
+          lat = lastKnownPosition.lat;
+          lng = lastKnownPosition.lng;
+        }
+
         await api(`/api/sos/${sosId}/respond`, {
           method: 'POST',
-          body: JSON.stringify({ state }),
+          body: JSON.stringify({ state, lat, lng }),
         });
         await fetchActiveSos();
+        return { ok: true };
       } catch (err) {
         console.error('[sos] Erro ao responder SOS:', err);
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Não foi possível registrar a resposta.',
+        };
       }
     },
-    [fetchActiveSos]
+    [fetchActiveSos, lastKnownPosition]
   );
 
   const cancelMySos = useCallback(async () => {

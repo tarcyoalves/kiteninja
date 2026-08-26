@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, X } from 'lucide-react';
+import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -15,6 +15,8 @@ import { DownwindChat } from '../components/DownwindChat';
 import { ModoNavegacao } from '../components/ModoNavegacao';
 import { DownwindFaixaInfo } from '../components/DownwindFaixaInfo';
 import { DownwindParticipanteSheet } from '../components/DownwindParticipanteSheet';
+import { derivarEstadoCompartilhamento } from '../lib/downwindStatusVisual';
+import { ConvidarVelejadoresSheet } from '@/components/activity/ConvidarVelejadoresSheet';
 
 // Leaflet é client-only — mesmo padrão de views/MapView.tsx.
 const DownwindMapa = dynamic(
@@ -76,6 +78,8 @@ export const DownwindAoVivoView: React.FC = () => {
     ultimaPosicaoEm,
     telaTravadaLigada,
     statusTrackingNativo,
+    trackingTelemetry,
+    abrirConfiguracoesBateria,
     diagnosticoTracking,
     iniciarDownwind,
     encerrarMinhaParticipacao,
@@ -84,9 +88,10 @@ export const DownwindAoVivoView: React.FC = () => {
     definirApoio,
   } = useDownwind();
   const [participanteSelecionado, setParticipanteSelecionado] = useState<string | null>(null);
-  const { myActiveSos, fetchActiveSos } = useKiteData();
-  const { user } = useAuth();
+  const { myActiveSos, fetchActiveSos, abrirLoggerComResumo } = useKiteData();
+  const { user, isAdmin, canModerateEvents } = useAuth();
   const [chatAberto, setChatAberto] = useState(false);
+  const [convidarRidersAberto, setConvidarRidersAberto] = useState(false);
   // Link de 12h para apoio em terra sem conta (pedido do dono). O token só
   // existe nesta resposta e nesta tela — o banco guarda só o hash (mesmo
   // padrão de invites/downwind_convites em geral).
@@ -97,6 +102,7 @@ export const DownwindAoVivoView: React.FC = () => {
   const [linkCopiado, setLinkCopiado] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, setProcessando] = useState(false);
+  const [mostrarDiagnostico, setMostrarDiagnostico] = useState(false);
   // Tela preta do Modo Navegação, sobreposta a este mapa — ver o botão
   // "Iniciar" abaixo. Sair dela volta para ESTE componente, não para o app
   // normal (é o pedido do dono: "ao destravar a tela, continua no mapa ao
@@ -165,6 +171,45 @@ export const DownwindAoVivoView: React.FC = () => {
     );
   }, [linkApoio]);
 
+  const calcularMetricasTrilha = (trilha: Array<[number, number, number]>) => {
+    if (!trilha || trilha.length < 2) {
+      return { distanciaKm: 0, velocidadeMaxNos: 0, duracaoMinutos: 0, iniciadoEm: null };
+    }
+    let distTotalKm = 0;
+    let maxSpeedKnots = 0;
+    for (let i = 1; i < trilha.length; i++) {
+      const [lat1, lng1, t1] = trilha[i - 1];
+      const [lat2, lng2, t2] = trilha[i];
+      const R = 6371;
+      const dLat = ((lat2 - lat1) * Math.PI) / 180;
+      const dLng = ((lng2 - lng1) * Math.PI) / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const dKm = R * c;
+      distTotalKm += dKm;
+
+      const dtHours = (t2 - t1) / 3_600_000;
+      if (dtHours > 0 && dtHours <= 0.5) {
+        const speedKnots = (dKm / 1.852) / dtHours;
+        if (speedKnots < 50 && speedKnots > maxSpeedKnots) {
+          maxSpeedKnots = speedKnots;
+        }
+      }
+    }
+    const tInicio = trilha[0][2];
+    const tFim = trilha[trilha.length - 1][2];
+    const duracaoMinutos = Math.max(1, Math.round((tFim - tInicio) / 60000));
+    return {
+      distanciaKm: Math.round(distTotalKm * 10) / 10,
+      velocidadeMaxNos: Math.round(maxSpeedKnots * 10) / 10,
+      duracaoMinutos,
+      iniciadoEm: new Date(tInicio),
+    };
+  };
+
   // BUG CORRIGIDO (achado em produção): mandar sempre 'encerrado' fazia quem
   // ainda não tinha navegado (estado 'confirmado' — TODO apoio_terra, que
   // nunca tem botão Iniciar, e um velejador que entrou mas não tocou Iniciar)
@@ -172,12 +217,42 @@ export const DownwindAoVivoView: React.FC = () => {
   // válida a partir de 'navegando'. estadoDeSaidaVelejo (lib/downwind.ts)
   // escolhe o alvo certo a partir do estado atual.
   const encerrarVelejo = useCallback(async () => {
-    const alvo = estadoDeSaidaVelejo(downwindAtivo?.minhaParticipacao.estado ?? 'confirmado');
+    if (!downwindAtivo) return;
+    const snapshotDownwind = { ...downwindAtivo };
+    const alvo = estadoDeSaidaVelejo(snapshotDownwind.minhaParticipacao.estado ?? 'confirmado');
+    const metricas = calcularMetricasTrilha(minhaTrilha ?? []);
+
     setProcessando(true);
     const res = await encerrarMinhaParticipacao(alvo);
     setProcessando(false);
-    if (!res.ok) setErro(res.error ?? 'Falha ao encerrar.');
-  }, [downwindAtivo, encerrarMinhaParticipacao]);
+    if (!res.ok) {
+      setErro(res.error ?? 'Falha ao encerrar.');
+      return;
+    }
+
+    // Se concluiu a travessia de fato, abre o logbook com dados reais de GPS
+    if (alvo === 'encerrado') {
+      const dataInicio = metricas.iniciadoEm || (snapshotDownwind.iniciadoEm ? new Date(snapshotDownwind.iniciadoEm) : new Date());
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const date = [dataInicio.getFullYear(), pad2(dataInicio.getMonth() + 1), pad2(dataInicio.getDate())].join('-');
+      const startTime = `${pad2(dataInicio.getHours())}:${pad2(dataInicio.getMinutes())}`;
+      const spotSaida = snapshotDownwind.saida?.nome || 'Downwind';
+      const spotChegada = snapshotDownwind.chegada?.nome;
+      const duracaoCalculada = metricas.duracaoMinutos || Math.max(1, Math.round((Date.now() - dataInicio.getTime()) / 60000));
+
+      abrirLoggerComResumo({
+        distanceKm: metricas.distanciaKm || Math.round((snapshotDownwind.minhaParticipacao.distanciaKm || 0) * 10) / 10,
+        maxSpeedKnots: metricas.velocidadeMaxNos || Math.round((snapshotDownwind.minhaParticipacao.velocidadeMaxNos || 0) * 10) / 10,
+        durationMinutes: duracaoCalculada,
+        date,
+        startTime,
+        trilhaReduzida: minhaTrilha ?? [],
+        spotId: undefined,
+        customSpotName: spotChegada ? `${spotSaida} → ${spotChegada}` : spotSaida,
+        notes: `Downwind em grupo: ${snapshotDownwind.nome}`,
+      });
+    }
+  }, [downwindAtivo, encerrarMinhaParticipacao, abrirLoggerComResumo, minhaTrilha]);
 
   const holdEncerrar = usePressAndHold(HOLD_ENCERRAR_MS, () => {
     try {
@@ -386,6 +461,21 @@ export const DownwindAoVivoView: React.FC = () => {
           );
         })()}
 
+        {/* Convidar velejadores: disponível apenas para organizadores e moderadores */}
+        {(souOrganizador || isAdmin || canModerateEvents) &&
+          downwindAtivo.status !== 'encerrado' &&
+          downwindAtivo.status !== 'cancelado' && (
+            <button
+              type="button"
+              onClick={() => setConvidarRidersAberto(true)}
+              className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-cyan-300 hover:text-white active:scale-95 transition-all"
+              aria-label="Convidar velejadores para o downwind"
+            >
+              <UserPlus size={16} />
+              <span className="text-[10px] font-bold">Convidar</span>
+            </button>
+          )}
+
         {/* Link de 12h para apoio em terra sem conta — pedido do dono.
             Disponível enquanto o downwind ainda não terminou (aberto ou
             em_andamento); qualquer organizador pode gerar, reutilizável para
@@ -452,35 +542,119 @@ export const DownwindAoVivoView: React.FC = () => {
         (docs/ANTIGRAVITY-FINDINGS.md, ANT-003). Dizer isso aqui é melhor do
         que deixar quem está na água acreditar numa cobertura que não existe.
       */}
-      {downwindAtivo.status === 'em_andamento' && (
-        <div
-          className={`mx-3 mb-3 p-3 rounded-2xl border text-[11px] leading-relaxed ${
-            telaTravadaLigada
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
-              : 'bg-amber-500/10 border-amber-500/40 text-amber-200'
-          }`}
-          role="status"
-        >
-          {statusTrackingNativo === 'ativo'
-            ? 'Rastreamento em segundo plano ATIVO: o serviço nativo continua enviando sua posição mesmo com a tela apagada ou o app minimizado. Procure a notificação "Rastreando downwind" na barra de status.'
-            : telaTravadaLigada
-              ? 'Rastreamento ativo: a tela fica ligada durante a travessia para continuar enviando sua posição com o celular no colete. Não feche o app — com o app fechado o envio para.'
-              : 'Atenção: não foi possível travar a tela ligada neste aparelho. Se a tela apagar, sua posição pode parar de ser enviada. Mantenha o app aberto e a tela acesa durante a travessia.'}
+      {downwindAtivo.status === 'em_andamento' && (() => {
+        const estadoVisual = derivarEstadoCompartilhamento({
+          isServiceRunning: statusTrackingNativo === 'ativo',
+          statusTrackingNativo,
+          telaTravadaLigada,
+          telemetry: trackingTelemetry,
+        });
 
-          {/*
-            Linha de diagnóstico. Não é enfeite: sem cabo USB e sem logcat,
-            esta é a ÚNICA forma de descobrir onde o rastreio nativo parou no
-            aparelho de quem relata o problema. Mesma escolha já feita para o
-            FCM. Só aparece dentro do app nativo — em PWA o conceito não
-            existe e a frase só confundiria.
-          */}
-          {diagnosticoTracking && statusTrackingNativo !== null && (
-            <p className="mt-2 pt-2 border-t border-current/20 opacity-80 font-mono text-[10px]">
-              {diagnosticoTracking}
-            </p>
-          )}
-        </div>
-      )}
+        return (
+          <div
+            className={`mx-3 mb-3 p-3 rounded-2xl border text-xs leading-relaxed transition-all ${
+              estadoVisual.cor === 'verde'
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                : estadoVisual.cor === 'amarelo'
+                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-200'
+                  : estadoVisual.cor === 'vermelho'
+                    ? 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                    : 'bg-slate-800/60 border-slate-700 text-slate-300'
+            }`}
+            role="status"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span
+                  className={`w-2.5 h-2.5 rounded-full shrink-0 ${
+                    estadoVisual.cor === 'verde'
+                      ? 'bg-emerald-400 animate-pulse'
+                      : estadoVisual.cor === 'amarelo'
+                        ? 'bg-amber-400'
+                        : estadoVisual.cor === 'vermelho'
+                          ? 'bg-rose-400'
+                          : 'bg-slate-400'
+                  }`}
+                />
+                <div className="min-w-0">
+                  <p className="font-bold text-xs truncate text-white">{estadoVisual.titulo}</p>
+                  {estadoVisual.detalhe && (
+                    <p className="text-[11px] opacity-80 truncate">{estadoVisual.detalhe}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Botões discretos de ação / diagnóstico */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {estadoVisual.cor === 'vermelho' && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await iniciarDownwind();
+                    }}
+                    className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-lg text-[10px] font-semibold transition-colors"
+                  >
+                    Tentar de novo
+                  </button>
+                )}
+                {trackingTelemetry && !trackingTelemetry.batteryOptimizationIgnored && (
+                  <button
+                    type="button"
+                    onClick={() => abrirConfiguracoesBateria()}
+                    className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded-lg text-[10px] font-semibold transition-colors"
+                    aria-label="Configurar bateria"
+                  >
+                    Bateria
+                  </button>
+                )}
+                {trackingTelemetry && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarDiagnostico(!mostrarDiagnostico)}
+                    className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    aria-label="Ver diagnóstico de rastreamento"
+                  >
+                    {mostrarDiagnostico ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Diagnóstico técnico colapsável */}
+            {mostrarDiagnostico && trackingTelemetry && (
+              <div className="mt-2.5 pt-2.5 border-t border-current/20 grid grid-cols-2 gap-1.5 text-[10px] font-mono opacity-90 animate-in fade-in">
+                <div>
+                  Fila offline:{' '}
+                  <span className={trackingTelemetry.pendingCount > 0 ? 'text-amber-300 font-bold' : ''}>
+                    {trackingTelemetry.pendingCount} pts
+                  </span>
+                </div>
+                <div>
+                  Último envio:{' '}
+                  {trackingTelemetry.lastSuccessfulSendAt > 0
+                    ? new Date(trackingTelemetry.lastSuccessfulSendAt).toLocaleTimeString()
+                    : 'Aguardando'}
+                </div>
+                {trackingTelemetry.lastError && (
+                  <div className="col-span-2 text-rose-300">
+                    Status: {trackingTelemetry.lastError}
+                  </div>
+                )}
+                {trackingTelemetry.droppedCount > 0 && (
+                  <div className="col-span-2 text-amber-300">
+                    Descartes (fila cheia): {trackingTelemetry.droppedCount}
+                  </div>
+                )}
+                {diagnosticoTracking && (
+                  <div className="col-span-2 text-slate-400">
+                    {diagnosticoTracking}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {chatAberto && (
         <DownwindChat downwindId={downwindAtivo.id} onFechar={() => setChatAberto(false)} />
@@ -542,6 +716,15 @@ export const DownwindAoVivoView: React.FC = () => {
             )}
           </div>
         </div>
+      )}
+
+      {convidarRidersAberto && (
+        <ConvidarVelejadoresSheet
+          isOpen={convidarRidersAberto}
+          onClose={() => setConvidarRidersAberto(false)}
+          downwindId={downwindAtivo.id}
+          downwindNome={downwindAtivo.nome}
+        />
       )}
 
       {/* Sobreposto ao mapa inteiro (fixed inset-0 dentro do próprio

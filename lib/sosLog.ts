@@ -35,6 +35,8 @@ export type EtapaSos =
   | 'escalada.sem_gatilho'
   | 'respond.ok'
   | 'respond.negado'
+  | 'respond.event_db_falhou'
+  | 'respond.push_falhou'
   | 'encerrado'
   | 'erro';
 

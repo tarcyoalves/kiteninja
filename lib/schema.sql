@@ -207,12 +207,11 @@ CREATE INDEX IF NOT EXISTS idx_session_comments_parent ON session_comments (pare
 -- auto-notificação (a primeira é o código da rota — lib/notificacoes.ts,
 -- criarNotificacao — nunca inserir quando os dois IDs são iguais) — mesmo
 -- princípio de duas camadas já usado no CHECK de auto-follow (user_follows)
--- e auto-DM (parseRoomName em lib/chat.ts).
 CREATE TABLE IF NOT EXISTS notifications (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   actor_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor')),
+  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind')),
   session_id   UUID REFERENCES sessions_log(id) ON DELETE CASCADE,
   comment_id   UUID REFERENCES session_comments(id) ON DELETE CASCADE,
   read_at      TIMESTAMPTZ,
@@ -680,6 +679,24 @@ CREATE INDEX IF NOT EXISTS idx_sos_responders_vivos
   ON sos_responders (sos_id)
   WHERE state IN ('a_caminho', 'no_local');
 
+-- Eventos operacionais do SOS para aviso in-app imediato e auditável ao autor do pedido
+CREATE TABLE IF NOT EXISTS sos_events (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  sos_id       UUID NOT NULL REFERENCES sos_alerts(id) ON DELETE CASCADE,
+  recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_name   TEXT NOT NULL,
+  kind         TEXT NOT NULL CHECK (kind IN ('responder_a_caminho', 'responder_no_local', 'responder_desistiu')),
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  read_at      TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_sos_events_recipient
+  ON sos_events (recipient_id, created_at DESC);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_sos_events_dedup
+  ON sos_events (sos_id, actor_id, kind);
+
 -- Inscrições de Web Push (VAPID). Cada navegador/dispositivo gera um endpoint
 -- único; endpoint UNIQUE evita duplicar a mesma inscrição a cada reload ou
 -- revisita.
@@ -752,8 +769,13 @@ CREATE TABLE IF NOT EXISTS downwinds (
   previsto_para TIMESTAMPTZ,
   iniciado_em   TIMESTAMPTZ,
   encerrado_em  TIMESTAMPTZ,
+  visibilidade  TEXT NOT NULL DEFAULT 'privado'
+                  CHECK (visibilidade IN ('privado', 'comunidade')),
   criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE downwinds ADD COLUMN IF NOT EXISTS visibilidade TEXT NOT NULL DEFAULT 'privado'
+  CHECK (visibilidade IN ('privado', 'comunidade'));
 
 -- Painel do organizador lista "os que estão abertos/em andamento" — parcial,
 -- no espírito de idx_sos_active: sem WHERE, o índice carregaria também todo
@@ -897,6 +919,45 @@ CREATE TABLE IF NOT EXISTS downwind_convites (
 CREATE INDEX IF NOT EXISTS idx_downwind_convites_open
   ON downwind_convites (downwind_id, expira_em)
   WHERE revogado_em IS NULL;
+
+-- Convite para usuário cadastrado no app ou via link com token com hash
+CREATE TABLE IF NOT EXISTS downwind_user_invites (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  downwind_id  UUID NOT NULL REFERENCES downwinds(id) ON DELETE CASCADE,
+  inviter_id   UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invitee_id   UUID REFERENCES users(id) ON DELETE CASCADE,
+  role         TEXT NOT NULL DEFAULT 'velejador' CHECK (role IN ('velejador', 'apoio_terra')),
+  status       TEXT NOT NULL DEFAULT 'pendente' CHECK (status IN ('pendente', 'aceito', 'recusado', 'cancelado', 'expirado')),
+  token_hash   TEXT UNIQUE,
+  expires_at   TIMESTAMPTZ NOT NULL,
+  responded_at TIMESTAMPTZ,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_dw_user_invites_invitee
+  ON downwind_user_invites (invitee_id, status)
+  WHERE status = 'pendente';
+
+CREATE INDEX IF NOT EXISTS idx_dw_user_invites_dw
+  ON downwind_user_invites (downwind_id);
+
+-- Vínculo de notificações com downwinds e convites
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS downwind_id UUID REFERENCES downwinds(id) ON DELETE CASCADE;
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS invite_id UUID REFERENCES downwind_user_invites(id) ON DELETE CASCADE;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'notifications_type_check'
+      AND contype = 'c'
+  ) THEN
+    ALTER TABLE notifications DROP CONSTRAINT notifications_type_check;
+  END IF;
+  ALTER TABLE notifications
+    ADD CONSTRAINT notifications_type_check
+      CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind'));
+END $$;
 
 -- Token de rastreio para o Foreground Service Android (rastreio com o app
 -- fechado — ver docs/PLANO-RASTREIO-BACKGROUND-ANDROID.md). O app é

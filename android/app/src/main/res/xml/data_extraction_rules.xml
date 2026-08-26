@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<data-extraction-rules>
+    <cloud-backup>
+        <!-- Exclui credenciais temporárias de rastreio e fila local de posições GPS -->
+        <exclude domain="sharedpref" path="kiteninja_tracking_state.xml" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-journal" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-wal" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-shm" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="sharedpref" path="kiteninja_tracking_state.xml" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-journal" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-wal" />
+        <exclude domain="database" path="kiteninja_tracking_queue.db-shm" />
+    </device-transfer>
+</data-extraction-rules>

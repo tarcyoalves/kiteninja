@@ -9,6 +9,9 @@ import {
   estaNoAppNativo,
   iniciarTrackingNativo,
   pararTrackingNativo,
+  obterStatusTrackingNativo,
+  abrirConfiguracoesBateria,
+  type TrackingStatus,
 } from '../lib/downwindTracker';
 
 /**
@@ -42,6 +45,8 @@ export interface MinhaParticipacaoDownwind {
   estado: DownwindParticipanteEstado;
   ehOrganizador: boolean;
   apoioUserId: string | null;
+  distanciaKm?: number;
+  velocidadeMaxNos?: number;
 }
 
 export interface DownwindAtivo {
@@ -79,6 +84,10 @@ interface DownwindContextType {
    * for removido dos recentes.
    */
   statusTrackingNativo: 'inativo' | 'ativo' | 'permissao_negada' | null;
+  /** Telemetria operacional nativa para exibição na UI (posições pendentes, último envio, status de bateria). */
+  trackingTelemetry: TrackingStatus | null;
+  /** Abre as configurações de bateria do Android para selecionar "Sem restrições". */
+  abrirConfiguracoesBateria: () => Promise<boolean>;
   /**
    * Frase legível dizendo em que ponto o rastreio nativo está — ou por que
    * não ligou. Existe para ser MOSTRADA na tela: sem cabo USB não há outro
@@ -209,6 +218,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [statusTrackingNativo, setStatusTrackingNativo] = useState<
     'inativo' | 'ativo' | 'permissao_negada' | null
   >(estaNoAppNativo() ? 'inativo' : null);
+  const [trackingTelemetry, setTrackingTelemetry] = useState<TrackingStatus | null>(null);
   // Evita iniciar duas vezes em corridas de re-render (ex.: `recarregar()`
   // disparando de novo antes do primeiro `startTracking` resolver) — só
   // chama o plugin nativo quando o estado ligado/desligado realmente muda.
@@ -216,25 +226,73 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   /*
    * Diagnóstico legível do rastreio nativo, mostrado na tela do downwind.
-   *
-   * POR QUE ISTO EXISTE: `statusTrackingNativo` era exposto pelo contexto e
-   * NUNCA renderizado em lugar nenhum. Quando o dono relatou "continua sem
-   * rastrear com a tela apagada", não havia como saber onde o fluxo parava —
-   * se não era app nativo, se a decisão dava false, se o token falhava, se o
-   * plugin rejeitava, ou se o serviço subia e morria depois. Sem cabo USB e
-   * sem logcat, um agente não tem NENHUMA visibilidade do aparelho.
-   *
-   * Mesmo caminho já adotado para o FCM ("diag(push): mostra na tela por que
-   * o registro não completa"): quando não dá para depurar de fora, o app
-   * precisa dizer na própria tela o que está acontecendo.
    */
-  const [diagnosticoTracking, setDiagnosticoTracking] = useState<string | null>(null);
+  const [diagnosticoTracking, setDiagnosticoTracking] = useState<string | null>(
+    estaNoAppNativo() ? null : 'Rodando como PWA/navegador — sem serviço nativo.'
+  );
 
+  // Reconciliação ao abrir o app / retornar do background (visibilitychange)
   useEffect(() => {
-    if (!estaNoAppNativo()) {
-      setDiagnosticoTracking('Rodando como PWA/navegador — sem serviço nativo.');
+    if (!estaNoAppNativo()) return;
+
+    const reconciliar = async () => {
+      const status = await obterStatusTrackingNativo();
+      if (!status) return;
+      setTrackingTelemetry(status);
+
+      const downwindId = downwindAtivo?.id;
+      if (status.isServiceRunning && downwindId && status.downwindId === downwindId) {
+        trackingLigadoRef.current = true;
+        setStatusTrackingNativo('ativo');
+        setDiagnosticoTracking('Serviço nativo ativo. Posição sendo compartilhada.');
+      } else if (!status.isServiceRunning && trackingLigadoRef.current) {
+        trackingLigadoRef.current = false;
+        setStatusTrackingNativo('inativo');
+        if (status.lastStopReason) {
+          setDiagnosticoTracking(`Rastreio encerrado: ${status.lastStopReason}`);
+        }
+      }
+    };
+
+    reconciliar();
+
+    const onVisChange = () => {
+      if (document.visibilityState === 'visible') {
+        reconciliar();
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisChange);
+    return () => document.removeEventListener('visibilitychange', onVisChange);
+  }, [downwindAtivo?.id]);
+
+  // Polling moderado de telemetria (a cada 12 segundos) enquanto houver downwind ativo no app nativo
+  useEffect(() => {
+    if (!estaNoAppNativo() || !downwindAtivo?.id || downwindAtivo.status !== 'em_andamento') {
       return;
     }
+
+    const interval = setInterval(async () => {
+      const status = await obterStatusTrackingNativo();
+      if (status) {
+        setTrackingTelemetry(status);
+        if (status.isServiceRunning) {
+          setStatusTrackingNativo('ativo');
+        } else if (trackingLigadoRef.current) {
+          trackingLigadoRef.current = false;
+          setStatusTrackingNativo('inativo');
+          if (status.lastStopReason) {
+            setDiagnosticoTracking(`Rastreio encerrado: ${status.lastStopReason}`);
+          }
+        }
+      }
+    }, 12_000);
+
+    return () => clearInterval(interval);
+  }, [downwindAtivo?.id, downwindAtivo?.status]);
+
+  useEffect(() => {
+    if (!estaNoAppNativo()) return;
 
     const downwindId = downwindAtivo?.id ?? null;
     const papel = downwindAtivo?.minhaParticipacao.papel ?? null;
@@ -260,10 +318,11 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (resultado.ok) {
           setStatusTrackingNativo('ativo');
           setDiagnosticoTracking('Serviço nativo iniciado. Procure a notificação "Rastreando downwind".');
+          obterStatusTrackingNativo().then((st) => {
+            if (st) setTrackingTelemetry(st);
+          });
         } else {
-          // Falhou: libera o ref para permitir nova tentativa (ex.: revalidação
-          // periódica trazendo o mesmo estado de novo) em vez de travar
-          // silenciosamente "tentando" para sempre.
+          // Falhou: libera o ref para permitir nova tentativa
           trackingLigadoRef.current = false;
           setStatusTrackingNativo(resultado.permissaoNegada ? 'permissao_negada' : 'inativo');
           setDiagnosticoTracking(
@@ -278,9 +337,10 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       pararTrackingNativo();
       setStatusTrackingNativo('inativo');
       setDiagnosticoTracking('Rastreio nativo encerrado (travessia terminou ou você saiu).');
+      obterStatusTrackingNativo().then((st) => {
+        if (st) setTrackingTelemetry(st);
+      });
     } else if (!deveRastrear) {
-      // Diz QUAL condição barrou. Sem isso, "não rastreia" é indistinguível de
-      // "não deveria rastrear ainda", e o relato vira adivinhação.
       const motivo = !isAuthenticated
         ? 'sem sessão iniciada'
         : statusDw !== 'em_andamento'
@@ -485,6 +545,8 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         ultimaPosicaoEm: beacon.ultimaPosicaoEm,
         telaTravadaLigada: wakeLock.ativo,
         statusTrackingNativo,
+        trackingTelemetry,
+        abrirConfiguracoesBateria,
         diagnosticoTracking,
         entrarNoDownwind,
         iniciarDownwind,

@@ -1,22 +1,18 @@
-'use client';
+﻿'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Bell, Heart, MessageCircle, MessagesSquare, User, UserPlus, X } from 'lucide-react';
+import { AlertTriangle, Bell, Check, Heart, Loader2, MessageCircle, MessagesSquare, Navigation, User, UserPlus, X } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/chat';
 import type { AppNotification } from '@/types';
 
 interface NotificationCenterModalProps {
   aberto: boolean;
   onClose: () => void;
-  /** setSessaoIdAberta do contexto — mesmo destino que qualquer CardSessaoFeed já usa. */
   onAbrirSessao: (sessionId: string) => void;
-  /** setRiderIdAberto do contexto — destino de "novo_seguidor". */
   onAbrirPerfil: (riderId: string) => void;
-  /** Preserva o atalho que o sininho já tinha ANTES desta fase (ver
-   * Header.tsx: tocar nele ia direto pra aba de chat quando havia mensagem
-   * não lida) — sem isto, o dono perdia o único atalho que já existia. */
   totalChatUnread: number;
   onIrParaChat: () => void;
+  onAbrirDownwind?: (downwindId: string) => void;
 }
 
 function mensagemNotificacao(n: AppNotification): string {
@@ -31,6 +27,8 @@ function mensagemNotificacao(n: AppNotification): string {
       return `respondeu seu comentário${n.commentText ? `: "${n.commentText}"` : ''}`;
     case 'novo_seguidor':
       return 'começou a seguir você';
+    case 'convite_downwind':
+      return `convidou você para o downwind${n.downwindNome ? ` "${n.downwindNome}"` : ''}`;
   }
 }
 
@@ -43,19 +41,11 @@ function iconeNotificacao(type: AppNotification['type']) {
       return <MessageCircle size={14} className="text-cyan-400" />;
     case 'novo_seguidor':
       return <UserPlus size={14} className="text-emerald-400" />;
+    case 'convite_downwind':
+      return <Navigation size={14} className="text-cyan-400" />;
   }
 }
 
-/**
- * Central de notificações in-app (Fase 6 do plano de rede social — SEM push
- * de propósito, decisão do dono do produto). Mesmo padrão estrutural de
- * `RiderProfileModal.tsx`/`SessionDetailModal.tsx`: header com X, fetch com
- * guard `ativo`, estados carregando/erro.
- *
- * Substitui o comportamento antigo do sininho do Header (que pulava direto
- * para a aba de chat ou alertas) por um modal de verdade — o atalho pro chat
- * continua existindo aqui dentro (item 2 do corpo), só mudou de lugar.
- */
 export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = ({
   aberto,
   onClose,
@@ -63,17 +53,15 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   onAbrirPerfil,
   totalChatUnread,
   onIrParaChat,
+  onAbrirDownwind,
 }) => {
   const [notificacoes, setNotificacoes] = useState<AppNotification[]>([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [processandoInviteId, setProcessandoInviteId] = useState<string | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Busca a lista E marca todas como lidas ao abrir — "abrir já é ter visto",
-  // mesmo espírito de clearUnreadChat ao entrar na aba de chat. As duas
-  // requisições rodam em paralelo: marcar como lida não depende de ter lido a
-  // lista primeiro.
   useEffect(() => {
     if (!aberto) return;
 
@@ -108,7 +96,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     };
   }, [aberto]);
 
-  // Esc fecha e trava o scroll do fundo — mesmo padrão de RiderProfileModal.
   useEffect(() => {
     if (!aberto) return;
     closeButtonRef.current?.focus();
@@ -118,6 +105,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     window.addEventListener('keydown', onKey);
     const anterior = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
+
     return () => {
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = anterior;
@@ -127,11 +115,49 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   if (!aberto) return null;
 
   const handleTocarNotificacao = (n: AppNotification) => {
+    if (n.type === 'convite_downwind') {
+      // Se for convite, o velejador pode aceitar/recusar pelos botões de ação
+      return;
+    }
     onClose();
     if (n.type === 'novo_seguidor') {
       onAbrirPerfil(n.actorId);
     } else if (n.sessionId) {
       onAbrirSessao(n.sessionId);
+    }
+  };
+
+  const handleAceitarConvite = async (inviteId: string, downwindId?: string) => {
+    setProcessandoInviteId(inviteId);
+    try {
+      const res = await fetch(`/api/downwind/invites/${inviteId}/accept`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || 'Falha ao aceitar convite.');
+
+      setNotificacoes((prev) => prev.filter((item) => item.inviteId !== inviteId));
+      onClose();
+      if (onAbrirDownwind && (downwindId || body.downwindId)) {
+        onAbrirDownwind(downwindId || body.downwindId);
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao aceitar convite.');
+    } finally {
+      setProcessandoInviteId(null);
+    }
+  };
+
+  const handleRecusarConvite = async (inviteId: string) => {
+    setProcessandoInviteId(inviteId);
+    try {
+      const res = await fetch(`/api/downwind/invites/${inviteId}/decline`, { method: 'POST' });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.error || 'Falha ao recusar convite.');
+
+      setNotificacoes((prev) => prev.filter((item) => item.inviteId !== inviteId));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao recusar convite.');
+    } finally {
+      setProcessandoInviteId(null);
     }
   };
 
@@ -160,9 +186,6 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
         </div>
 
         <div className="max-h-[calc(100dvh-56px)] sm:max-h-[80vh] overflow-y-auto">
-          {/* Atalho pro chat — preserva o comportamento ANTIGO do sininho
-              (tocar nele ia direto pra aba de chat quando havia mensagem
-              não lida). */}
           {totalChatUnread > 0 && (
             <button
               type="button"
@@ -206,12 +229,11 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           <ul>
             {notificacoes.map((n) => (
               <li key={n.id}>
-                <button
-                  type="button"
+                <div
                   onClick={() => handleTocarNotificacao(n)}
-                  className={`w-full flex items-start gap-3 px-4 py-3 border-b border-slate-800/80 text-left transition-colors hover:bg-slate-800/60 ${
-                    n.readAt === null ? 'bg-cyan-500/5' : ''
-                  }`}
+                  className={`w-full flex items-start gap-3 px-4 py-3 border-b border-slate-800/80 text-left transition-colors ${
+                    n.type !== 'convite_downwind' ? 'cursor-pointer hover:bg-slate-800/60' : ''
+                  } ${n.readAt === null ? 'bg-cyan-500/5' : ''}`}
                 >
                   <div className="relative shrink-0">
                     <div className="w-9 h-9 rounded-full bg-slate-800 ring-1 ring-slate-700 overflow-hidden flex items-center justify-center">
@@ -228,21 +250,43 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
                   <div className="min-w-0 flex-1">
                     <p className="text-xs text-slate-200 leading-snug break-words">
-                      <span className="font-black text-white">{n.actorName}</span>{' '}
-                      {mensagemNotificacao(n)}
+                      <span className="font-black text-white">{n.actorName}</span> {mensagemNotificacao(n)}
                     </p>
-                    <span className="text-[10px] text-slate-500 font-mono">
-                      {formatRelativeTime(n.createdAt)}
-                    </span>
+                    <span className="text-[10px] text-slate-500 font-mono">{formatRelativeTime(n.createdAt)}</span>
+
+                    {/* Ações diretas para convite de downwind */}
+                    {n.type === 'convite_downwind' && n.inviteId && (
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => handleAceitarConvite(n.inviteId!, n.downwindId)}
+                          disabled={processandoInviteId === n.inviteId}
+                          className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 text-xs font-black rounded-lg transition-all active:scale-95 flex items-center gap-1"
+                        >
+                          {processandoInviteId === n.inviteId ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <Check size={13} />
+                          )}
+                          <span>Aceitar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRecusarConvite(n.inviteId!)}
+                          disabled={processandoInviteId === n.inviteId}
+                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-lg transition-all active:scale-95 flex items-center gap-1"
+                        >
+                          <X size={13} />
+                          <span>Recusar</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {n.readAt === null && (
-                    <span
-                      className="mt-1 w-2 h-2 rounded-full bg-cyan-400 shrink-0"
-                      aria-label="Não lida"
-                    />
+                    <span className="mt-1 w-2 h-2 rounded-full bg-cyan-400 shrink-0" aria-label="Não lida" />
                   )}
-                </button>
+                </div>
               </li>
             ))}
           </ul>
