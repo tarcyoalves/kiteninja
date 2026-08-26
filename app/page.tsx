@@ -19,6 +19,7 @@ import { SessionDetailModal } from "../components/SessionDetailModal";
 import { NotificationCenterModal } from "../components/NotificationCenterModal";
 import { ChamadosModal } from "../components/ChamadosModal";
 import { InAppPushToast } from "../components/InAppPushToast";
+import { UpdateNotificationBanner } from "../components/UpdateNotificationBanner";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
 import { EntrarDownwindModal } from "../components/activity/EntrarDownwindModal";
@@ -357,6 +358,9 @@ const MainContent: React.FC = () => {
 
       {/* In-App Push Notification Toast */}
       <InAppPushToast />
+
+      {/* Banner Automático de Nova Versão/Atualização do App */}
+      <UpdateNotificationBanner />
     </div>
   );
 };

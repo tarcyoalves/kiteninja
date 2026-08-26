@@ -4,9 +4,18 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
-## Atualização — 26/08/2026 (botão central de PLAY, Feed da comunidade e início rápido)
+## Atualização — 26/08/2026 (auto-update PWA/Web, remoção de botão duplicado e menu unificado)
 
-1. **Menu Flutuante (`BottomNav.tsx`) com Botão Central de PLAY:**
+1. **Remoção do Botão Flutuante Duplicado no Mapa (`views/MapView.tsx`):**
+   - Com a inclusão do botão central de **PLAY** no menu flutuante permanente (`BottomNav.tsx`), o botão flutuante isolado na lateral do mapa tornou-se redundante e foi removido para limpar a visão do mapa.
+
+2. **Sistema Automático de Detecção de Atualizações (PWA & Web):**
+   - **Endpoint de Verificação (`app/api/version/route.ts`):** Retorna a versão da aplicação, hash do commit e timestamp do build com headers rígidos de `no-store` e `no-cache`.
+   - **Banner de Atualização Não-Intrusivo (`components/UpdateNotificationBanner.tsx`):** Monitora periodicamente a cada 2 minutos, no retorno à aba (`visibilitychange`), no ganho de foco da janela e em eventos do Service Worker (`updatefound`).
+   - **Atualização Fluida:** Ao tocar em "Atualizar", limpa caches do navegador/PWA, aciona o Service Worker para `SKIP_WAITING` e recarrega a página (`window.location.reload()`) sem travar a navegação ativa.
+   - **Opção Manual no Menu (`components/SidebarDrawer.tsx`):** Exibe a versão atual e atalho para checar atualizações manuais.
+
+3. **Menu Flutuante (`BottomNav.tsx`) com Botão Central de PLAY e Feed da Comunidade:**
    - **Botão Central Elevado:** Botão circular com ícone `Play` e gradiente ciano brilhante (`shadow-cyan-500/40`), acessível de qualquer aba para abrir a folha de início rápido (`IniciarAtividadeSheet`).
    - **Opções de Velejo Unificadas:** Velejo Solo (com telemetria e link de apoio), Criar Downwind em Grupo (privado ou comunidade) e Entrar por Link/Convite.
    - **Aba de Feed da Comunidade (`destaques`):** Botão dedicado com ícone `Flame` exibindo a timeline com as postagens, fotos e relatos de velejadores da comunidade (`FeedView`).

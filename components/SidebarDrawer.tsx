@@ -25,6 +25,7 @@ import {
   UserCog,
   MessageSquareWarning,
   AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -827,6 +828,31 @@ export const SidebarDrawer: React.FC = () => {
               <span>Sair da Conta</span>
             </button>
           )}
+
+          {/* Rodapé de Versão e Atualização Automática */}
+          <div className="pt-2 pb-1 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+            <span>KiteNinja v0.1.0</span>
+            <button
+              type="button"
+              onClick={async () => {
+                if ('caches' in window) {
+                  const keys = await caches.keys();
+                  await Promise.all(keys.map((k) => caches.delete(k)));
+                }
+                if ('serviceWorker' in navigator) {
+                  const regs = await navigator.serviceWorker.getRegistrations();
+                  for (const reg of regs) {
+                    await reg.update().catch(() => {});
+                  }
+                }
+                window.location.reload();
+              }}
+              className="text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1 active:scale-95 transition-all"
+            >
+              <RefreshCw size={10} />
+              <span>Verificar atualização</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>

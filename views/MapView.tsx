@@ -344,26 +344,6 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
         />
       </Suspense>
 
-      {/* Entrada do Modo Navegação (referência: botão de PLAY do Wind Maps).
-          Fica no meio da lateral direita de propósito: o topo já é ocupado
-          pelos controles de estilo/localização do LeafletMap (mais o
-          aviso de GPS, quando aparece), e o rodapé é ocupado pelo menu
-          flutuante (altura real em --nav-h). Um ponto fixo na metade
-          vertical da tela nunca cai dentro de nenhuma dessas duas faixas,
-          em nenhum iPhone. */}
-      {!modoNavegacaoAtivo && (
-        <button
-          type="button"
-          onClick={() => setSheetIniciarAberto(true)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-map-ui flex flex-col items-center justify-center gap-0.5 w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 border border-cyan-300/40 text-slate-950 shadow-2xl shadow-cyan-500/30 active:scale-95 transition-all"
-          aria-label="Iniciar atividade no mapa"
-          title="Iniciar Velejo ou Downwind"
-        >
-          <Navigation size={20} className="fill-current stroke-[1.5]" />
-          <span className="text-[9px] font-black leading-none tracking-tight">INICIAR</span>
-        </button>
-      )}
-
       {sheetIniciarAberto && (
         <IniciarAtividadeSheet
           isOpen={sheetIniciarAberto}

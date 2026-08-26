@@ -31,6 +31,8 @@ const PUBLICAS: Record<string, string> = {
     'onboarding do link de 12h para apoio em terra: é o caminho de quem AINDA NÃO tem conta, então não pode exigir sessão. Escopado a um downwind e 12h — a conta criada leva downwind_guest_of, e requireUser() rejeita guestDownwindId por padrão no resto do app. Passou a constar aqui quando o teste parou de ler comentários: antes, a única razão pela qual esta rota satisfazia a guarda era o texto do próprio comentário mencionar requireUser(), não uma chamada real.',
   'downwind/invite/[token]/route.ts':
     'consulta dados do convite por link (GET) para exibir informações do downwind antes de entrar',
+  'version/route.ts':
+    'checagem pública de versão e build para atualização automática do PWA e clientes web',
 };
 
 /**
