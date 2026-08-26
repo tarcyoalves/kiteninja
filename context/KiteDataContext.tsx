@@ -24,6 +24,8 @@ export type ActiveTab =
   | 'perfil'
   | 'mais';
 
+export type AbaFeed = 'velejos' | 'comunidade';
+
 interface KiteDataContextType {
   spots: Spot[];
   selectedSpot: Spot | null;
@@ -141,6 +143,9 @@ interface KiteDataContextType {
   abrirIniciarAtividade: () => void;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
+  /** Seção interna exibida em FeedView. O menu inferior força `comunidade`. */
+  feedAba: AbaFeed;
+  setFeedAba: (aba: AbaFeed) => void;
 
   /**
    * Busca de velejadores e perfil público (Fase 4 do plano de rede social) —
@@ -355,6 +360,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isChamadosAbertos, setIsChamadosAbertos] = useState(false);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
+  const [feedAba, setFeedAba] = useState<AbaFeed>('comunidade');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const [lastKnownPosition, setLastKnownPosition] = useState<{ lat: number; lng: number } | null>(null);
@@ -1222,6 +1228,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         refreshListings,
         activeTab,
         setActiveTab,
+        feedAba,
+        setFeedAba,
         refreshWindData,
         isRefreshing,
         isHydrated,

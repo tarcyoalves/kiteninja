@@ -34,8 +34,6 @@ interface LightboxState {
   date?: string;
 }
 
-type AbaFeed = 'velejos' | 'comunidade';
-
 /** Resposta de `GET /api/feed`. */
 interface RespostaFeed {
   sessoes: SessionFeedItem[];
@@ -265,10 +263,11 @@ export const FeedView: React.FC = () => {
     setIsBuscaVelejadoresOpen,
     setRiderIdAberto,
     setSessaoIdAberta,
+    feedAba: aba,
+    setFeedAba: setAba,
   } = useKiteData();
   const { user, openAuthModal } = useAuth();
 
-  const [aba, setAba] = useState<AbaFeed>('velejos');
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
   const [commentText, setCommentText] = useState('');
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);

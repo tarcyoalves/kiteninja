@@ -2,6 +2,7 @@
 
 import React from 'react';
 import {
+  BookOpen,
   Compass,
   MessageSquare,
   Newspaper,
@@ -24,6 +25,7 @@ export const BottomNav: React.FC = () => {
     setIsLoggerOpen,
     setIsCalculatorOpen,
     abrirIniciarAtividade,
+    setFeedAba,
     unreadChatCount,
     dmUnreadCount,
   } = useKiteData();
@@ -45,6 +47,11 @@ export const BottomNav: React.FC = () => {
     setActiveTab(tab);
   };
 
+  const abrirFeedComunidade = () => {
+    setFeedAba('comunidade');
+    handleTabClick('destaques');
+  };
+
   const isTabActive = (tab: ActiveTab) => activeTab === tab && !selectedSpot;
 
   // O menu flutuante é parte permanente da navegação. Ele só sai enquanto o
@@ -53,7 +60,7 @@ export const BottomNav: React.FC = () => {
   if (isKeyboardOpen) return null;
 
   const itemClass = (ativo: boolean) =>
-    `relative h-11 min-w-11 px-1 rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors duration-200 active:scale-95 ${
+    `relative h-11 w-full rounded-2xl flex flex-col items-center justify-center gap-0.5 transition-colors duration-200 active:scale-95 ${
       ativo
         ? 'bg-cyan-400/12 text-cyan-300'
         : 'text-slate-400 hover:text-slate-200'
@@ -70,7 +77,7 @@ export const BottomNav: React.FC = () => {
         role="navigation"
         aria-label="Navegação principal flutuante"
       >
-        <div className="flex items-center justify-start">
+        <div className="grid grid-cols-3 items-center">
           <button
             type="button"
             onClick={() => handleTabClick('favoritos')}
@@ -92,6 +99,16 @@ export const BottomNav: React.FC = () => {
             <Compass size={20} strokeWidth={isTabActive('mapa') ? 2.4 : 1.9} />
             <span className="text-[8px] font-bold leading-none">Mapa</span>
           </button>
+          <button
+            type="button"
+            onClick={() => handleTabClick('sessoes')}
+            className={itemClass(isTabActive('sessoes'))}
+            aria-label="Diário de velejos"
+            aria-current={isTabActive('sessoes') ? 'page' : undefined}
+          >
+            <BookOpen size={20} strokeWidth={isTabActive('sessoes') ? 2.4 : 1.9} />
+            <span className="text-[8px] font-bold leading-none">Diário</span>
+          </button>
         </div>
 
         {/* A coluna própria mantém o PLAY no centro geométrico da tela. O
@@ -106,10 +123,10 @@ export const BottomNav: React.FC = () => {
           <Play size={22} className="translate-x-px fill-current" strokeWidth={2} />
         </button>
 
-        <div className="flex items-center justify-end">
+        <div className="grid grid-cols-3 items-center">
           <button
             type="button"
-            onClick={() => handleTabClick('destaques')}
+            onClick={abrirFeedComunidade}
             className={itemClass(isTabActive('destaques'))}
             aria-label="Feed da comunidade"
             aria-current={isTabActive('destaques') ? 'page' : undefined}
@@ -137,7 +154,7 @@ export const BottomNav: React.FC = () => {
           <button
             type="button"
             onClick={() => setIsSidebarOpen(true)}
-            className="relative h-11 min-w-11 rounded-2xl flex flex-col items-center justify-center gap-0.5 text-slate-400 transition-colors duration-200 hover:text-slate-200 active:scale-95"
+            className="relative h-11 w-full rounded-2xl flex flex-col items-center justify-center gap-0.5 text-slate-400 transition-colors duration-200 hover:text-slate-200 active:scale-95"
             aria-label="Abrir meu perfil e menu"
             title={user?.name ?? 'Perfil e menu'}
           >

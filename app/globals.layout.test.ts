@@ -170,6 +170,35 @@ describe('BottomNav — sem medição de DOM', () => {
     ).not.toContain('downwindAtivo');
     expect(codigo).not.toContain('useDownwind');
   });
+
+  it('mantém três ações de cada lado do PLAY central', () => {
+    const tsx = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'BottomNav.tsx'),
+      'utf8',
+    );
+
+    expect(tsx.match(/grid grid-cols-3 items-center/g)).toHaveLength(2);
+    expect(tsx).toContain("grid-cols-[1fr_62px_1fr]");
+    expect(tsx).toContain("handleTabClick('sessoes')");
+  });
+
+  it('o botão Feed sempre abre a timeline da Comunidade', () => {
+    const nav = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'BottomNav.tsx'),
+      'utf8',
+    );
+    const feed = readFileSync(
+      join(import.meta.dirname, '..', 'views', 'FeedView.tsx'),
+      'utf8',
+    );
+
+    expect(nav).toMatch(
+      /const abrirFeedComunidade = \(\) => \{\s*setFeedAba\('comunidade'\);\s*handleTabClick\('destaques'\);\s*\}/,
+    );
+    expect(nav).toContain('onClick={abrirFeedComunidade}');
+    expect(feed).toContain('feedAba: aba');
+    expect(feed).not.toContain("useState<AbaFeed>('velejos')");
+  });
 });
 
 /*
