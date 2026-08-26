@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
@@ -23,7 +23,10 @@ export const UpdateNotificationBanner: React.FC = () => {
     try {
       const res = await fetch(`/api/version?_t=${Date.now()}`, {
         cache: 'no-store',
-        headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' },
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+        },
       });
       if (!res.ok) return;
       const data = (await res.json()) as VersionInfo;
@@ -33,73 +36,26 @@ export const UpdateNotificationBanner: React.FC = () => {
         return;
       }
 
-      // Se o commit ou buildTime mudou, há uma nova versão disponível
+      // Se o commit ou buildTime mudou, há uma nova versão em produção
       const commitMudou =
         data.commit !== 'local' &&
         versaoInicialRef.current.commit !== 'local' &&
         data.commit !== versaoInicialRef.current.commit;
 
       const buildMudou =
-        data.buildTime &&
-        versaoInicialRef.current.buildTime &&
+        Boolean(data.buildTime) &&
+        Boolean(versaoInicialRef.current.buildTime) &&
         data.buildTime !== versaoInicialRef.current.buildTime;
 
       if (commitMudou || buildMudou) {
         setTemAtualizacao(true);
       }
     } catch {
-      // Ignora falhas momentâneas de rede
+      // Falha temporária de rede, tenta novamente no próximo ciclo
     }
   }, []);
 
-  useEffect(() => {
-    checarVersao();
-
-    // Checa a cada 2 minutos quando a tela está visível
-    const intervalo = setInterval(() => {
-      if (!document.hidden) {
-        checarVersao();
-      }
-    }, 120000);
-
-    // Checa sempre que o usuário reabre o app/aba
-    const onVisibilityChange = () => {
-      if (!document.hidden) {
-        checarVersao();
-        // Dispara verificação no Service Worker também
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready.then((reg) => reg.update().catch(() => {}));
-        }
-      }
-    };
-
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('focus', onVisibilityChange);
-
-    // Ouve evento de novo Service Worker esperando ativação
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then((reg) => {
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (newWorker) {
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                setTemAtualizacao(true);
-              }
-            });
-          }
-        });
-      });
-    }
-
-    return () => {
-      clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('focus', onVisibilityChange);
-    };
-  }, [checarVersao]);
-
-  const aplicarAtualizacao = async () => {
+  const aplicarAtualizacao = useCallback(async () => {
     setAtualizando(true);
     try {
       if ('serviceWorker' in navigator) {
@@ -116,26 +72,88 @@ export const UpdateNotificationBanner: React.FC = () => {
         await Promise.all(keys.map((k) => caches.delete(k)));
       }
     } catch {
-      // Continua para o reload mesmo se o cache falhar
+      // Ignora falhas de cache e força o reload limpo
     }
 
-    // Recarrega a página limpa com a versão mais recente
+    // Recarrega a página trazendo o bundle mais novo
     window.location.reload();
-  };
+  }, []);
 
-  // Não interrompe travessia ativa de downwind
+  useEffect(() => {
+    // 1. Registra o Service Worker automaticamente com updateViaCache: 'none'
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker
+        .register('/sw.js', { updateViaCache: 'none' })
+        .then((reg) => {
+          reg.addEventListener('updatefound', () => {
+            const newWorker = reg.installing;
+            if (newWorker) {
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  setTemAtualizacao(true);
+                }
+              });
+            }
+          });
+        })
+        .catch(() => {});
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Se um novo SW tomou controle, recarrega
+        if (!downwindAtivo) {
+          window.location.reload();
+        }
+      });
+    }
+
+    // 2. Primeira checagem rápida após inicialização
+    const timeoutInicial = setTimeout(checarVersao, 3000);
+
+    // 3. Checa periodicamente a cada 60 segundos
+    const intervalo = setInterval(() => {
+      if (!document.hidden) {
+        checarVersao();
+      }
+    }, 60000);
+
+    // 4. Checa sempre que o usuário desbloqueia o celular ou volta para o app
+    const onVisibilityChange = () => {
+      if (!document.hidden) {
+        checarVersao();
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then((reg) => reg.update().catch(() => {}));
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('focus', onVisibilityChange);
+
+    return () => {
+      clearTimeout(timeoutInicial);
+      clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('focus', onVisibilityChange);
+    };
+  }, [checarVersao, downwindAtivo]);
+
+  // Nunca interrompe o velejador durante um downwind ativo
   if (!temAtualizacao || dispensado || downwindAtivo) return null;
 
   return (
-    <div className="fixed top-3 inset-x-3 z-splash flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
-      <div className="pointer-events-auto max-w-md w-full bg-[#0B1220]/95 border border-cyan-500/40 rounded-2xl p-3 shadow-2xl shadow-cyan-500/20 backdrop-blur-xl flex items-center justify-between gap-3 text-slate-200">
+    <div className="fixed top-2.5 inset-x-3 z-splash flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
+      <div className="pointer-events-auto max-w-md w-full bg-[#0B1220]/95 border border-cyan-400/50 rounded-2xl p-3 shadow-[0_10px_30px_rgba(34,211,238,0.25)] backdrop-blur-xl flex items-center justify-between gap-3 text-slate-100 ring-1 ring-cyan-500/20">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/30">
+          <div className="w-8 h-8 rounded-full bg-cyan-400/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/40 animate-pulse">
             <Sparkles size={16} />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-bold text-white leading-tight">Nova versão do KiteNinja</p>
-            <p className="text-[10px] text-slate-400 truncate">Melhorias e novidades prontas</p>
+            <p className="text-xs font-black text-white leading-tight flex items-center gap-1.5">
+              <span>Nova versão disponível!</span>
+            </p>
+            <p className="text-[10px] text-cyan-200/80 truncate">
+              Toque para carregar as últimas melhorias
+            </p>
           </div>
         </div>
 
@@ -144,16 +162,17 @@ export const UpdateNotificationBanner: React.FC = () => {
             type="button"
             onClick={aplicarAtualizacao}
             disabled={atualizando}
-            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-bold text-xs shadow-md shadow-cyan-500/30 active:scale-95 transition-all flex items-center gap-1"
+            className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 font-black text-xs shadow-md shadow-cyan-500/30 active:scale-95 transition-all flex items-center gap-1.5"
           >
-            <RefreshCw size={12} className={atualizando ? 'animate-spin' : ''} />
+            <RefreshCw size={13} className={atualizando ? 'animate-spin' : ''} />
             <span>{atualizando ? 'Atualizando…' : 'Atualizar'}</span>
           </button>
           <button
             type="button"
             onClick={() => setDispensado(true)}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/60 active:scale-95 transition-all"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 active:scale-95 transition-all"
             aria-label="Dispensar aviso de atualização"
+            title="Lembrar mais tarde"
           >
             <X size={14} />
           </button>
