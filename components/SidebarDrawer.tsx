@@ -26,6 +26,7 @@ import {
   MessageSquareWarning,
   AlertTriangle,
   RefreshCw,
+  Download,
 } from 'lucide-react';
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -86,6 +87,7 @@ export const SidebarDrawer: React.FC = () => {
   const ehAppNativo = useIsNativeApp();
 
   const isIos = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent);
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const isStandalone =
     typeof window !== 'undefined' &&
     (Boolean((window.navigator as unknown as { standalone?: boolean }).standalone) ||
@@ -771,6 +773,18 @@ export const SidebarDrawer: React.FC = () => {
                   <p className="text-[10px] text-amber-300/90 leading-tight bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg">
                     📱 <strong>No iPhone:</strong> para receber push de socorro, instale o app tocando em <strong>Compartilhar ➔ Adicionar à Tela de Início</strong>.
                   </p>
+                )}
+
+                {!ehAppNativo && isAndroid && !isStandalone && (
+                  <a
+                    href="/api/download/android"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 hover:bg-cyan-500/30 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-cyan-500/10 active:scale-95"
+                  >
+                    <Download size={14} className="stroke-[2.2]" />
+                    <span>Baixar App Android (.APK)</span>
+                  </a>
                 )}
               </div>
             </div>

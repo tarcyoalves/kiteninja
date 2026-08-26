@@ -20,6 +20,12 @@ mudança de estado relevante — não deixe o progresso só no chat.
    - **Centro:** Botão circular de **PLAY** (`abrirIniciarAtividade`) em destaque ciano com anel de proteção.
    - **Direita do PLAY:** **Diário de Velejos** (`BookOpen` / `sessoes`), Chat (`MessageSquare` com badge de não lidas) e Perfil/Menu (`UserIcon`).
 
+4. **Prompt Automático de Download do App no Android (`AndroidAppPromptModal.tsx` & `/api/download/android`):**
+   - **Detecção Inteligente:** Identifica velejadores logados acessando via navegador web no Android (Chrome/Samsung Internet) e oferece a instalação do app nativo.
+   - **Destaque de Segurança:** Explica os benefícios vitais (rastreamento GPS com tela apagada, alertas de socorro com som alto e fila offline SQLite).
+   - **Opções Imediatas:** Download direto do APK oficial (`/api/download/android`) ou instalação 1-toque PWA na tela inicial (`beforeinstallprompt`).
+   - **Atalho Permanente:** Botão "Baixar App Android (.APK)" adicionado ao menu lateral (`SidebarDrawer.tsx`).
+
 2. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
    - Foreground Service nativo coletando localização com app em background e tela apagada.
    - Fila local SQLite persistente (`TrackingQueueDatabase`) para armazenamento de posições offline e drenagem automática ao restabelecer rede.

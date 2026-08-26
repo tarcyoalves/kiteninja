@@ -33,6 +33,8 @@ const PUBLICAS: Record<string, string> = {
     'consulta dados do convite por link (GET) para exibir informações do downwind antes de entrar',
   'version/route.ts':
     'checagem pública de versão e build para atualização automática do PWA e clientes web',
+  'download/android/route.ts':
+    'redirecionamento público para download do APK oficial do KiteNinja para Android',
 };
 
 /**

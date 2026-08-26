@@ -20,6 +20,7 @@ import { NotificationCenterModal } from "../components/NotificationCenterModal";
 import { ChamadosModal } from "../components/ChamadosModal";
 import { InAppPushToast } from "../components/InAppPushToast";
 import { UpdateNotificationBanner } from "../components/UpdateNotificationBanner";
+import { AndroidAppPromptModal } from "../components/AndroidAppPromptModal";
 import { SosPanel } from "../components/SosPanel";
 import { SosIncomingAlert } from "../components/SosIncomingAlert";
 import { EntrarDownwindModal } from "../components/activity/EntrarDownwindModal";
@@ -361,6 +362,9 @@ const MainContent: React.FC = () => {
 
       {/* Banner Automático de Nova Versão/Atualização do App */}
       <UpdateNotificationBanner />
+
+      {/* Modal/Prompt de Download Automático para Usuários Android no Navegador */}
+      <AndroidAppPromptModal />
     </div>
   );
 };
