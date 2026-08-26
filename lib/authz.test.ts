@@ -35,6 +35,8 @@ const PUBLICAS: Record<string, string> = {
     'checagem pública de versão e build para atualização automática do PWA e clientes web',
   'download/android/route.ts':
     'redirecionamento público para download do APK oficial do KiteNinja para Android',
+  'downwind/[id]/live/route.ts':
+    'consulta pública/espectador das posições e telemetria para visualização ao vivo e replay do downwind',
 };
 
 /**
@@ -249,6 +251,8 @@ describe('autorização das rotas de API', () => {
       'apagar comentário: o filtro SQL é id + session_id (não user_id) porque moderador/admin precisam apagar comentário de TERCEIRO, não só o próprio — quem decide é canDeleteComment (lib/authz.ts) em código antes do DELETE, mesma família de "checagem em código substitui o filtro por dono" de chat/messages/[id]/route.ts::DELETE FROM chat_messages logo acima. Prova positiva em lib/authz.test.ts, describe("matriz RBAC"): canDeleteComment autoriza o autor do próprio comentário e moderadores/admins de um comentário de terceiro, e nega um estranho sem privilégio (rider comum tentando apagar comentário alheio) — exatamente os 3 casos que a rota precisa acertar.',
     'notifications/route.ts::UPDATE notifications':
       'marcar as próprias notificações como lidas filtra por recipient_id = user.id, não user_id — mas nesta tabela recipient_id É o dono da linha (quem recebe o aviso), mesmo papel que user_id cumpre nas demais tabelas. WHERE recipient_id = ${user.id} garante que só as próprias notificações podem ser marcadas como lidas, nunca as de outro velejador.',
+    'notifications/route.ts::DELETE FROM notifications':
+      'apagar as próprias notificações filtra por recipient_id = user.id, garantindo que o usuário só pode apagar suas próprias notificações.',
     'downwind/invites/[id]/accept/route.ts::UPDATE downwind_user_invites':
       'atualiza status de convite pertencente ao usuário autenticado ou expirado',
     'downwind/invites/[id]/accept/route.ts::UPDATE SET':

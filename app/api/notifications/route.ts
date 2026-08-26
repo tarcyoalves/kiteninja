@@ -101,3 +101,35 @@ export async function POST() {
     return { ok: true };
   });
 }
+
+/**
+ * Apaga notificações do próprio usuário autenticado.
+ * Filtra sempre por `recipient_id = user.id` garantindo isolamento total.
+ */
+export async function DELETE(request: Request) {
+  return handle(async () => {
+    const user = await requireUser();
+    const url = new URL(request.url);
+    const id = url.searchParams.get('id');
+    const all = url.searchParams.get('all');
+
+    if (id) {
+      await sql`
+        DELETE FROM notifications
+        WHERE recipient_id = ${user.id} AND id = ${id}
+      `;
+    } else if (all === 'read') {
+      await sql`
+        DELETE FROM notifications
+        WHERE recipient_id = ${user.id} AND read_at IS NOT NULL
+      `;
+    } else if (all === 'true') {
+      await sql`
+        DELETE FROM notifications
+        WHERE recipient_id = ${user.id}
+      `;
+    }
+
+    return { ok: true };
+  });
+}

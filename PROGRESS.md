@@ -26,6 +26,17 @@ mudança de estado relevante — não deixe o progresso só no chat.
    - **Opções Imediatas:** Download direto do APK oficial (`/api/download/android`) ou instalação 1-toque PWA na tela inicial (`beforeinstallprompt`).
    - **Atalho Permanente:** Botão "Baixar App Android (.APK)" adicionado ao menu lateral (`SidebarDrawer.tsx`).
 
+5. **Central de Notificações com Atualização de App e Exclusão de Lidas (`NotificationCenterModal.tsx` & `DELETE /api/notifications`):**
+   - **Card Fixo de Atualização no Sininho:** Exibe card de destaque no topo da central de notificações quando houver nova versão com botão direto de `[ 🔄 Atualizar ]`.
+   - **Exclusão de Notificações Lidas:** Botão `[ Limpar lidas ]` no cabeçalho e botão de lixeira individual por notificação.
+
+6. **Visualizador de Downwind Ao Vivo e Replay Interativo (`/dw-live/[id]` & `DownwindLiveReplayViewer.tsx`):**
+   - **Estudo e Inspiração Wind Maps:** Visualização pública e imersiva para telões, amigos e apoio em terra.
+   - **Player de Replay com Linha do Tempo (Scrubber):** Barra deslizante para rebobinar ou avançar o velejo, botão Play/Pause e seletor de velocidade (1x, 2x, 5x, 10x, 20x).
+   - **Modo 🔴 AO VIVO:** Sincronização automática com polling em tempo real dos velejadores.
+   - **Leaderboard de Participantes:** Ranking por distância percorrida, velocidade instantânea em nós, status de conexão e foco de câmera no mapa com 1 toque.
+   - **Compartilhamento Fácil:** Botão de compartilhar link público direto para WhatsApp e redes.
+
 2. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
    - Foreground Service nativo coletando localização com app em background e tela apagada.
    - Fila local SQLite persistente (`TrackingQueueDatabase`) para armazenamento de posições offline e drenagem automática ao restabelecer rede.

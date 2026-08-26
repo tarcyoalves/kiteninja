@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, Settings, Radio } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -280,19 +280,32 @@ export const DownwindAoVivoView: React.FC = () => {
             {souOrganizador ? ' · Organizador' : ''}
           </p>
         </div>
-        {/* Apoio em terra não abre/fecha chat — ele já fica sempre visível
-            na metade de baixo da tela (ver o split abaixo). Este botão só
-            existe para o velejador. */}
-        {minhaParticipacao.papel === 'velejador' && (
-          <button
-            type="button"
-            onClick={() => setChatAberto(true)}
-            className="shrink-0 p-2.5 rounded-full bg-slate-800 text-cyan-400 active:scale-95 transition-all"
-            aria-label="Abrir chat do grupo"
+        <div className="flex items-center gap-1.5 shrink-0">
+          <a
+            href={`/dw-live/${downwindAtivo.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 hover:bg-cyan-500/30 active:scale-95 transition-all flex items-center justify-center"
+            title="Abrir Telão Ao Vivo / Replay"
+            aria-label="Abrir Telão Ao Vivo e Replay"
           >
-            <MessageCircle size={18} />
-          </button>
-        )}
+            <Radio size={18} className="text-cyan-400 animate-pulse" />
+          </a>
+
+          {/* Apoio em terra não abre/fecha chat — ele já fica sempre visível
+              na metade de baixo da tela (ver o split abaixo). Este botão só
+              existe para o velejador. */}
+          {minhaParticipacao.papel === 'velejador' && (
+            <button
+              type="button"
+              onClick={() => setChatAberto(true)}
+              className="shrink-0 p-2.5 rounded-full bg-slate-800 text-cyan-400 active:scale-95 transition-all"
+              aria-label="Abrir chat do grupo"
+            >
+              <MessageCircle size={18} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 min-h-0 relative">
