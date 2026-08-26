@@ -201,6 +201,7 @@ select {
   --z-map: 0;
   --z-map-ui: 400;
   --z-content: 500;
+  --z-spot-detail: 550; /* visualização de spot abaixo do menu flutuante */
   --z-chrome: 600; /* header + menu inferior */
   --z-drawer: 700;
   --z-modal: 800;
@@ -210,6 +211,7 @@ select {
 
 .z-map-ui { z-index: var(--z-map-ui); }
 .z-content { z-index: var(--z-content); }
+.z-spot-detail { z-index: var(--z-spot-detail); }
 .z-chrome { z-index: var(--z-chrome); }
 .z-drawer { z-index: var(--z-drawer); }
 .z-modal { z-index: var(--z-modal); }

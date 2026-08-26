@@ -37,6 +37,11 @@ mudança de estado relevante — não deixe o progresso só no chat.
    - **Leaderboard de Participantes:** Ranking por distância percorrida, velocidade instantânea em nós, status de conexão e foco de câmera no mapa com 1 toque.
    - **Compartilhamento Fácil:** Botão de compartilhar link público direto para WhatsApp e redes.
 
+7. **Ajuste de Empilhamento e Z-Index no Modal de Spot (`SpotDetailModal.tsx` & `app/globals.css`):**
+   - Corrigido conflito de empilhamento onde o modal de detalhes do spot (`SpotDetailModal`) ficava em `z-modal (800)` e cobria a parte superior saliente do botão circular de PLAY do menu flutuante (`BottomNav` em `z-chrome: 600`).
+   - Introduzido token `--z-spot-detail: 550` (posicionado acima do conteúdo das abas, mas abaixo do menu inferior `z-chrome: 600`).
+   - Agora o menu flutuante com o botão central de PLAY fica 100% visível, livre de sobreposições e totalmente clicável mesmo com a previsão do spot aberta.
+
 2. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
    - Foreground Service nativo coletando localização com app em background e tela apagada.
    - Fila local SQLite persistente (`TrackingQueueDatabase`) para armazenamento de posições offline e drenagem automática ao restabelecer rede.
