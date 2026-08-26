@@ -15,11 +15,10 @@ mudança de estado relevante — não deixe o progresso só no chat.
    - **Atualização Fluida:** Ao tocar em "Atualizar", limpa caches do navegador/PWA, aciona o Service Worker para `SKIP_WAITING` e recarrega a página (`window.location.reload()`) sem travar a navegação ativa.
    - **Opção Manual no Menu (`components/SidebarDrawer.tsx`):** Exibe a versão atual e atalho para checar atualizações manuais.
 
-3. **Menu Flutuante (`BottomNav.tsx`) com Botão Central de PLAY e Feed da Comunidade:**
-   - **Botão Central Elevado:** Botão circular com ícone `Play` e gradiente ciano brilhante (`shadow-cyan-500/40`), acessível de qualquer aba para abrir a folha de início rápido (`IniciarAtividadeSheet`).
-   - **Opções de Velejo Unificadas:** Velejo Solo (com telemetria e link de apoio), Criar Downwind em Grupo (privado ou comunidade) e Entrar por Link/Convite.
-   - **Aba de Feed da Comunidade (`destaques`):** Botão dedicado com ícone `Flame` exibindo a timeline com as postagens, fotos e relatos de velejadores da comunidade (`FeedView`).
-   - **Spots (`Wind`), Mapa (`Compass`) e Chat (`MessageSquare` com badge de não lidas):** Estrutura de navegação limpa, equilibrada e compatível com as regras de layout.
+3. **Menu Flutuante (`BottomNav.tsx`) — Nova Disposição dos Botões:**
+   - **Esquerda do PLAY:** Spots (`Wind`), Mapa (`Compass`) e **Feed da Comunidade** (`Newspaper` / `destaques`).
+   - **Centro:** Botão circular de **PLAY** (`abrirIniciarAtividade`) em destaque ciano com anel de proteção.
+   - **Direita do PLAY:** **Diário de Velejos** (`BookOpen` / `sessoes`), Chat (`MessageSquare` com badge de não lidas) e Perfil/Menu (`UserIcon`).
 
 2. **Rastreamento Android Resiliente (Capacitor & Foreground Service):**
    - Foreground Service nativo coletando localização com app em background e tela apagada.

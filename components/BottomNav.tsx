@@ -99,15 +99,16 @@ export const BottomNav: React.FC = () => {
             <Compass size={20} strokeWidth={isTabActive('mapa') ? 2.4 : 1.9} />
             <span className="text-[8px] font-bold leading-none">Mapa</span>
           </button>
+
           <button
             type="button"
-            onClick={() => handleTabClick('sessoes')}
-            className={itemClass(isTabActive('sessoes'))}
-            aria-label="Diário de velejos"
-            aria-current={isTabActive('sessoes') ? 'page' : undefined}
+            onClick={abrirFeedComunidade}
+            className={itemClass(isTabActive('destaques'))}
+            aria-label="Feed da comunidade"
+            aria-current={isTabActive('destaques') ? 'page' : undefined}
           >
-            <BookOpen size={20} strokeWidth={isTabActive('sessoes') ? 2.4 : 1.9} />
-            <span className="text-[8px] font-bold leading-none">Diário</span>
+            <Newspaper size={20} strokeWidth={isTabActive('destaques') ? 2.4 : 1.9} />
+            <span className="text-[8px] font-bold leading-none">Feed</span>
           </button>
         </div>
 
@@ -126,13 +127,13 @@ export const BottomNav: React.FC = () => {
         <div className="grid grid-cols-3 items-center">
           <button
             type="button"
-            onClick={abrirFeedComunidade}
-            className={itemClass(isTabActive('destaques'))}
-            aria-label="Feed da comunidade"
-            aria-current={isTabActive('destaques') ? 'page' : undefined}
+            onClick={() => handleTabClick('sessoes')}
+            className={itemClass(isTabActive('sessoes'))}
+            aria-label="Diário de velejos"
+            aria-current={isTabActive('sessoes') ? 'page' : undefined}
           >
-            <Newspaper size={20} strokeWidth={isTabActive('destaques') ? 2.4 : 1.9} />
-            <span className="text-[8px] font-bold leading-none">Feed</span>
+            <BookOpen size={20} strokeWidth={isTabActive('sessoes') ? 2.4 : 1.9} />
+            <span className="text-[8px] font-bold leading-none">Diário</span>
           </button>
 
           <button
