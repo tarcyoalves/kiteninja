@@ -15,7 +15,62 @@
   --landing-max: 1240px;
 }
 
-.landing-page { min-height: 100%; overflow: clip; color: var(--landing-text); background: var(--landing-bg); font-family: var(--font-plus-jakarta), system-ui, sans-serif; }
+/* ===========================================================================
+   ROLAGEM DA LANDING — leia antes de mexer em qualquer overflow/height aqui.
+
+   Sintoma: /conheca abria com o conteúdo certo mas não rolava, como se a
+   página estivesse travada. Medido no navegador: scrollHeight == innerHeight
+   (812px), scrollTo(0, 600) resultava em scrollY 0.
+
+   Causa: globals.css declara `html/body { height: 100% }` e
+   `body { overflow: hidden }` — correto para o shell do app, cujas views rolam
+   internamente via .app-scroll. A landing herdava essa prisão e, com
+   `min-height: 100%`, nem crescia além da viewport: o conteúdo excedente ficava
+   recortado pelo `overflow: clip` do próprio .landing-page.
+
+   Correção em duas camadas, porque uma delas depende de :has():
+
+   1. FALLBACK (sempre aplicado): a landing passa a ser o próprio contêiner de
+      rolagem — `flex: 1 1 auto; min-height: 0; overflow-y: auto`. É o mesmo
+      padrão do .app-scroll e funciona sem :has(), já que o body é
+      `min-h-full flex flex-col` (app/layout.tsx).
+
+   2. PREFERIDO (quando :has() existe): devolve a rolagem ao viewport. Melhor no
+      mobile, onde a barra de endereço recolhe ao rolar, e faz as âncoras do menu
+      (#condicao, #downwind…) funcionarem de forma nativa.
+
+   As duas camadas ficam restritas a /conheca pela presença de .landing-page —
+   `/` e `/app` continuam com `body { overflow: hidden }` intacto.
+   =========================================================================== */
+.landing-page {
+  /* .landing-header é `position: absolute`; sem isto ele resolveria contra o
+     bloco contêiner inicial e não acompanharia a rolagem. */
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  color: var(--landing-text);
+  background: var(--landing-bg);
+  font-family: var(--font-plus-jakarta), system-ui, sans-serif;
+}
+
+@supports selector(:has(*)) {
+  html:has(.landing-page),
+  body:has(.landing-page) {
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  html:has(.landing-page) .landing-page {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+}
 .landing-page *, .landing-page *::before, .landing-page *::after { box-sizing: border-box; }
 .landing-page a { color: inherit; text-decoration: none; }
 .landing-page button, .landing-page a { -webkit-tap-highlight-color: transparent; }
