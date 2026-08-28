@@ -31,8 +31,8 @@ function SessionTrace() {
         <div><span>Tempo na água</span><strong>{sessionDemo.stats.duration}</strong></div>
       </div>
       <footer>
-        <span>♥ {sessionDemo.social.likes} riders curtiram</span>
-        <span>{sessionDemo.social.comments} comentários</span>
+        <span>Sessão pronta para publicar no feed</span>
+        <span>Histórico salvo no diário</span>
       </footer>
     </div>
   );
@@ -49,6 +49,7 @@ export function SessionCommunity() {
           <span className="landing-hand-note">{communitySection.tag}</span>
           <h2>O traço fica.<br /><em>A história também.</em></h2>
           <p>{communitySection.description}</p>
+          <small className="demo-disclaimer">Resumo visual demonstrativo de uma sessão.</small>
           <ul>
             {communitySection.features.map((feature) => (
               <li key={feature}>
@@ -56,8 +57,8 @@ export function SessionCommunity() {
               </li>
             ))}
           </ul>
-          <Link href={`${APP_PATH}?tab=sessoes`} className="landing-text-link">
-            Abrir meu diário <ArrowRight size={17} />
+          <Link href={APP_PATH} className="landing-text-link">
+            Abrir o KiteNinja <ArrowRight size={17} />
           </Link>
         </div>
       </div>

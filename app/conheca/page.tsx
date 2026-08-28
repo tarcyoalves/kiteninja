@@ -9,9 +9,9 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'KiteNinja — Entre na água sabendo',
     description:
-      'Condição do spot, downwind ao vivo, SOS georreferenciado e comunidade em um só lugar.',
+      'Condição do spot, tracking, downwind, SOS georreferenciado e comunidade em um só lugar.',
     url: '/conheca',
-    images: [{ url: '/brand/og.png', width: 1200, height: 630, alt: 'KiteNinja' }],
+    images: [{ url: '/brand/og.png', width: 1200, height: 630, alt: 'KiteNinja — vento, rota e segurança para kitesurf' }],
   },
   twitter: {
     card: 'summary_large_image',
@@ -21,6 +21,26 @@ export const metadata: Metadata = {
   },
 };
 
+const softwareApplicationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebApplication',
+  name: 'KiteNinja',
+  url: 'https://kiteninja.vercel.app/',
+  applicationCategory: 'SportsApplication',
+  operatingSystem: 'Web, iOS, Android',
+  description:
+    'Aplicativo web para consultar condições de kitesurf, acompanhar downwinds, registrar sessões e compartilhar localização com o grupo.',
+  inLanguage: 'pt-BR',
+};
+
 export default function ConhecaPage() {
-  return <LandingPage />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareApplicationSchema).replace(/</g, '\\u003c') }}
+      />
+      <LandingPage />
+    </>
+  );
 }

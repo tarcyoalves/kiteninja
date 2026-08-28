@@ -89,10 +89,6 @@ export const landingData = {
       maxSpeed: '28,4',
       duration: '2h05',
     },
-    social: {
-      likes: 18,
-      comments: 3,
-    },
   },
 
   /** Seção de condição - textos */

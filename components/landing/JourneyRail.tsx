@@ -1,16 +1,28 @@
-/**
- * JourneyRail - Fita de vento no topo da página
- * Exibe telemetria de exemplo (demonstração)
- */
 export function JourneyRail() {
+  const steps = [
+    { index: '01', label: 'Antes da água', detail: 'Condição e decisão', href: '#condicao' },
+    { index: '02', label: 'Na água', detail: 'Tracking e downwind', href: '#downwind' },
+    { index: '03', label: 'Se sair da rota', detail: 'SOS e proximidade', href: '#seguranca' },
+    { index: '04', label: 'Depois', detail: 'Histórico e comunidade', href: '#comunidade' },
+  ];
+
   return (
-    <div className="landing-wind-tape" aria-label="Exemplo de telemetria de vento">
-      <div>
-        <span>PONTA DO MEL</span><strong>22 NÓS</strong><i>ENE</i>
-        <span>RAJADA</span><strong>28 NÓS</strong><i>MARÉ ↓ 1,2 M</i>
-        <span>PONTA DO MEL</span><strong>22 NÓS</strong><i>ENE</i>
-        <span>RAJADA</span><strong>28 NÓS</strong><i>MARÉ ↓ 1,2 M</i>
+    <section id="jornada" className="landing-journey" aria-labelledby="journey-title">
+      <div className="landing-container">
+        <div className="journey-heading">
+          <p className="landing-eyebrow">A sessão inteira</p>
+          <h2 id="journey-title">Leia o vento.<br />Trace a rota.<br /><em>Volte bem.</em></h2>
+        </div>
+        <nav className="journey-steps" aria-label="Etapas da experiência KiteNinja">
+          {steps.map((step) => (
+            <a key={step.index} href={step.href}>
+              <span>{step.index}</span>
+              <strong>{step.label}</strong>
+              <small>{step.detail}</small>
+            </a>
+          ))}
+        </nav>
       </div>
-    </div>
+    </section>
   );
 }

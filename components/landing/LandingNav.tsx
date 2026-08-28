@@ -53,14 +53,15 @@ export function LandingNav() {
             className="landing-menu-button"
             onClick={() => setMenuOpen((open) => !open)}
             aria-expanded={menuOpen}
-            aria-label="Abrir menu"
+            aria-controls="landing-mobile-menu"
+            aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'}
           >
             {menuOpen ? <X size={22} /> : <span><i /><i /><i /></span>}
           </button>
         </div>
       </div>
       {menuOpen ? (
-        <nav className="landing-mobile-nav" aria-label="Navegação móvel">
+        <nav id="landing-mobile-menu" className="landing-mobile-nav" aria-label="Navegação móvel">
           {landingData.navigationItems.map((item) => (
             <a key={item.href} href={item.href} onClick={() => setMenuOpen(false)}>
               {item.label}

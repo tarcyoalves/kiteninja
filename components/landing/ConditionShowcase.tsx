@@ -75,6 +75,7 @@ export function ConditionShowcase() {
           <span className="landing-hand-note">{conditionSection.tag}</span>
           <h2>Não olhe só<br />para os <em>nós.</em></h2>
           <p>{conditionSection.description}</p>
+          <small className="demo-disclaimer">Interface demonstrativa com dados de exemplo.</small>
           <dl className="landing-condition-list">
             {conditionSection.features.map((feature) => {
               const Icon = icons[feature.icon as keyof typeof icons];

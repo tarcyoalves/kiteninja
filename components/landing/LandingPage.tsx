@@ -1,5 +1,6 @@
 import { LandingNav } from './LandingNav';
 import { Hero } from './Hero';
+import { JourneyRail } from './JourneyRail';
 import { ConditionShowcase } from './ConditionShowcase';
 import { TrackingShowcase } from './TrackingShowcase';
 import { SafetyShowcase } from './SafetyShowcase';
@@ -23,6 +24,7 @@ export function LandingPage() {
       <LandingNav />
       <main>
         <Hero />
+        <JourneyRail />
         <ConditionShowcase />
         <TrackingShowcase />
         <SafetyShowcase />

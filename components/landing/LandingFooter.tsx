@@ -3,8 +3,6 @@ import Link from 'next/link';
 import { LocateFixed } from 'lucide-react';
 import { landingData } from './landingData';
 
-const APP_PATH = '/';
-
 function LogoLockup() {
   return (
     <Link href="#topo" className="landing-logo" aria-label="KiteNinja — voltar ao início">
