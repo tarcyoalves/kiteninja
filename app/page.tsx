@@ -1,50 +1,50 @@
 "use client";
 
 import React from "react";
-import { AuthProvider } from "../context/AuthContext";
-import { KiteDataProvider } from "../context/KiteDataContext";
-import { DownwindProvider, useDownwind } from "../context/DownwindContext";
-import { DownwindAoVivoView } from "../views/DownwindAoVivoView";
-import { Header } from "../components/Header";
-import { BottomNav } from "../components/BottomNav";
-import { SidebarDrawer } from "../components/SidebarDrawer";
-import { SpotDetailModal } from "../components/SpotDetailModal";
-import { SessionLoggerModal } from "../components/SessionLoggerModal";
-import { KiteCalculatorModal } from "../components/KiteCalculatorModal";
-import { NewPostModal } from "../components/NewPostModal";
-import { NewListingModal } from "../components/NewListingModal";
-import { BuscarVelejadores } from "../components/BuscarVelejadores";
-import { RiderProfileModal } from "../components/RiderProfileModal";
-import { SessionDetailModal } from "../components/SessionDetailModal";
-import { NotificationCenterModal } from "../components/NotificationCenterModal";
-import { ChamadosModal } from "../components/ChamadosModal";
-import { InAppPushToast } from "../components/InAppPushToast";
-import { UpdateNotificationBanner } from "../components/UpdateNotificationBanner";
-import { AndroidAppPromptModal } from "../components/AndroidAppPromptModal";
-import { SosPanel } from "../components/SosPanel";
-import { SosIncomingAlert } from "../components/SosIncomingAlert";
-import { EntrarDownwindModal } from "../components/activity/EntrarDownwindModal";
-import { IniciarAtividadeSheet } from "../components/activity/IniciarAtividadeSheet";
-import { CriarDownwindModal } from "../components/activity/CriarDownwindModal";
-import { SpotsView } from "../views/SpotsView";
-import { MapView } from "../views/MapView";
-import { FeedView } from "../views/FeedView";
-import { SessionsView } from "../views/SessionsView";
-import { PerfilView } from "../views/PerfilView";
-import { EventsAndAlertsView } from "../views/EventsAndAlertsView";
-import { MarketplaceView } from "../views/MarketplaceView";
-import { ChatView } from "../views/ChatView";
-import { useKiteData } from "../context/KiteDataContext";
-import { useAuth } from "../context/AuthContext";
-import { LoginGate } from "../components/LoginGate";
-import { PermissoesOnboarding, permissoesJaPedidas } from "../components/PermissoesOnboarding";
-import { ForcePasswordChangeModal } from "../components/ForcePasswordChangeModal";
+import { AuthProvider } from "@/context/AuthContext";
+import { KiteDataProvider } from "@/context/KiteDataContext";
+import { DownwindProvider, useDownwind } from "@/context/DownwindContext";
+import { DownwindAoVivoView } from "@/views/DownwindAoVivoView";
+import { Header } from "@/components/Header";
+import { BottomNav } from "@/components/BottomNav";
+import { SidebarDrawer } from "@/components/SidebarDrawer";
+import { SpotDetailModal } from "@/components/SpotDetailModal";
+import { SessionLoggerModal } from "@/components/SessionLoggerModal";
+import { KiteCalculatorModal } from "@/components/KiteCalculatorModal";
+import { NewPostModal } from "@/components/NewPostModal";
+import { NewListingModal } from "@/components/NewListingModal";
+import { BuscarVelejadores } from "@/components/BuscarVelejadores";
+import { RiderProfileModal } from "@/components/RiderProfileModal";
+import { SessionDetailModal } from "@/components/SessionDetailModal";
+import { NotificationCenterModal } from "@/components/NotificationCenterModal";
+import { ChamadosModal } from "@/components/ChamadosModal";
+import { InAppPushToast } from "@/components/InAppPushToast";
+import { UpdateNotificationBanner } from "@/components/UpdateNotificationBanner";
+import { AndroidAppPromptModal } from "@/components/AndroidAppPromptModal";
+import { SosPanel } from "@/components/SosPanel";
+import { SosIncomingAlert } from "@/components/SosIncomingAlert";
+import { EntrarDownwindModal } from "@/components/activity/EntrarDownwindModal";
+import { IniciarAtividadeSheet } from "@/components/activity/IniciarAtividadeSheet";
+import { CriarDownwindModal } from "@/components/activity/CriarDownwindModal";
+import { SpotsView } from "@/views/SpotsView";
+import { MapView } from "@/views/MapView";
+import { FeedView } from "@/views/FeedView";
+import { SessionsView } from "@/views/SessionsView";
+import { PerfilView } from "@/views/PerfilView";
+import { EventsAndAlertsView } from "@/views/EventsAndAlertsView";
+import { MarketplaceView } from "@/views/MarketplaceView";
+import { ChatView } from "@/views/ChatView";
+import { useKiteData } from "@/context/KiteDataContext";
+import { useAuth } from "@/context/AuthContext";
+import { LoginGate } from "@/components/LoginGate";
+import { PermissoesOnboarding, permissoesJaPedidas } from "@/components/PermissoesOnboarding";
+import { ForcePasswordChangeModal } from "@/components/ForcePasswordChangeModal";
 import {
   SplashIntro,
   introJaVista,
   marcarIntroVista,
-} from "../components/SplashIntro";
-import { useKeyboardVisible } from "../lib/useKeyboardVisible";
+} from "@/components/SplashIntro";
+import { useKeyboardVisible } from "@/lib/useKeyboardVisible";
 const MainContent: React.FC = () => {
   const {
     activeTab,
