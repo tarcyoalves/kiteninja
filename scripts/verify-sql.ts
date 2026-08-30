@@ -1144,6 +1144,111 @@ async function main() {
     notifOrfaComoAtor.rows.length === 0
   );
 
+  // --- Aviso "amigo entrou na água" -------------------------------------
+  //
+  // A query de fan-out é a peça nova mais arriscada: ela seleciona E insere
+  // numa instrução só, de propósito, para que a lista de destinatários nunca
+  // passe pelo JavaScript como parâmetro (a lição do `sql`DEFAULT``, ver
+  // docs/INVESTIGACAO-RASTREIO-BACKGROUND.md). Aqui ela roda contra Postgres
+  // de verdade, não contra mock.
+
+  const velejador = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('aviso-velejador@t.local', '$2b$12$x', 'Velejador', '5101') RETURNING id`
+    )
+  ).rows[0].id;
+  const seguidorLigado = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('aviso-lig@t.local', '$2b$12$x', 'Seguidor Ligado', '5102') RETURNING id`
+    )
+  ).rows[0].id;
+  const seguidorDesligado = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id, notificar_amigo_velejando)
+       VALUES ('aviso-desl@t.local', '$2b$12$x', 'Seguidor Desligado', '5103', FALSE) RETURNING id`
+    )
+  ).rows[0].id;
+  const seguidorInativo = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id, is_active)
+       VALUES ('aviso-inativo@t.local', '$2b$12$x', 'Seguidor Inativo', '5104', FALSE) RETURNING id`
+    )
+  ).rows[0].id;
+
+  const padraoLigado = await db.query<{ notificar_amigo_velejando: boolean }>(
+    `SELECT notificar_amigo_velejando FROM users WHERE id = $1`,
+    [velejador]
+  );
+  check(
+    'notificar_amigo_velejando nasce TRUE (a funcionalidade seria invisível se nascesse desligada)',
+    padraoLigado.rows[0].notificar_amigo_velejando === true
+  );
+
+  for (const seguidor of [seguidorLigado, seguidorDesligado, seguidorInativo]) {
+    await db.query(
+      `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)`,
+      [seguidor, velejador]
+    );
+  }
+
+  await expectOk(
+    db,
+    'notifications aceita o tipo velejo_iniciado',
+    `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'velejo_iniciado')`,
+    [seguidorLigado, velejador]
+  );
+  await expectOk(
+    db,
+    'notifications aceita o tipo downwind_iniciado',
+    `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'downwind_iniciado')`,
+    [seguidorLigado, velejador]
+  );
+  await expectFail(
+    db,
+    'notifications continua recusando tipo inventado',
+    `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'tipo_que_nao_existe')`,
+    [seguidorLigado, velejador]
+  );
+
+  await db.query(`DELETE FROM notifications WHERE actor_id = $1`, [velejador]);
+
+  // A query REAL de lib/notificacoes.ts, palavra por palavra.
+  const fanOut = await db.query<{ recipient_id: string }>(
+    `INSERT INTO notifications (recipient_id, actor_id, type)
+     SELECT f.follower_id, $1, 'velejo_iniciado'
+     FROM user_follows f
+     JOIN users u ON u.id = f.follower_id
+     WHERE f.following_id = $1
+       AND u.is_active = TRUE
+       AND u.notificar_amigo_velejando = TRUE
+       AND f.follower_id <> $1
+     LIMIT 500
+     RETURNING recipient_id`,
+    [velejador]
+  );
+  check(
+    'fan-out do aviso insere e devolve os destinatários numa instrução só',
+    fanOut.rows.length === 1 && fanOut.rows[0].recipient_id === seguidorLigado,
+    `recebeu ${fanOut.rows.length} linha(s)`
+  );
+  check(
+    'fan-out respeita quem desligou a preferência e quem está inativo',
+    !fanOut.rows.some((r) => r.recipient_id === seguidorDesligado || r.recipient_id === seguidorInativo)
+  );
+
+  // Auto-seguir: o próprio BANCO recusa a linha (user_follows_check). Ou seja,
+  // o filtro `f.follower_id <> actorId` da query de fan-out é defesa em
+  // profundidade contra um caso que não consegue existir — e é isto que o
+  // teste afirma, em vez de encenar um cenário impossível.
+  await expectFail(
+    db,
+    'user_follows recusa auto-seguir, então o fan-out nunca vê a própria linha',
+    `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $1)`,
+    [velejador]
+  );
+
   // ------------------------------------------------- central de chamados
   const chamadoUserId = (
     await db.query<{ id: string }>(

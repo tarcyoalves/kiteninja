@@ -52,6 +52,8 @@ export const PerfilView: React.FC = () => {
   const [quiverBoards, setQuiverBoards] = useState<string[]>([]);
   const [newBoard, setNewBoard] = useState('');
   const [preferredWindUnit, setPreferredWindUnit] = useState('knots');
+  // Padrão ligado, igual ao DEFAULT da coluna — ver lib/schema.sql.
+  const [notificarAmigoVelejando, setNotificarAmigoVelejando] = useState(true);
   const [bio, setBio] = useState('');
 
   const [saving, setSaving] = useState(false);
@@ -72,6 +74,7 @@ export const PerfilView: React.FC = () => {
     setQuiverKites(user.quiverKites ?? []);
     setQuiverBoards(user.quiverBoards ?? []);
     setPreferredWindUnit(user.preferredWindUnit ?? 'knots');
+    setNotificarAmigoVelejando(user.notificarAmigoVelejando !== false);
     setBio(user.bio ?? '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
@@ -144,6 +147,7 @@ export const PerfilView: React.FC = () => {
       quiverKites,
       quiverBoards,
       preferredWindUnit,
+      notificarAmigoVelejando,
       bio: bio.trim(),
     });
     setSaving(false);
@@ -439,6 +443,41 @@ export const PerfilView: React.FC = () => {
             ))}
           </div>
         </div>
+
+        {/*
+          Interruptor do aviso de amigo velejando. Fica aqui, junto das outras
+          preferências, e não escondido atrás de um submenu de notificações:
+          é a única preferência de push que existe hoje, e uma tela inteira
+          para um item só seria mais difícil de achar do que uma linha aqui.
+        */}
+        <div className="flex items-start justify-between gap-3 py-2">
+          <div className="min-w-0">
+            <label htmlFor="notificar-amigo" className={labelClass}>
+              Avisar quando amigos entrarem na água
+            </label>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Você recebe um aviso quando alguém que você segue começa um velejo
+              ou um downwind.
+            </p>
+          </div>
+          <button
+            id="notificar-amigo"
+            type="button"
+            role="switch"
+            aria-checked={notificarAmigoVelejando}
+            onClick={() => setNotificarAmigoVelejando((v) => !v)}
+            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
+              notificarAmigoVelejando ? 'bg-cyan-500' : 'bg-slate-700'
+            }`}
+          >
+            <span
+              className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-transform ${
+                notificarAmigoVelejando ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
         <div>
           <label className={labelClass}>Bio</label>
           <textarea

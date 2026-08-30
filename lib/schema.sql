@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   actor_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind')),
+  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind', 'velejo_iniciado', 'downwind_iniciado')),
   session_id   UUID REFERENCES sessions_log(id) ON DELETE CASCADE,
   comment_id   UUID REFERENCES session_comments(id) ON DELETE CASCADE,
   read_at      TIMESTAMPTZ,
@@ -510,6 +510,14 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 -- atributos do velejador, não do SOS.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_name TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS emergency_contact_phone TEXT;
+
+-- Aviso "alguém que você segue entrou na água". Padrão TRUE: a graça da
+-- funcionalidade é justamente descobrir que tem gente velejando agora, e um
+-- padrão desligado deixaria o recurso invisível para quem nunca abre
+-- configurações. Desligável porque push que não se desliga é motivo comum de
+-- desinstalação — e aqui o volume cresce com o número de pessoas seguidas,
+-- então quem segue muita gente é exatamente quem mais precisa do interruptor.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notificar_amigo_velejando BOOLEAN NOT NULL DEFAULT TRUE;
 
 -- A CHECK constraint de users.role em produção nasceu só com 'admin'/'rider',
 -- antes de 'moderator'/'instructor' entrarem no código. CREATE TABLE IF NOT
@@ -956,8 +964,18 @@ BEGIN
   END IF;
   ALTER TABLE notifications
     ADD CONSTRAINT notifications_type_check
-      CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind'));
+      CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario',
+                      'novo_seguidor', 'convite_downwind', 'velejo_iniciado',
+                      'downwind_iniciado'));
 END $$;
+
+-- ATENÇÃO a quem for adicionar um tipo novo de notificação: a lista aparece em
+-- DOIS lugares neste arquivo — a CHECK inline do CREATE TABLE (lá em cima) e o
+-- bloco DO logo acima, que é o ÚLTIMO a rodar e portanto o que vale. Mexer só
+-- na CHECK inline não tem efeito nenhum num banco que já existe: o DO derruba
+-- a constraint e recria com a lista dele. Foi exatamente esse o erro cometido
+-- ao adicionar 'velejo_iniciado' — o schema parecia certo e o INSERT
+-- continuava sendo recusado.
 
 -- Token de rastreio para o Foreground Service Android (rastreio com o app
 -- fechado — ver docs/PLANO-RASTREIO-BACKGROUND-ANDROID.md). O app é

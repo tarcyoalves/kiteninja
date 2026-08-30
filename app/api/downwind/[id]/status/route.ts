@@ -10,6 +10,7 @@ import {
 import { buscarContexto, ehUuid, listarParticipantes, resumirEPurgar } from '@/lib/downwindDb';
 import { revogarTodosTokensDoDownwind } from '@/lib/trackingToken';
 import { sendFcmToUser } from '@/lib/push';
+import { avisarSeguidoresDeInicio } from '@/lib/notificacoes';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,23 @@ export async function POST(request: Request, ctx: Params) {
           WHERE downwind_id = ${id} AND user_id = ${user.id}
         `;
       }
+
+      /*
+       * Avisa os seguidores. Este ponto é depois do `rows.length === 0`
+       * acima, e isso não é acidente: o UPDATE condicionado a
+       * `status = 'aberto'` já resolveu no banco a corrida de vários
+       * velejadores tocando Iniciar ao mesmo tempo. Só o vencedor chega até
+       * aqui, então o aviso sai exatamente uma vez por downwind — sem
+       * precisar de nenhuma trava extra em JavaScript.
+       *
+       * Sem `await`: o velejador está indo para a água e a resposta não deve
+       * esperar o fan-out de push. `avisarSeguidoresDeInicio` nunca lança
+       * (ver lib/notificacoes.ts), então não há promessa rejeitada solta.
+       */
+      void avisarSeguidoresDeInicio({
+        actorId: user.id,
+        tipo: 'downwind_iniciado',
+      });
 
       return {
         status: 'em_andamento',

@@ -19,7 +19,8 @@ export async function GET() {
              nationality, country_flag, weight_kg, height_cm, rider_level, home_spot,
              disciplines, quiver_kites, quiver_boards, preferred_wind_unit,
              highest_jump_m, bio, pode_organizar_downwind,
-             emergency_contact_name, emergency_contact_phone
+             emergency_contact_name, emergency_contact_phone,
+             notificar_amigo_velejando
       FROM users WHERE id = ${session.id} LIMIT 1
     `;
 
@@ -64,6 +65,11 @@ export async function GET() {
         bio: row.bio ?? undefined,
         emergencyContactName: row.emergency_contact_name ? String(row.emergency_contact_name) : undefined,
         emergencyContactPhone: row.emergency_contact_phone ? String(row.emergency_contact_phone) : undefined,
+        // `!== false` e não `Boolean(...)`: a coluna nasceu depois de contas
+        // já existirem, e uma linha antiga pode vir NULL antes da migração
+        // rodar. Nesse caso o padrão correto é LIGADO, igual ao DEFAULT da
+        // coluna — não desligado por acidente de ordem de deploy.
+        notificarAmigoVelejando: row.notificar_amigo_velejando !== false,
         totalSessions: Number(s.total_sessions),
         totalHours: Math.round((Number(s.total_minutes) / 60) * 10) / 10,
         totalKm: Math.round(Number(s.total_km) * 10) / 10,

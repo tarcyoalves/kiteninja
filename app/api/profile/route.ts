@@ -63,6 +63,19 @@ export async function PATCH(request: Request) {
     const rawQuiverKites = (body as Record<string, unknown>)?.quiverKites;
     const quiverKites = Array.isArray(rawQuiverKites) ? clampQuiverKites(rawQuiverKites) : null;
 
+    /*
+     * Preferência de aviso "amigo entrou na água".
+     *
+     * Checagem manual de presença antes de ler o valor, e NÃO `Boolean(...)`:
+     * com COALESCE, `undefined` significa "não mexer neste campo" e `false`
+     * significa "desligar". Convertendo direto, um PATCH que só muda o nome
+     * mandaria `false` e desligaria a preferência sem ninguém pedir — o tipo
+     * de bug que só aparece quando o usuário reclama que o aviso sumiu.
+     */
+    const rawNotificarAmigo = (body as Record<string, unknown>)?.notificarAmigoVelejando;
+    const notificarAmigoVelejando =
+      typeof rawNotificarAmigo === 'boolean' ? rawNotificarAmigo : null;
+
     const rawQuiverBoards = (body as Record<string, unknown>)?.quiverBoards;
     const quiverBoards = Array.isArray(rawQuiverBoards) ? clampQuiverBoards(rawQuiverBoards) : null;
 
@@ -83,6 +96,7 @@ export async function PATCH(request: Request) {
         preferred_wind_unit = COALESCE(${preferredWindUnit || null}, preferred_wind_unit),
         emergency_contact_name  = COALESCE(${emergencyContactName || null}, emergency_contact_name),
         emergency_contact_phone = COALESCE(${emergencyContactPhone || null}, emergency_contact_phone),
+        notificar_amigo_velejando = COALESCE(${notificarAmigoVelejando}, notificar_amigo_velejando),
         updated_at          = NOW()
       WHERE id = ${user.id}
     `;

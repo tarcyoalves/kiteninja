@@ -137,6 +137,12 @@ export interface UserProfile {
   bio?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  /**
+   * Receber aviso quando alguém que eu sigo entra na água. Padrão ligado —
+   * ver o comentário da coluna em lib/schema.sql. Opcional no tipo porque
+   * respostas antigas em cache podem não trazer o campo.
+   */
+  notificarAmigoVelejando?: boolean;
 }
 
 export interface SessionLog {
@@ -284,7 +290,14 @@ export interface SessionComment {
  */
 export interface AppNotification {
   id: string;
-  type: 'curtida_sessao' | 'comentario_sessao' | 'resposta_comentario' | 'novo_seguidor' | 'convite_downwind';
+  type:
+    | 'curtida_sessao'
+    | 'comentario_sessao'
+    | 'resposta_comentario'
+    | 'novo_seguidor'
+    | 'convite_downwind'
+    | 'velejo_iniciado'
+    | 'downwind_iniciado';
   actorId: string;
   actorName: string;
   actorAvatarUrl?: string;

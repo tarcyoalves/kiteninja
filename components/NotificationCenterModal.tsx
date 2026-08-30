@@ -15,6 +15,7 @@ import {
   Trash2,
   User,
   UserPlus,
+  Wind,
   X,
 } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/chat';
@@ -44,6 +45,10 @@ function mensagemNotificacao(n: AppNotification): string {
       return 'começou a seguir você';
     case 'convite_downwind':
       return `convidou você para o downwind${n.downwindNome ? ` "${n.downwindNome}"` : ''}`;
+    case 'velejo_iniciado':
+      return `entrou na água${n.spotName ? ` em ${n.spotName}` : ''}`;
+    case 'downwind_iniciado':
+      return `começou um downwind${n.downwindNome ? ` "${n.downwindNome}"` : ''}`;
   }
 }
 
@@ -57,7 +62,10 @@ function iconeNotificacao(type: AppNotification['type']) {
     case 'novo_seguidor':
       return <UserPlus size={14} className="text-emerald-400" />;
     case 'convite_downwind':
+    case 'downwind_iniciado':
       return <Navigation size={14} className="text-cyan-400" />;
+    case 'velejo_iniciado':
+      return <Wind size={14} className="text-teal-400" />;
   }
 }
 

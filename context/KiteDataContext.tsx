@@ -68,6 +68,14 @@ interface KiteDataContextType {
    * coberto por loadFeedAndEvents).
    */
   refreshEventsAndAlerts: () => Promise<void>;
+  /**
+   * Avisa quem me segue que entrei na água (POST /api/velejos/inicio).
+   *
+   * Best-effort de propósito: quem tocou "Iniciar velejo" está indo velejar, e
+   * uma falha de rede no aviso não pode travar a entrada no mapa. Por isso não
+   * devolve erro para a UI — quem chama não tem o que fazer com ele.
+   */
+  avisarInicioDeVelejo: (spotNome?: string | null) => void;
   createDownwind: (data: {
     title: string;
     location: string;
@@ -958,6 +966,18 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
+  const avisarInicioDeVelejo = useCallback((spotNome?: string | null) => {
+    // Sem await e sem estado de carregamento: o resultado não muda nada na
+    // tela. O servidor decide sozinho se avisa (janela anti-repetição de 3h,
+    // preferência de cada seguidor) — ver lib/notificacoes.ts.
+    api('/api/velejos/inicio', {
+      method: 'POST',
+      body: JSON.stringify({ spotNome: spotNome ?? undefined }),
+    }).catch(() => {
+      // Silencioso: ver o comentário no tipo do contexto.
+    });
+  }, []);
+
   const createDownwind = async (data: {
     title: string;
     location: string;
@@ -1171,6 +1191,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         toggleEventRegistration,
         deleteEvent,
         refreshEventsAndAlerts: loadFeedAndEvents,
+        avisarInicioDeVelejo,
         createDownwind,
         windUnit,
         setWindUnit,

@@ -72,6 +72,7 @@ const MainContent: React.FC = () => {
     isSheetIniciarOpen,
     setIsSheetIniciarOpen,
     createDownwind,
+    avisarInicioDeVelejo,
     spots,
   } = useKiteData();
 
@@ -291,6 +292,10 @@ const MainContent: React.FC = () => {
           downwindAtivo={downwindAtivo}
           modoNavegacaoAtivo={false}
           onIniciarVelejoSolo={() => {
+            // Lê o spot ANTES do setSelectedSpot(null) logo abaixo — depois
+            // dele a informação some, e o aviso viraria "entrou na água" sem
+            // dizer onde, que é bem menos útil para quem recebe.
+            avisarInicioDeVelejo(selectedSpot?.name ?? null);
             setIsSheetIniciarOpen(false);
             setSelectedSpot(null);
             setActiveTab('mapa');

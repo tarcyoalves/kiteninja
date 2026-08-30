@@ -130,6 +130,20 @@ export const rateLimiters = {
       'Muitas atualizações de posição. Tente novamente em 1 minuto.'
     ),
 
+  // "Entrei na água" (POST /api/velejos/inicio). Folgado de propósito: quem
+  // protege os seguidores de aviso repetido é a janela de 3h em
+  // lib/avisoVelejo.ts, não este teto. Aqui o alvo é outro — um cliente em
+  // laço de erro batendo na rota. 10/h passa longe do uso real (ninguém entra
+  // na água dez vezes por hora) e ainda assim tolera o velejador que tocou,
+  // perdeu sinal e tocou de novo.
+  velejoInicio: (userId: string) =>
+    enforceRateLimit(
+      `velejo_inicio:${userId}`,
+      10,
+      60 * 60 * 1000,
+      'Muitos avisos de início. Tente novamente mais tarde.'
+    ),
+
   // 120/min é ~40x a cadência normal de POST (a cada 45s — ver
   // lib/trilhaDownwind.ts): só pega cliente em loop de erro, nunca um
   // velejador de verdade.
