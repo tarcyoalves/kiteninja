@@ -5,7 +5,7 @@
  *
  *   npx tsx scripts/verify-sql.ts
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto';
@@ -49,6 +49,107 @@ async function expectOk(
     check(name, false, err instanceof Error ? err.message.split('\n')[0] : String(err));
     return [];
   }
+}
+
+
+/**
+ * Varredura de TODO sql`` de app/api contra o schema real.
+ *
+ * POR QUE ISTO EXISTE
+ *
+ * O mapa ao vivo do downwind (`/api/downwind/[id]/live`) devolvia 500 para
+ * todo mundo, o tempo todo — a tela nunca funcionou. A rota consultava
+ * `d.origem_spot_id`, `d.distancia_estimada_km`, `dp.criado_em` e
+ * `p.velocidade_nos`: quatro colunas que NUNCA existiram. A rota de convite
+ * de downwind tinha o mesmo problema com `d.spot_saida_id`.
+ *
+ * Nada disso é pego por build, typecheck, teste unitário ou lint: para o
+ * TypeScript uma query é uma string, e o nome de coluna errado só aparece
+ * quando o Postgres recusa — em produção, no meio de uma travessia.
+ *
+ * Os 270+ checks à mão que este arquivo já tinha também não pegaram, porque
+ * cada um cobre uma consulta ESCOLHIDA. Esta varredura inverte isso: pega
+ * todas, e uma rota nova entra na cobertura por existir, sem ninguém lembrar
+ * de escrever o check.
+ *
+ * COMO FUNCIONA: extrai cada template sql``, troca as interpolações por NULL
+ * e pede um EXPLAIN ao Postgres. O EXPLAIN valida tabelas, colunas, joins e
+ * funções sem executar nada. Só SELECT — em INSERT/UPDATE/DELETE o EXPLAIN
+ * executaria de verdade.
+ */
+function listarArquivosTs(dir: string, out: string[] = []): string[] {
+  for (const entrada of readdirSync(dir)) {
+    const caminho = join(dir, entrada);
+    if (statSync(caminho).isDirectory()) listarArquivosTs(caminho, out);
+    else if (caminho.endsWith('.ts')) out.push(caminho);
+  }
+  return out;
+}
+
+/**
+ * Conteúdo de cada template sql``, com as interpolações viradas NULL.
+ *
+ * Percorre caractere a caractere em vez de usar regex porque `${...}` pode
+ * conter chaves aninhadas (`${a ? {x:1} : null}`) e uma regex gulosa cortaria
+ * no lugar errado.
+ */
+function extrairTemplatesSql(fonte: string): string[] {
+  const encontrados: string[] = [];
+  const inicio = /\bsql`/g;
+  let m: RegExpExecArray | null;
+  while ((m = inicio.exec(fonte))) {
+    let i = m.index + m[0].length;
+    let corpo = '';
+    for (; i < fonte.length; i++) {
+      const c = fonte[i];
+      if (c === '\\') {
+        corpo += fonte[i] + (fonte[i + 1] ?? '');
+        i++;
+        continue;
+      }
+      if (c === '$' && fonte[i + 1] === '{') {
+        let prof = 1;
+        i += 2;
+        for (; i < fonte.length && prof > 0; i++) {
+          if (fonte[i] === '{') prof++;
+          else if (fonte[i] === '}') prof--;
+        }
+        i--;
+        corpo += 'NULL';
+        continue;
+      }
+      if (c === '`') break;
+      corpo += c;
+    }
+    encontrados.push(corpo);
+  }
+  return encontrados;
+}
+
+async function varrerSelectsDasRotas(db: PGlite): Promise<void> {
+  const arquivos = listarArquivosTs(join(process.cwd(), 'app', 'api'));
+  const falhas: string[] = [];
+  let validados = 0;
+
+  for (const arquivo of arquivos) {
+    for (const template of extrairTemplatesSql(readFileSync(arquivo, 'utf8'))) {
+      const limpo = template.replace(/--[^\n]*/g, '').trim();
+      if (!/^SELECT\b/i.test(limpo)) continue;
+      try {
+        await db.query(`EXPLAIN ${limpo}`);
+        validados++;
+      } catch (err) {
+        const motivo = err instanceof Error ? err.message.split('\n')[0] : String(err);
+        falhas.push(`${arquivo.replace(process.cwd() + '/', '')}: ${motivo}`);
+      }
+    }
+  }
+
+  check(
+    `todo SELECT de app/api casa com o schema (${validados} consultas)`,
+    falhas.length === 0,
+    falhas.join(' | ')
+  );
 }
 
 /** Mesmo teto fixo de app/api/riders/[id]/route.ts (LIMITE_VELEJOS). */
@@ -2534,6 +2635,9 @@ async function main() {
     [riderA]
   );
   check('downwind_tracking_tokens morrem com o usuário', orphanTrackingTokens.rows.length === 0);
+
+  console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
+  await varrerSelectsDasRotas(db);
 
   await db.close();
 }

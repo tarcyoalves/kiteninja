@@ -9,6 +9,8 @@ import {
   type DownwindVisibilidade,
 } from '@/lib/downwindAcesso';
 import { corDoUsuario } from '@/lib/downwindCores';
+import { derivarCinematica } from '@/lib/cinematicaTrilha';
+import { haversineKm } from '@/lib/geo';
 import {
   amostrarPontos,
   MAX_PONTOS_DELTA_POR_PARTICIPANTE,
@@ -39,12 +41,13 @@ export async function GET(request: Request, ctx: Params) {
     const dwRows = await sql`
       SELECT 
         d.id, d.nome, d.status, d.visibilidade, d.iniciado_em, d.encerrado_em,
-        d.distancia_estimada_km,
         s_origem.name AS origem_spot_nome, s_origem.lat AS origem_lat, s_origem.lng AS origem_lng,
         s_destino.name AS destino_spot_nome, s_destino.lat AS destino_lat, s_destino.lng AS destino_lng
       FROM downwinds d
-      LEFT JOIN spots s_origem ON s_origem.id = d.origem_spot_id
-      LEFT JOIN spots s_destino ON s_destino.id = d.destino_spot_id
+      -- spot_saida/spot_chegada, NAO origem_spot_id/destino_spot_id: esses
+      -- nomes nunca existiram na tabela (ver lib/schema.sql).
+      LEFT JOIN spots s_origem ON s_origem.id = d.spot_saida
+      LEFT JOIN spots s_destino ON s_destino.id = d.spot_chegada
       WHERE d.id = ${id}
       LIMIT 1
     `;
@@ -54,6 +57,17 @@ export async function GET(request: Request, ctx: Params) {
     }
 
     const dw = dwRows[0] as Record<string, unknown>;
+
+    // Distância da travessia em linha reta entre os spots, quando os dois
+    // existem — ver o comentário no campo `distanciaEstimadaKm` da resposta.
+    const distanciaEstimadaKm =
+      dw.origem_lat !== null && dw.origem_lng !== null &&
+      dw.destino_lat !== null && dw.destino_lng !== null
+        ? haversineKm(
+            { lat: Number(dw.origem_lat), lng: Number(dw.origem_lng) },
+            { lat: Number(dw.destino_lat), lng: Number(dw.destino_lng) }
+          )
+        : null;
 
     /*
      * Trava de visibilidade. Precisa vir ANTES de qualquer query de posição:
@@ -96,7 +110,7 @@ export async function GET(request: Request, ctx: Params) {
       FROM downwind_participantes dp
       JOIN users u ON u.id = dp.user_id
       WHERE dp.downwind_id = ${id}
-      ORDER BY dp.criado_em ASC
+      ORDER BY dp.entrou_em ASC
     `;
 
     /*
@@ -125,22 +139,22 @@ export async function GET(request: Request, ctx: Params) {
     const posRows = desde
       ? await sql`
           SELECT
-            user_id, lat, lng, velocidade_nos, direcao_graus, bateria_pct,
+            user_id, lat, lng,
             EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
             registrado_em
           FROM downwind_posicoes
           WHERE downwind_id = ${id} AND registrado_em > ${desde.toISOString()}
-          ORDER BY registrado_em ASC
+          ORDER BY user_id, registrado_em ASC
           LIMIT ${tetoDelta}
         `
       : await sql`
           SELECT
-            user_id, lat, lng, velocidade_nos, direcao_graus, bateria_pct,
+            user_id, lat, lng,
             EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
             registrado_em
           FROM downwind_posicoes
           WHERE downwind_id = ${id}
-          ORDER BY registrado_em ASC
+          ORDER BY user_id, registrado_em ASC
         `;
 
     // O delta bateu no teto: sobraram pontos por entregar. O cursor não pode
@@ -158,20 +172,27 @@ export async function GET(request: Request, ctx: Params) {
      * a cada poll, justamente de quem parou de reportar, que é quem mais
      * importa vigiar numa travessia.
      *
-     * LEFT JOIN LATERAL devolve exatamente uma linha por participante (ou
-     * nenhuma posição, com nulos) — mesmo padrão de /api/downwind/[id]/posicoes.
+     * LEFT JOIN LATERAL devolve por participante (ou nenhuma posição, com
+     * nulos) — mesmo padrão de /api/downwind/[id]/posicoes.
+     *
+     * São os DOIS pontos mais recentes, não um: velocidade e rumo do marcador
+     * são DERIVADOS de duas posições consecutivas (ver lib/cinematicaTrilha.ts).
+     * Com um ponto só, o marcador de quem não reportou dentro do delta ficaria
+     * sem velocidade nenhuma — e é justamente quem mais importa vigiar.
      */
     const ultimasRows = await sql`
-      SELECT dp.user_id, p.lat, p.lng, p.velocidade_nos, p.direcao_graus,
-             p.bateria_pct, p.registrado_em
+      SELECT dp.user_id, p.lat, p.lng, p.registrado_em,
+             EXTRACT(EPOCH FROM p.registrado_em) * 1000 AS ts_ms, p.ordem
       FROM downwind_participantes dp
       LEFT JOIN LATERAL (
-        SELECT lat, lng, velocidade_nos, direcao_graus, bateria_pct, registrado_em
+        SELECT lat, lng, registrado_em,
+               row_number() OVER (ORDER BY registrado_em DESC) AS ordem
         FROM downwind_posicoes
         WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
-        ORDER BY registrado_em DESC LIMIT 1
+        ORDER BY registrado_em DESC LIMIT 2
       ) p ON TRUE
       WHERE dp.downwind_id = ${id}
+      ORDER BY dp.user_id, p.ordem DESC
     `;
 
     // Agrupa trilhas do lote (carga inicial ou delta)
@@ -184,30 +205,61 @@ export async function GET(request: Request, ctx: Params) {
         speedKnots: number;
         heading: number | null;
         registradoEm: string;
-        bateriaPct?: number;
       }
     > = {};
 
+    /*
+     * Velocidade e rumo são DERIVADOS aqui, não lidos do banco.
+     *
+     * Esta rota lia `velocidade_nos`, `direcao_graus` e `bateria_pct` de
+     * `downwind_posicoes`. Nenhuma das três existe: a tabela guarda lat, lng,
+     * accuracy_m e registrado_em, que é tudo o que o beacon do celular manda.
+     * A consulta falhava sempre e o mapa ao vivo devolvia 500 para todo mundo
+     * — a tela nunca funcionou. Ver lib/cinematicaTrilha.ts.
+     *
+     * `bateriaPct` sai da resposta: não é derivável e não é coletada. Melhor
+     * ausente do que um zero que a tela mostraria como "bateria 0%".
+     */
+    const brutasPorUsuario = new Map<string, { lat: number; lng: number; tsMs: number }[]>();
     for (const p of posRows as Record<string, unknown>[]) {
       const uId = String(p.user_id);
-      const lat = Number(p.lat);
-      const lng = Number(p.lng);
-      const speed = Number(p.velocidade_nos || 0);
-      const ts = Number(p.ts_ms);
-
-      if (!trilhas[uId]) trilhas[uId] = [];
-      trilhas[uId].push([lat, lng, speed, ts]);
+      const lista = brutasPorUsuario.get(uId) ?? [];
+      lista.push({ lat: Number(p.lat), lng: Number(p.lng), tsMs: Number(p.ts_ms) });
+      brutasPorUsuario.set(uId, lista);
     }
 
+    for (const [uId, brutas] of brutasPorUsuario) {
+      const cinematica = derivarCinematica(brutas);
+      trilhas[uId] = brutas.map(
+        (b, i) => [b.lat, b.lng, cinematica[i].velocidadeNos, b.tsMs] as PontoLive
+      );
+    }
+
+    // Os dois últimos pontos de cada participante, em ordem cronológica.
+    const ultimasPorUsuario = new Map<string, { lat: number; lng: number; tsMs: number; registradoEm: string }[]>();
     for (const r of ultimasRows as Record<string, unknown>[]) {
       if (r.lat === null || r.lng === null) continue;
-      ultimasPosicoes[String(r.user_id)] = {
+      const uId = String(r.user_id);
+      const lista = ultimasPorUsuario.get(uId) ?? [];
+      lista.push({
         lat: Number(r.lat),
         lng: Number(r.lng),
-        speedKnots: Number(r.velocidade_nos || 0),
-        heading: r.direcao_graus !== null ? Number(r.direcao_graus) : null,
+        tsMs: Number(r.ts_ms),
         registradoEm: String(r.registrado_em),
-        bateriaPct: r.bateria_pct !== null ? Number(r.bateria_pct) : undefined,
+      });
+      ultimasPorUsuario.set(uId, lista);
+    }
+
+    for (const [uId, pontos] of ultimasPorUsuario) {
+      const cinematica = derivarCinematica(pontos);
+      const ultimo = pontos[pontos.length - 1];
+      const dele = cinematica[cinematica.length - 1];
+      ultimasPosicoes[uId] = {
+        lat: ultimo.lat,
+        lng: ultimo.lng,
+        speedKnots: dele.velocidadeNos,
+        heading: dele.rumoGraus,
+        registradoEm: ultimo.registradoEm,
       };
     }
 
@@ -259,7 +311,14 @@ export async function GET(request: Request, ctx: Params) {
         origemLng: dw.origem_lng !== null ? Number(dw.origem_lng) : null,
         destinoLat: dw.destino_lat !== null ? Number(dw.destino_lat) : null,
         destinoLng: dw.destino_lng !== null ? Number(dw.destino_lng) : null,
-        distanciaEstimadaKm: dw.distancia_estimada_km !== null ? Number(dw.distancia_estimada_km) : null,
+        /*
+         * Estimativa em linha reta entre os spots de saída e chegada. A
+         * coluna `distancia_estimada_km` que esta rota lia nunca existiu em
+         * `downwinds`; derivar dos dois spots dá o mesmo número útil (o
+         * espectador quer saber o tamanho da travessia) sem uma coluna a
+         * manter em dia. `null` quando falta um dos dois spots.
+         */
+        distanciaEstimadaKm: distanciaEstimadaKm,
       },
       participantes,
       trilhas,

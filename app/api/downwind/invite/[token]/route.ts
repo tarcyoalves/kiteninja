@@ -24,8 +24,11 @@ export async function GET(request: Request, ctx: Params) {
         dui.expires_at,
         d.nome AS downwind_nome,
         d.status AS downwind_status,
-        d.spot_saida_id,
-        d.spot_chegada_id,
+        -- spot_saida/spot_chegada: as colunas com sufixo _id nunca existiram
+        -- em downwinds (ver lib/schema.sql), e a consulta falhava sempre --
+        -- abrir um link de convite de downwind dava 500.
+        d.spot_saida,
+        d.spot_chegada,
         d.previsto_para,
         d.iniciado_em,
         u.name AS inviter_name,
@@ -50,8 +53,8 @@ export async function GET(request: Request, ctx: Params) {
       downwindId: String(row.downwind_id),
       downwindNome: String(row.downwind_nome),
       downwindStatus: String(row.downwind_status),
-      spotSaidaId: row.spot_saida_id ? String(row.spot_saida_id) : null,
-      spotChegadaId: row.spot_chegada_id ? String(row.spot_chegada_id) : null,
+      spotSaidaId: row.spot_saida ? String(row.spot_saida) : null,
+      spotChegadaId: row.spot_chegada ? String(row.spot_chegada) : null,
       previstoPara: row.previsto_para ? String(row.previsto_para) : null,
       iniciadoEm: row.iniciado_em ? String(row.iniciado_em) : null,
       inviterName: String(row.inviter_name),
