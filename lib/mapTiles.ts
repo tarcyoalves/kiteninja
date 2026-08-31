@@ -28,20 +28,19 @@ export interface MapTileConfig {
   subdomains?: string;
 }
 
-const ATRIBUICAO_CARTO =
-  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank" rel="noopener noreferrer">CARTO</a>';
+const ATRIBUICAO_OSM =
+  '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
 
 const ATRIBUICAO_ESRI =
   'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community';
 
 export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
   oceanico: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-    attribution: ATRIBUICAO_CARTO,
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: ATRIBUICAO_OSM,
     rotulo: 'Oceânico Claro',
     maxNativeZoom: 19,
     maxZoom: 20,
-    subdomains: 'abcd',
   },
   satelite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -51,11 +50,10 @@ export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
     maxZoom: 20,
   },
   escuro: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
-    attribution: ATRIBUICAO_CARTO,
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+    attribution: ATRIBUICAO_ESRI,
     rotulo: 'Noturno',
-    maxNativeZoom: 19,
+    maxNativeZoom: 16,
     maxZoom: 20,
-    subdomains: 'abcd',
   },
 };
