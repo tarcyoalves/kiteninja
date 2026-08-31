@@ -278,3 +278,31 @@ novo.
 As duas coisas juntas sugerem que auditoria não é evento, é rotina — e que
 exceções registradas merecem releitura periódica justamente por parecerem
 resolvidas.
+
+---
+
+## Adendo — o que a varredura seguinte encontrou no próprio CI
+
+Depois de fechar os achados acima e zerar os 50 erros de lint do React 19
+(ver `docs/REACT19-REGRAS-COMPILADOR.md`), sobrou uma pergunta óbvia que
+ninguém tinha feito: **por que o CI estava vermelho?**
+
+A resposta não tinha nada a ver com o código dos commits. Dois jobs falhavam
+por conta própria, e havia tempo:
+
+- **Build** — `next build` sem `DATABASE_URL`. O passo tinha o comentário
+  "DATABASE_URL ausente = pulamos a migração", que já não valia: `lib/db.ts`
+  lança no carregamento do módulo, e o `next build` importa toda rota de API
+  para coletar os dados de página. Corrigido com uma connection string de
+  mentira apontando para localhost — as rotas são dinâmicas, nenhuma conexão
+  é aberta durante o build.
+- **Android** — `NODE_VERSION: '20'`, e o CLI do Capacitor recusa NodeJS < 22
+  (`[fatal] The Capacitor CLI requires NodeJS >=22.0.0`). O `cap sync` morria
+  antes de compilar qualquer coisa.
+
+O padrão vale a nota: **um CI cronicamente vermelho deixa de ser sinal.**
+Enquanto os dois jobs falhavam por motivo próprio, uma regressão de verdade
+em Build ou Android teria passado despercebida — não haveria mudança de cor
+para reparar. E o comentário desatualizado no workflow ("pulamos a migração")
+é o mesmo tipo de armadilha da "exceção documentada" citada acima: um lugar
+onde alguém já explicou, e por isso ninguém olha de novo.
