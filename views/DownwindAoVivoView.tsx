@@ -309,15 +309,15 @@ export const DownwindAoVivoView: React.FC = () => {
       </div>
 
       <div className="flex-1 min-h-0 relative">
-        {downwindAtivo.status === 'aberto' ? (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-3 text-slate-500 bg-[#090e1a]">
-            <Route size={40} className="opacity-40" />
-            <p className="text-xs max-w-[240px] text-center">
-              O downwind ainda não começou. O mapa ao vivo liga assim que a
-              travessia iniciar.
-            </p>
+        {downwindAtivo.status === 'aberto' && (
+          <div className="absolute top-3 inset-x-4 z-[500] flex justify-center pointer-events-none">
+            <div className="pointer-events-auto px-3.5 py-1.5 rounded-full bg-amber-500 text-slate-950 text-xs font-bold shadow-lg flex items-center gap-1.5 border border-amber-300">
+              <Radio size={13} className="animate-pulse" />
+              <span>Downwind agendado • Toque em Iniciar para começar a travessia</span>
+            </div>
           </div>
-        ) : user ? (
+        )}
+        {user ? (
           (() => {
             const painelSheet =
               participanteSelecionado &&
