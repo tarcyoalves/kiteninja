@@ -28,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
     dmUnreadCount,
     safetyAlerts,
     setIsNotificacoesAbertas,
+    zerarNotificacoesNaoLidas,
     notificacoesNaoLidas,
   } = useKiteData();
 
@@ -189,6 +190,9 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
           <button
             onClick={() => {
               if (selectedSpot) setSelectedSpot(null);
+              // O modal marca tudo como lido ao abrir; zerar aqui evita o badge
+              // ficar aceso esperando o próximo poll (até 20s).
+              zerarNotificacoesNaoLidas();
               setIsNotificacoesAbertas(true);
             }}
             className="relative w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all"

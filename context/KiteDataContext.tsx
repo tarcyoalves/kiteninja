@@ -364,7 +364,20 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [sessaoIdAberta, setSessaoIdAberta] = useState<string | null>(null);
   const [isNotificacoesAbertas, setIsNotificacoesAbertas] = useState(false);
   const [notificacoesNaoLidas, setNotificacoesNaoLidas] = useState(0);
-  const zerarNotificacoesNaoLidas = useCallback(() => setNotificacoesNaoLidas(0), []);
+  /*
+   * Instante em que o usuário zerou o contador ao abrir a central.
+   *
+   * Não basta `setNotificacoesNaoLidas(0)`: o watcher de fundo busca
+   * /api/notifications a cada 20s, e uma resposta que já estava EM VOO quando
+   * o POST de "marcar como lidas" chegou traz a contagem velha e ressuscita o
+   * badge. É a mesma corrida que `versaoRef` resolve em DownwindContext, e a
+   * mesma solução: descartar resposta anterior à ação do usuário.
+   */
+  const notificacoesZeradasEm = useRef(0);
+  const zerarNotificacoesNaoLidas = useCallback(() => {
+    notificacoesZeradasEm.current = Date.now();
+    setNotificacoesNaoLidas(0);
+  }, []);
   const [isChamadosAbertos, setIsChamadosAbertos] = useState(false);
   const [listingsVersion, setListingsVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
@@ -595,11 +608,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         return;
       }
 
+      const pedidoEm = Date.now();
       try {
         const res = await fetch('/api/notifications', { cache: 'no-store' });
         if (res.ok) {
           const body = await res.json().catch(() => null);
-          if (typeof body?.naoLidas === 'number') setNotificacoesNaoLidas(body.naoLidas);
+          // Ignora resposta de um pedido que saiu ANTES de o usuário abrir a
+          // central: ela não sabe da leitura e devolveria a contagem antiga.
+          if (typeof body?.naoLidas === 'number' && pedidoEm >= notificacoesZeradasEm.current) {
+            setNotificacoesNaoLidas(body.naoLidas);
+          }
         }
       } catch {
         // Ignora oscilações de rede

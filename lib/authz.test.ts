@@ -36,7 +36,7 @@ const PUBLICAS: Record<string, string> = {
   'download/android/route.ts':
     'redirecionamento público para download do APK oficial do KiteNinja para Android',
   'downwind/[id]/live/route.ts':
-    'consulta pública/espectador das posições e telemetria para visualização ao vivo e replay do downwind',
+    'espectador do mapa ao vivo/replay. Pública SOMENTE para downwind com visibilidade = comunidade; privado exige sessão e participação (ou moderação) — ver podeVerReplayAoVivo em lib/downwindAcesso.ts e lib/replayAoVivo.test.ts. A justificativa anterior dizia só "consulta pública/espectador" e a rota de fato não checava NADA: lia visibilidade, devolvia no payload e nunca verificava, expondo nome, avatar e trilha GPS completa de downwind privado a quem tivesse o UUID.',
 };
 
 /**

@@ -1,7 +1,13 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
-import { HttpError } from '@/lib/auth';
-import { ehUuid } from '@/lib/downwindDb';
+import { HttpError, getSessionUser } from '@/lib/auth';
+import { canModerate } from '@/lib/authz';
+import { ehUuid, buscarContexto } from '@/lib/downwindDb';
+import {
+  MSG_DOWNWIND_NAO_ENCONTRADO,
+  podeVerReplayAoVivo,
+  type DownwindVisibilidade,
+} from '@/lib/downwindAcesso';
 import { corDoUsuario } from '@/lib/downwindCores';
 
 export const dynamic = 'force-dynamic';
@@ -34,6 +40,39 @@ export async function GET(request: Request, ctx: Params) {
     }
 
     const dw = dwRows[0] as Record<string, unknown>;
+
+    /*
+     * Trava de visibilidade. Precisa vir ANTES de qualquer query de posição:
+     * daqui para baixo tudo que se lê é rastro de gente real.
+     *
+     * Esta rota era pública sem checagem nenhuma — lia `visibilidade`,
+     * devolvia o valor no payload e nunca o verificava. Ver o comentário de
+     * `podeVerReplayAoVivo` em lib/downwindAcesso.ts para o achado completo.
+     *
+     * 404 e não 403 para quem não pode ver: mesma regra do resto do domínio de
+     * downwind — a resposta não confirma que o downwind existe.
+     */
+    const visibilidade = (String(dw.visibilidade || 'privado') === 'comunidade'
+      ? 'comunidade'
+      : 'privado') as DownwindVisibilidade;
+
+    if (visibilidade !== 'comunidade') {
+      const user = await getSessionUser();
+      if (!user) throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+
+      // Convidado do link de 12h só enxerga o downwind ao qual foi escopado.
+      if (user.guestDownwindId && user.guestDownwindId !== id) {
+        throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+      }
+
+      const { participacao } = await buscarContexto(id, user.id);
+      const permitido = podeVerReplayAoVivo({
+        visibilidade,
+        participacao,
+        ehModerador: canModerate(user.role),
+      });
+      if (!permitido) throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+    }
 
     // 2. Busca participantes
     const partRows = await sql`

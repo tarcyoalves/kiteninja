@@ -419,3 +419,42 @@ export function podeDefinirApoio(args: {
   if (args.solicitanteEhOrganizador) return OK;
   return negar(403, 'Só você ou o organizador podem definir o seu apoio.');
 }
+
+export type DownwindVisibilidade = 'privado' | 'comunidade';
+
+/**
+ * Quem pode abrir o mapa ao vivo / replay de um downwind
+ * (`GET /api/downwind/[id]/live`, tela `app/dw-live/[id]`).
+ *
+ * BUG QUE ISTO CORRIGE: a rota era pública sem NENHUMA checagem — lia
+ * `d.visibilidade`, devolvia o valor no payload e nunca o verificava.
+ * Resultado: qualquer pessoa com o UUID via nome, avatar e a TRILHA GPS
+ * COMPLETA (posição, hora, velocidade, direção, bateria) de todos os
+ * participantes, inclusive de downwinds marcados como `privado` — que é o
+ * padrão da coluna e a opção pré-selecionada no modal de criação.
+ *
+ * O app já tinha o controle de privacidade: o seletor existe em
+ * `components/activity/CriarDownwindModal.tsx` e `GET /api/events` respeita a
+ * escolha. Só esta rota ignorava. Ou seja, o organizador escolhia "privado" e
+ * não ganhava privacidade nenhuma — o pior tipo de falha, porque a interface
+ * promete uma proteção que não existe.
+ *
+ * UUID não é adivinhável por força bruta, mas também não é segredo: aparece em
+ * link compartilhado, histórico do navegador, print de tela e cabeçalho
+ * Referer. Tratar "só quem tem o id" como autorização é confundir
+ * identificador com credencial.
+ *
+ * REGRA: `comunidade` é espectador aberto de propósito (é para isso que a
+ * opção existe — deixar a comunidade acompanhar a travessia). `privado` fica
+ * restrito a quem participa e à moderação.
+ */
+export function podeVerReplayAoVivo(args: {
+  visibilidade: DownwindVisibilidade;
+  /** `null` = visitante sem sessão. */
+  participacao: MinhaParticipacao | null;
+  ehModerador: boolean;
+}): boolean {
+  if (args.visibilidade === 'comunidade') return true;
+  if (args.ehModerador) return true;
+  return args.participacao !== null;
+}

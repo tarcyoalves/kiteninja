@@ -54,6 +54,7 @@ export const SidebarDrawer: React.FC = () => {
     fetchActiveSos,
     setIsBuscaVelejadoresOpen,
     setIsNotificacoesAbertas,
+    zerarNotificacoesNaoLidas,
     setIsChamadosAbertos,
     pushNativo,
   } = useKiteData();
@@ -535,6 +536,9 @@ export const SidebarDrawer: React.FC = () => {
           <button
             onClick={() => {
               setIsSidebarOpen(false);
+              // O modal marca tudo como lido ao abrir; zerar aqui evita o badge
+              // ficar aceso esperando o próximo poll (até 20s).
+              zerarNotificacoesNaoLidas();
               setIsNotificacoesAbertas(true);
             }}
             className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"

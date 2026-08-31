@@ -65,6 +65,7 @@ const MainContent: React.FC = () => {
     setSessaoIdAberta,
     isNotificacoesAbertas,
     setIsNotificacoesAbertas,
+    zerarNotificacoesNaoLidas,
     isChamadosAbertos,
     setIsChamadosAbertos,
     unreadChatCount,
@@ -248,7 +249,14 @@ const MainContent: React.FC = () => {
           controlado aqui e montado uma vez só. */}
       <NotificationCenterModal
         aberto={isNotificacoesAbertas}
-        onClose={() => setIsNotificacoesAbertas(false)}
+        onClose={() => {
+          // Zera o badge do sininho ao FECHAR também: o modal marca tudo como
+          // lido ao abrir, então quando o usuário sai não há mais nada não
+          // lido. Sem isto o badge só sumia no próximo poll, até 20s depois —
+          // parecia que a leitura não tinha sido registrada.
+          zerarNotificacoesNaoLidas();
+          setIsNotificacoesAbertas(false);
+        }}
         onAbrirSessao={setSessaoIdAberta}
         onAbrirPerfil={setRiderIdAberto}
         totalChatUnread={unreadChatCount + dmUnreadCount}
