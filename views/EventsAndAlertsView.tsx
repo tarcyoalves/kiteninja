@@ -26,12 +26,14 @@ import {
 } from 'lucide-react';
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
+import { ListaDownwinds } from '../components/activity/ListaDownwinds';
 
 export const EventsAndAlertsView: React.FC = () => {
   const {
     safetyAlerts,
     addSafetyAlert,
     events,
+    downwinds,
     toggleEventRegistration,
     deleteEvent,
     spots,
@@ -43,6 +45,34 @@ export const EventsAndAlertsView: React.FC = () => {
   const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
+  const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
+
+  /** Abre o mapa ao vivo do downwind numa página própria. */
+  const abrirDownwindAoVivo = useCallback((id: string) => {
+    window.location.href = `/dw-live/${id}`;
+  }, []);
+
+  /**
+   * Gera e copia o link de convite. Mesmo endpoint do ConvidarVelejadoresSheet
+   * — aqui é o atalho de uma toque, para quem acabou de criar o downwind e só
+   * quer mandar no grupo do WhatsApp.
+   */
+  const copiarLinkConvite = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/downwind/${id}/invites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ createLink: true, role: 'velejador' }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.token) return;
+      await navigator.clipboard.writeText(`${window.location.origin}/?dw_invite=${body.token}`);
+      setLinkCopiadoId(id);
+    } catch {
+      // Sem clipboard (contexto inseguro) ou sem rede: o botão simplesmente
+      // não confirma. O caminho completo continua no ConvidarVelejadoresSheet.
+    }
+  }, []);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
   const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
@@ -555,6 +585,13 @@ export const EventsAndAlertsView: React.FC = () => {
               </form>
             </div>
           )}
+
+          <ListaDownwinds
+            downwinds={downwinds}
+            onAbrir={abrirDownwindAoVivo}
+            onCopiarLink={copiarLinkConvite}
+            linkCopiadoId={linkCopiadoId}
+          />
 
           {events.length === 0 && (
             <div className="p-6 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">

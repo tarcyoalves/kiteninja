@@ -458,3 +458,44 @@ export function podeVerReplayAoVivo(args: {
   if (args.ehModerador) return true;
   return args.participacao !== null;
 }
+
+
+/**
+ * Quem aparece na LISTA de downwinds de um velejador.
+ *
+ * POR QUE ISTO EXISTE
+ *
+ * Não havia lista nenhuma. `POST /api/downwind` criava o downwind e o único
+ * jeito de alguém saber que ele existia era receber um convite individual —
+ * `GET /api/downwind` sequer existia (devolvia 405). Um downwind `privado`
+ * também não cria evento, então ele não aparecia nem na aba Eventos.
+ *
+ * Resultado relatado por um velejador de verdade: criou o downwind,
+ * compartilhou o link, e **nem ele mesmo** conseguia ver o que tinha criado.
+ * Do ponto de vista do app o downwind não existia.
+ *
+ * AS TRÊS PORTAS DE ENTRADA, e por que cada uma:
+ *
+ *  - `criador`: quem criou SEMPRE vê o que criou. Esta é a que faltava e a
+ *    que causou o relato — sem ela, criar um downwind privado é jogar dado no
+ *    vazio.
+ *  - `participante`: quem entrou (por convite ou aceitando) continua vendo,
+ *    inclusive depois de encerrar — é o histórico da travessia dele.
+ *  - `comunidade`: downwind aberto aparece para todo mundo. É o que torna o
+ *    app um lugar onde se descobre uma remada, não só onde se confirma uma
+ *    que já te chamaram.
+ *
+ * O que NÃO abre porta: ser moderador não entra aqui. Moderação age sobre um
+ * downwind específico (`canModerate` nas rotas de item), e uma lista que
+ * despejasse todos os downwinds privados do app na tela de um moderador seria
+ * vigilância, não moderação.
+ */
+export function podeListarDownwind(args: {
+  visibilidade: DownwindVisibilidade;
+  ehCriador: boolean;
+  ehParticipante: boolean;
+}): boolean {
+  if (args.ehCriador) return true;
+  if (args.ehParticipante) return true;
+  return args.visibilidade === 'comunidade';
+}

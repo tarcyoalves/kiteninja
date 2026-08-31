@@ -21,6 +21,7 @@ import {
   podeVerResumoDownwind,
   posicaoVisivel,
   type MinhaParticipacao,
+  podeListarDownwind,
 } from './downwindAcesso';
 import type { DownwindParticipante } from './downwind';
 
@@ -559,5 +560,34 @@ describe('podeDefinirApoio', () => {
     });
     expect(v.permitido).toBe(false);
     expect(v.status).toBe(403);
+  });
+});
+
+describe('podeListarDownwind', () => {
+  const base = { visibilidade: 'privado' as const, ehCriador: false, ehParticipante: false };
+
+  /**
+   * O caso que motivou a função, relatado por um velejador de verdade: ele
+   * criou o downwind, compartilhou o link, e nem ele mesmo via o que tinha
+   * criado — não havia lista nenhuma, e downwind privado não gera evento.
+   */
+  it('quem criou SEMPRE vê o que criou, mesmo privado', () => {
+    expect(podeListarDownwind({ ...base, ehCriador: true })).toBe(true);
+  });
+
+  it('quem participa vê, mesmo sem ter criado', () => {
+    expect(podeListarDownwind({ ...base, ehParticipante: true })).toBe(true);
+  });
+
+  it('downwind da comunidade aparece para qualquer um', () => {
+    expect(podeListarDownwind({ ...base, visibilidade: 'comunidade' })).toBe(true);
+  });
+
+  /**
+   * A trava. Um downwind privado de terceiros não pode vazar numa lista —
+   * o nome dele já diz onde e quando um grupo vai entrar na água.
+   */
+  it('downwind privado de terceiros NÃO aparece', () => {
+    expect(podeListarDownwind(base)).toBe(false);
   });
 });

@@ -562,3 +562,26 @@ export interface RiderProfile {
   seguindo: number;
   relacao: RelacaoRider;
 }
+
+/**
+ * Um downwind na LISTA (aba Downwinds) — resumo, sem posição nenhuma.
+ *
+ * Ver a rota `GET /api/downwind` para por que esta lista passou a existir:
+ * antes dela, um downwind privado era invisível até para quem o criou.
+ */
+export interface DownwindResumo {
+  id: string;
+  nome: string;
+  status: 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado';
+  visibilidade: 'privado' | 'comunidade';
+  previstoPara: string | null;
+  iniciadoEm: string | null;
+  encerradoEm: string | null;
+  criadoEm: string;
+  criadoPorMim: boolean;
+  criadorNome: string;
+  spotSaidaNome: string | null;
+  spotChegadaNome: string | null;
+  participantesCount: number;
+  eventId: string | null;
+}

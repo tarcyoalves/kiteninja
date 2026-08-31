@@ -44,7 +44,6 @@ export const SidebarDrawer: React.FC = () => {
     setActiveTab,
     setIsLoggerOpen,
     setIsCalculatorOpen,
-    setIsNewAlertOpen,
     beachMode,
     setBeachMode,
     windUnit,

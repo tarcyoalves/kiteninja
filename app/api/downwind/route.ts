@@ -6,6 +6,110 @@ import { str } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Lista os downwinds que este velejador pode ver.
+ *
+ * ESTA ROTA NÃO EXISTIA — e a falta dela era um buraco, não uma omissão de
+ * escopo. `GET /api/downwind` devolvia 405. O único jeito de saber que um
+ * downwind existia era receber um convite individual, e um downwind
+ * `privado` não cria evento, então também não aparecia na aba Eventos.
+ *
+ * Um velejador criou um downwind, compartilhou o link, e **nem ele mesmo**
+ * conseguia ver o que tinha criado. Do ponto de vista do app, o downwind não
+ * existia.
+ *
+ * Quem entra na lista está em `podeListarDownwind` (lib/downwindAcesso.ts),
+ * puro e testado: criador, participante, ou downwind da comunidade. As três
+ * portas viram um `WHERE` só aqui — a regra em SQL e a regra em TypeScript
+ * PRECISAM dizer a mesma coisa, e a função é a fonte da verdade.
+ *
+ * Não devolve posição nenhuma: isto é a lista, e ver onde as pessoas estão é
+ * outra decisão, tomada por `podeVerPosicoes`/`podeVerReplayAoVivo` nas rotas
+ * de item.
+ */
+export async function GET() {
+  return handle(async () => {
+    const user = await requireUser();
+
+    /*
+     * Convidado do link de 12h enxerga só o downwind ao qual foi escopado —
+     * mesma trava das rotas de item. Sem isto, um link de apoio em terra
+     * viraria uma janela para a lista inteira da comunidade.
+     */
+    if (user.guestDownwindId) {
+      const rows = await sql`
+        SELECT d.id, d.nome, d.status, d.visibilidade, d.previsto_para,
+               d.iniciado_em, d.encerrado_em, d.criado_em, d.criado_por,
+               d.event_id,
+               ss.name AS spot_saida_nome, sc.name AS spot_chegada_nome,
+               u.name AS criador_nome,
+               (SELECT COUNT(*) FROM downwind_participantes dp WHERE dp.downwind_id = d.id)
+                 AS participantes_count
+        FROM downwinds d
+        JOIN users u ON u.id = d.criado_por
+        LEFT JOIN spots ss ON ss.id = d.spot_saida
+        LEFT JOIN spots sc ON sc.id = d.spot_chegada
+        WHERE d.id = ${user.guestDownwindId}
+      `;
+      return { downwinds: rows.map((r) => paraResumoDownwind(r, user.id)) };
+    }
+
+    const rows = await sql`
+      SELECT d.id, d.nome, d.status, d.visibilidade, d.previsto_para,
+             d.iniciado_em, d.encerrado_em, d.criado_em, d.criado_por,
+             d.event_id,
+             ss.name AS spot_saida_nome, sc.name AS spot_chegada_nome,
+             u.name AS criador_nome,
+             (SELECT COUNT(*) FROM downwind_participantes dp WHERE dp.downwind_id = d.id)
+               AS participantes_count
+      FROM downwinds d
+      JOIN users u ON u.id = d.criado_por
+      LEFT JOIN spots ss ON ss.id = d.spot_saida
+      LEFT JOIN spots sc ON sc.id = d.spot_chegada
+      WHERE d.criado_por = ${user.id}
+         OR d.visibilidade = 'comunidade'
+         OR EXISTS (
+              SELECT 1 FROM downwind_participantes dp
+              WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
+            )
+      ORDER BY
+        -- Em andamento primeiro: é a única categoria em que alguém está na
+        -- água agora e a tela pode salvar uma travessia.
+        CASE d.status WHEN 'em_andamento' THEN 0 WHEN 'aberto' THEN 1 ELSE 2 END,
+        d.previsto_para DESC
+      LIMIT ${MAX_DOWNWINDS_LISTADOS}
+    `;
+
+    return { downwinds: rows.map((r) => paraResumoDownwind(r, user.id)) };
+  });
+}
+
+/**
+ * Teto da lista. Sem ele, um app com centenas de downwinds da comunidade
+ * mandaria a tabela inteira para um celular no meio da praia com 3G.
+ */
+const MAX_DOWNWINDS_LISTADOS = 100;
+
+function paraResumoDownwind(row: unknown, userId: string) {
+  const r = row as Record<string, unknown>;
+  return {
+    id: String(r.id),
+    nome: String(r.nome),
+    status: String(r.status),
+    visibilidade: String(r.visibilidade || 'privado'),
+    previstoPara: r.previsto_para ? String(r.previsto_para) : null,
+    iniciadoEm: r.iniciado_em ? String(r.iniciado_em) : null,
+    encerradoEm: r.encerrado_em ? String(r.encerrado_em) : null,
+    criadoEm: String(r.criado_em),
+    criadoPorMim: String(r.criado_por) === userId,
+    criadorNome: String(r.criador_nome),
+    spotSaidaNome: r.spot_saida_nome ? String(r.spot_saida_nome) : null,
+    spotChegadaNome: r.spot_chegada_nome ? String(r.spot_chegada_nome) : null,
+    participantesCount: Number(r.participantes_count ?? 0),
+    eventId: r.event_id ? String(r.event_id) : null,
+  };
+}
+
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();

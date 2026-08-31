@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation } from '../types';
+import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation, DownwindResumo } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
@@ -56,6 +56,8 @@ interface KiteDataContextType {
   safetyAlerts: SafetyOccurrence[];
   addSafetyAlert: (alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => void;
   events: KiteEvent[];
+  /** Downwinds visíveis para este velejador — ver GET /api/downwind. */
+  downwinds: DownwindResumo[];
   toggleEventRegistration: (eventId: string) => void;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
   /**
@@ -98,10 +100,8 @@ interface KiteDataContextType {
   /** Diagnóstico do push nativo (Android/FCM), exposto na tela para não
    *  exigir cabo USB só para saber por que fcm_tokens está vazio. */
   pushNativo: { isSupported: boolean; isEnabled: boolean; isRegistered: boolean; isLoading: boolean; error: string | null };
-  setUnreadChatCount: React.Dispatch<React.SetStateAction<number>>;
   latestIncomingMessage: ChatMessage | null;
   setLatestIncomingMessage: (msg: ChatMessage | null) => void;
-  clearUnreadChat: () => void;
 
   // Não lidas de conversa direta (DM) — contadas à parte do chat geral, porque
   // uma DM merece notificação mesmo com o usuário já dentro da aba "chat"
@@ -126,7 +126,6 @@ interface KiteDataContextType {
   myActiveSos: SosAlertData | null;
   incomingSosAlert: SosAlertData | null;
   allActiveSosList: SosAlertData[];
-  setMyActiveSos: (sos: SosAlertData | null) => void;
   dismissIncomingSos: () => void;
   respondToSos: (sosId: string, state: 'a_caminho' | 'nao_posso') => Promise<{ ok: boolean; error?: string }>;
   cancelMySos: () => Promise<void>;
@@ -155,8 +154,6 @@ interface KiteDataContextType {
   setIsCalculatorOpen: (open: boolean) => void;
   isNewPostOpen: boolean;
   setIsNewPostOpen: (open: boolean) => void;
-  isNewAlertOpen: boolean;
-  setIsNewAlertOpen: (open: boolean) => void;
   isNewListingOpen: boolean;
   setIsNewListingOpen: (open: boolean) => void;
   isSheetIniciarOpen: boolean;
@@ -230,7 +227,6 @@ interface KiteDataContextType {
   // Atualização das condições
   refreshWindData: () => void;
   isRefreshing: boolean;
-  isHydrated: boolean;
 
   /**
    * Última posição de GPS conhecida, capturada pelo watchPosition do MapView.
@@ -342,6 +338,12 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [safetyAlerts, setSafetyAlerts] = useState<SafetyOccurrence[]>([]);
   const [events, setEvents] = useState<KiteEvent[]>([]);
+  /*
+   * A lista de downwinds. Vem de `GET /api/downwind`, rota que não existia:
+   * um downwind privado não gera evento e não aparecia em lugar nenhum — nem
+   * para quem o criou. Ver o comentário da rota.
+   */
+  const [downwinds, setDownwinds] = useState<DownwindResumo[]>([]);
   const [windUnit, setWindUnit] = useState<WindUnit>('nós');
   const [beachMode, setBeachMode] = useState<boolean>(false);
 
@@ -368,7 +370,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, []);
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
-  const [isNewAlertOpen, setIsNewAlertOpen] = useState(false);
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
   const [isSheetIniciarOpen, setIsSheetIniciarOpen] = useState(false);
   const abrirIniciarAtividade = useCallback(() => setIsSheetIniciarOpen(true), []);
@@ -719,14 +720,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const ultimoLoadFeedRef = useRef(0);
 
   const loadFeedAndEvents = useCallback(async () => {
-    const [postsR, eventsR, alertsR] = await Promise.allSettled([
+    const [postsR, eventsR, alertsR, downwindsR] = await Promise.allSettled([
       api<{ posts: CommunityPost[] }>('/api/posts'),
       api<{ events: KiteEvent[] }>('/api/events'),
       api<{ alerts: SafetyOccurrence[] }>('/api/alerts'),
+      api<{ downwinds: DownwindResumo[] }>('/api/downwind'),
     ]);
     if (postsR.status === 'fulfilled') setPosts(postsR.value.posts);
     if (eventsR.status === 'fulfilled') setEvents(eventsR.value.events);
     if (alertsR.status === 'fulfilled') setSafetyAlerts(alertsR.value.alerts);
+    if (downwindsR.status === 'fulfilled') setDownwinds(downwindsR.value.downwinds);
     ultimoLoadFeedRef.current = Date.now();
   }, []);
 
@@ -1262,6 +1265,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         safetyAlerts,
         addSafetyAlert,
         events,
+        downwinds,
         toggleEventRegistration,
         deleteEvent,
         refreshEventsAndAlerts: loadFeedAndEvents,
@@ -1274,17 +1278,14 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setBeachMode,
         unreadChatCount,
         pushNativo,
-        setUnreadChatCount,
         latestIncomingMessage,
         setLatestIncomingMessage,
-        clearUnreadChat,
         dmUnreadCount,
         latestIncomingDm,
         clearDmUnread,
         myActiveSos,
         incomingSosAlert,
         allActiveSosList,
-        setMyActiveSos,
         dismissIncomingSos,
         respondToSos,
         cancelMySos,
@@ -1300,8 +1301,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setIsCalculatorOpen,
         isNewPostOpen,
         setIsNewPostOpen,
-        isNewAlertOpen,
-        setIsNewAlertOpen,
         isNewListingOpen,
         setIsNewListingOpen,
         isSheetIniciarOpen,
@@ -1327,7 +1326,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         setFeedAba,
         refreshWindData,
         isRefreshing,
-        isHydrated,
         lastKnownPosition,
         setLastKnownPosition,
       }}
