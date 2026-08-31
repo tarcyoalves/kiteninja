@@ -165,10 +165,11 @@ export async function POST(request: Request) {
 
         const insertedEvent = await sql`
           INSERT INTO events (
-            title, event_date, location, spot_name, type, description, organizer
+            title, event_date, event_at, location, spot_name, type, description, organizer
           )
           VALUES (
-            ${nome}, ${eventDate}, ${spotSaidaLocation}, ${spotSaidaName}, 'Downwind',
+            ${nome}, ${eventDate}, ${previstoPara.toISOString()},
+            ${spotSaidaLocation}, ${spotSaidaName}, 'Downwind',
             ${`Downwind da comunidade organizado por ${user.name}`}, ${user.name}
           )
           RETURNING id

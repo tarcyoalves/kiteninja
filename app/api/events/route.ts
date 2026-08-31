@@ -3,6 +3,7 @@ import { handle, readJson } from '@/lib/api';
 import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
 import { canCreateOfficialEvent } from '@/lib/authz';
 import { str } from '@/lib/validation';
+import { dataDoEvento } from '@/lib/dataEvento';
 import type { KiteEvent } from '@/types';
 
 const EVENT_TYPES = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'] as const;
@@ -36,7 +37,15 @@ export async function GET() {
       WHERE d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = ${user.id} OR EXISTS (
         SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
       )
-      ORDER BY e.event_date ASC
+      /*
+       * event_at, não event_date: a segunda é TEXT com a data por extenso em
+       * português, e ordenar texto é ordenar alfabeticamente — "01 de
+       * setembro de 2026" vinha antes de "02 de janeiro de 2027", que vinha
+       * antes de "31 de agosto de 2026". A agenda aparecia embaralhada.
+       * NULLS LAST manda os eventos antigos (sem event_at) para o fim, em
+       * ordem de criação — ver lib/dataEvento.ts.
+       */
+      ORDER BY e.event_at ASC NULLS LAST, e.created_at DESC
     `;
 
     const events = rows.map((row) => {
@@ -110,10 +119,11 @@ async function createDownwindEvent(body: unknown) {
 
   const insertedEvent = await sql`
     INSERT INTO events (
-      title, event_date, location, spot_name, type, description, organizer, image_url
+      title, event_date, event_at, location, spot_name, type, description, organizer, image_url
     )
     VALUES (
-      ${title}, ${eventDate}, ${location}, ${spotSaidaName}, 'Downwind',
+      ${title}, ${eventDate}, ${previstoPara.toISOString()},
+      ${location}, ${spotSaidaName}, 'Downwind',
       ${description}, ${user.name}, ${imageUrl || null}
     )
     RETURNING id
@@ -172,10 +182,11 @@ async function createOfficialEvent(body: unknown) {
 
   const inserted = await sql`
     INSERT INTO events (
-      title, event_date, location, spot_name, type, description, organizer, image_url
+      title, event_date, event_at, location, spot_name, type, description, organizer, image_url
     )
     VALUES (
-      ${title}, ${eventDate}, ${location}, ${spotName || null}, ${type},
+      ${title}, ${eventDate}, ${dataDoEvento(eventDate)?.toISOString() ?? null},
+      ${location}, ${spotName || null}, ${type},
       ${description}, ${organizer}, ${imageUrl || null}
     )
     RETURNING id

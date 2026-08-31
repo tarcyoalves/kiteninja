@@ -131,10 +131,41 @@ pública:
 
 ## Pendências relacionadas, ainda abertas
 
-- **`ORDER BY e.event_date ASC`** em `app/api/events/route.ts` ordena uma
-  coluna `TEXT` que guarda data por extenso em português ("31 de agosto de
-  2026"). A ordenação é alfabética, portanto errada. Não faz sumir nada — o
-  cliente só exibe a string, nunca a reparsa — mas coloca os eventos fora de
-  ordem. Consertar exige uma coluna de data real.
 - **A varredura de 5 em 5 minutos nunca rodou** — ver a nota sobre a branch
-  default em `docs/VARREDURA-2026-08-31.md`.
+  default em `docs/VARREDURA-2026-08-31.md`. **Esta continua aberta e depende
+  do dono**: workflows com `schedule:` só disparam na branch default do
+  repositório, que é `master` (147 commits atrás de `main`, e sem o arquivo do
+  cron). Enquanto isso não mudar, a escalada de SOS e o alerta de silêncio de
+  downwind não rodam.
+
+## Corrigido junto: a agenda saía embaralhada
+
+`ORDER BY e.event_date ASC` ordenava uma coluna `TEXT` que guarda a data por
+extenso em português. Ordenar texto é ordenar alfabeticamente, e a agenda saía
+assim:
+
+```
+01 de setembro de 2026
+02 de janeiro de 2027
+15 de dezembro de 2026
+31 de agosto de 2026
+```
+
+Não fazia nada sumir — a tela só exibe a string, nunca a reparsa — mas a ordem
+não tinha relação com quando as coisas acontecem.
+
+Entrou uma coluna `events.event_at TIMESTAMPTZ` só para ordenar e filtrar;
+`event_date` continua sendo o que a tela exibe. Quem decide o que vai em
+`event_at` é `lib/dataEvento.ts`, pura e testada — e a decisão que importa ali
+é **devolver `null` quando não dá para saber**:
+
+- Não existe `new Date(texto)` como último recurso. O parser do JavaScript
+  aceita quase tudo e erra em silêncio: `new Date('01/02/2026')` devolve 1º de
+  **fevereiro** nos motores que assumem o formato americano — a data errada,
+  com cara de certa, e alguém apareceria na praia no dia errado.
+- Eventos antigos, com data digitada à mão, ficam com `event_at` nulo e caem
+  no fim da lista (`NULLS LAST` + `created_at`). Um evento no fim da lista é
+  melhor que um evento na data errada.
+
+`scripts/verify-sql.ts` prova as duas direções contra Postgres real: que a
+ordem antiga estava mesmo errada, e que a nova segue o calendário.

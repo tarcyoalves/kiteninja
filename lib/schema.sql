@@ -1179,3 +1179,25 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_downwind_silencio_ativo
 CREATE INDEX IF NOT EXISTS idx_downwind_silencio_resolvidos
   ON downwind_silencio_alertas (resolvido_em)
   WHERE resolvido_em IS NOT NULL;
+
+-- ---------------------------------------------------------------------------
+-- events.event_at — a data do evento como DATA, não como texto.
+--
+-- `event_date` é TEXT e guarda a data por extenso em português ("31 de agosto
+-- de 2026"). A listagem ordenava por essa coluna, o que dá ordem ALFABÉTICA:
+-- "01 de setembro de 2026" vinha antes de "02 de janeiro de 2027", que vinha
+-- antes de "31 de agosto de 2026". A agenda aparecia embaralhada.
+--
+-- `event_date` continua existindo e continua sendo o que a tela EXIBE — é
+-- texto livre e alguns eventos antigos têm data digitada à mão, que não dá
+-- para reinterpretar com segurança. `event_at` é só para ordenar e filtrar.
+--
+-- NULL nas linhas antigas, de propósito: a ordenação usa NULLS LAST e cai em
+-- `created_at`, que é uma ordem defensável. Adivinhar a data de um texto
+-- livre seria pior que admitir que não se sabe.
+-- ---------------------------------------------------------------------------
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS event_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_events_event_at
+  ON events (event_at DESC NULLS LAST);

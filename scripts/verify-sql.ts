@@ -2636,6 +2636,56 @@ async function main() {
   );
   check('downwind_tracking_tokens morrem com o usuário', orphanTrackingTokens.rows.length === 0);
 
+  console.log('\nEventos — ordem da agenda:');
+
+  /*
+   * A listagem ordenava por `event_date`, que é TEXT com a data por extenso
+   * em português. Ordenar texto é ordenar alfabeticamente, então a agenda
+   * saía embaralhada. Este check prova as duas coisas contra Postgres de
+   * verdade: que a ordem antiga estava errada, e que a nova está certa.
+   */
+  const inserirEvento = async (titulo: string, texto: string, at: string | null) =>
+    db.query(
+      `INSERT INTO events (title, event_date, event_at, location, type, description, organizer)
+       VALUES ($1, $2, $3, 'Praia', 'Downwind', 'ordem-agenda', 'y')`,
+      [titulo, texto, at]
+    );
+
+  await inserirEvento('agosto', '31 de agosto de 2026', '2026-08-31T12:00:00Z');
+  await inserirEvento('setembro', '01 de setembro de 2026', '2026-09-01T12:00:00Z');
+  await inserirEvento('dezembro', '15 de dezembro de 2026', '2026-12-15T12:00:00Z');
+  await inserirEvento('janeiro', '02 de janeiro de 2027', '2027-01-02T12:00:00Z');
+
+  const ordemAntiga = await db.query<{ title: string }>(
+    `SELECT title FROM events WHERE description = 'ordem-agenda' ORDER BY event_date ASC`
+  );
+  check(
+    'a ordem ANTIGA (por event_date, texto) estava mesmo errada',
+    ordemAntiga.rows[0]?.title !== 'agosto',
+    `primeiro=${ordemAntiga.rows[0]?.title}`
+  );
+
+  const ordemNova = await db.query<{ title: string }>(
+    `SELECT title FROM events WHERE description = 'ordem-agenda'
+     ORDER BY event_at ASC NULLS LAST, created_at DESC`
+  );
+  check(
+    'a ordem NOVA (por event_at) segue o calendário',
+    ordemNova.rows.map((r) => r.title).join(',') === 'agosto,setembro,dezembro,janeiro',
+    ordemNova.rows.map((r) => r.title).join(',')
+  );
+
+  // Evento antigo sem event_at vai para o FIM, não para o meio: NULLS LAST.
+  await inserirEvento('legado', 'sábado que vem', null);
+  const comLegado = await db.query<{ title: string }>(
+    `SELECT title FROM events WHERE description = 'ordem-agenda'
+     ORDER BY event_at ASC NULLS LAST, created_at DESC`
+  );
+  check(
+    'evento antigo sem data real cai no fim da lista, não no meio',
+    comLegado.rows[comLegado.rows.length - 1]?.title === 'legado'
+  );
+
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
   await varrerSelectsDasRotas(db);
 
