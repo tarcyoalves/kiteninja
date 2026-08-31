@@ -25,6 +25,7 @@ import {
   Check,
 } from 'lucide-react';
 import type { Map as LeafletMap } from 'leaflet';
+import { mesclarPontos } from '@/lib/trilhaDownwind';
 
 interface PontoTrilhaLive {
   0: number; // lat
@@ -72,6 +73,12 @@ interface LiveApiResponse {
   downwind: DownwindData;
   participantes: ParticipanteLive[];
   trilhas: Record<string, [number, number, number, number][]>;
+  /** Devolver em `?desde=` no próximo poll. Ver lib/trilhaDownwind.ts. */
+  cursor: string | null;
+  /** `true` = a resposta traz só o que é novo; MESCLAR, nunca substituir. */
+  incremental: boolean;
+  /** `true` = o servidor bateu no teto e ainda há pontos por entregar. */
+  parcial: boolean;
 }
 
 export const DownwindLiveReplayViewer: React.FC<{
@@ -98,16 +105,58 @@ export const DownwindLiveReplayViewer: React.FC<{
   const polylineLayerRef = useRef<unknown>(null);
   const playAnimationRef = useRef<number | null>(null);
 
-  // 1. Busca inicial e Polling de dados ao vivo
+  /*
+   * Cursor do rastro já recebido. Em ref, não em state, de propósito: mudá-lo
+   * não deve re-renderizar nem recriar `carregarDados` (o que reiniciaria o
+   * intervalo de poll a cada resposta).
+   */
+  const cursorRef = useRef<string | null>(null);
+
+  // 1. Busca inicial e polling incremental
   const carregarDados = useCallback(async () => {
     try {
-      const res = await fetch(`/api/downwind/${downwindId}/live?_t=${Date.now()}`, {
+      // Primeira chamada sem `desde`: traz a trilha inteira já amostrada pelo
+      // servidor. Das seguintes em diante vai só o delta — antes, cada poll de
+      // 5s rebaixava o histórico completo da travessia (ver
+      // docs/VARREDURA-2026-08-31.md, V-03).
+      const desde = cursorRef.current;
+      const qs = desde ? `?desde=${encodeURIComponent(desde)}` : '';
+      const res = await fetch(`/api/downwind/${downwindId}/live${qs}`, {
         cache: 'no-store',
       });
       if (!res.ok) throw new Error('Downwind não encontrado ou indisponível.');
       const data = (await res.json()) as LiveApiResponse;
-      setDados(data);
+
+      cursorRef.current = data.cursor ?? cursorRef.current;
+
+      setDados((anterior) => {
+        // Carga inicial (ou primeira resposta): substitui.
+        if (!data.incremental || !anterior) return data;
+        // Delta: mescla trilha a trilha. `mesclarPontos` deduplica por
+        // timestamp e descarta os pontos MAIS ANTIGOS ao estourar o teto.
+        const trilhas: LiveApiResponse['trilhas'] = { ...anterior.trilhas };
+        for (const [userId, novos] of Object.entries(data.trilhas)) {
+          trilhas[userId] = mesclarPontos(trilhas[userId] ?? [], novos, (p) => p[3]);
+        }
+        // Cabeçalho e participantes vêm completos em toda resposta — só a
+        // trilha é incremental.
+        return { ...data, trilhas };
+      });
       setErro(null);
+
+      /*
+       * `data.parcial` = o servidor bateu no teto e ainda há rastro por
+       * entregar. Não há tratamento especial de propósito: o cursor não
+       * saltou (ver proximoCursor em lib/trilhaDownwind.ts), então o próximo
+       * poll continua exatamente de onde parou, sem buraco na trilha.
+       *
+       * Chegou a existir aqui um reagendamento imediato para fechar o vão em
+       * 300ms. Foi removido: `parcial` só acontece quando um delta passa de
+       * 60 pontos por participante — ou seja, quando a aba ficou muito tempo
+       * fechada — e resolver isso exigia guardar a própria função num ref,
+       * que a regra react-hooks/refs do React 19 acusa com razão. Trocar 5s
+       * de atraso num caso raro por um padrão frágil não valia.
+       */
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha ao conectar.');
     } finally {

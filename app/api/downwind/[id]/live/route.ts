@@ -9,6 +9,20 @@ import {
   type DownwindVisibilidade,
 } from '@/lib/downwindAcesso';
 import { corDoUsuario } from '@/lib/downwindCores';
+import {
+  amostrarPontos,
+  MAX_PONTOS_DELTA_POR_PARTICIPANTE,
+  MAX_PONTOS_TRILHA_PROPRIA,
+  proximoCursor,
+} from '@/lib/trilhaDownwind';
+
+/**
+ * Ponto do mapa ao vivo: `[lat, lng, velocidade, tsMs]`. Difere de
+ * `PontoTrilha` (3 elementos) porque esta tela colore a trilha por velocidade.
+ * O timestamp fica no índice 3 — é o que se passa aos helpers genéricos.
+ */
+type PontoLive = [lat: number, lng: number, speedKnots: number, tsMs: number];
+const TS = (p: PontoLive) => p[3];
 
 export const dynamic = 'force-dynamic';
 
@@ -85,19 +99,83 @@ export async function GET(request: Request, ctx: Params) {
       ORDER BY dp.criado_em ASC
     `;
 
-    // 3. Busca todas as posições da travessia para alimentar replay e trilhas
-    const posRows = await sql`
-      SELECT 
-        user_id, lat, lng, velocidade_nos, direcao_graus, bateria_pct,
-        EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
-        registrado_em
-      FROM downwind_posicoes
-      WHERE downwind_id = ${id}
-      ORDER BY registrado_em ASC
+    /*
+     * 3. Posições — carga inicial amostrada OU delta incremental.
+     *
+     * Antes esta rota devolvia TODAS as posições da travessia a cada chamada,
+     * e o viewer faz poll de 5 em 5 segundos. Numa travessia de 3h com 10
+     * velejadores reportando a cada 45s isso dá ~2.400 linhas por resposta,
+     * 720 vezes por hora POR ESPECTADOR — e o payload cresce ao longo da
+     * travessia, ficando maior justamente no fim, quando mais gente assiste.
+     *
+     * A rota irmã (`/posicoes`) já resolvia isso com cursor `desde` e teto; a
+     * tela nova reimplementou o problema sem reaproveitar a solução ao lado.
+     * Agora as duas usam o mesmo lib/trilhaDownwind.ts.
+     */
+    const url = new URL(request.url);
+    const desdeRaw = url.searchParams.get('desde');
+    const desdeMs = desdeRaw ? Date.parse(desdeRaw) : NaN;
+    const desde = Number.isFinite(desdeMs) ? new Date(desdeMs) : null;
+
+    const totalParticipantes = Math.max(1, partRows.length);
+    // Teto do delta proporcional ao grupo: o limite existe por participante,
+    // mas a query traz todo mundo de uma vez.
+    const tetoDelta = MAX_PONTOS_DELTA_POR_PARTICIPANTE * totalParticipantes;
+
+    const posRows = desde
+      ? await sql`
+          SELECT
+            user_id, lat, lng, velocidade_nos, direcao_graus, bateria_pct,
+            EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
+            registrado_em
+          FROM downwind_posicoes
+          WHERE downwind_id = ${id} AND registrado_em > ${desde.toISOString()}
+          ORDER BY registrado_em ASC
+          LIMIT ${tetoDelta}
+        `
+      : await sql`
+          SELECT
+            user_id, lat, lng, velocidade_nos, direcao_graus, bateria_pct,
+            EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
+            registrado_em
+          FROM downwind_posicoes
+          WHERE downwind_id = ${id}
+          ORDER BY registrado_em ASC
+        `;
+
+    // O delta bateu no teto: sobraram pontos por entregar. O cursor não pode
+    // saltar para "agora" — ver proximoCursor em lib/trilhaDownwind.ts.
+    const parcial = desde !== null && posRows.length >= tetoDelta;
+
+    /*
+     * Última posição por participante vem de query PRÓPRIA, não do lote de
+     * posições acima.
+     *
+     * Isto é obrigatório desde que a rota virou incremental: num delta só
+     * aparecem os participantes que reportaram naquele intervalo, então
+     * derivar a última posição do lote deixaria todo mundo que ficou quieto
+     * com `ultimaPosicao: null` — e o marcador dessas pessoas SUMIRIA do mapa
+     * a cada poll, justamente de quem parou de reportar, que é quem mais
+     * importa vigiar numa travessia.
+     *
+     * LEFT JOIN LATERAL devolve exatamente uma linha por participante (ou
+     * nenhuma posição, com nulos) — mesmo padrão de /api/downwind/[id]/posicoes.
+     */
+    const ultimasRows = await sql`
+      SELECT dp.user_id, p.lat, p.lng, p.velocidade_nos, p.direcao_graus,
+             p.bateria_pct, p.registrado_em
+      FROM downwind_participantes dp
+      LEFT JOIN LATERAL (
+        SELECT lat, lng, velocidade_nos, direcao_graus, bateria_pct, registrado_em
+        FROM downwind_posicoes
+        WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
+        ORDER BY registrado_em DESC LIMIT 1
+      ) p ON TRUE
+      WHERE dp.downwind_id = ${id}
     `;
 
-    // Agrupa trilhas e calcula última posição por usuário
-    const trilhas: Record<string, [lat: number, lng: number, speedKnots: number, tsMs: number][]> = {};
+    // Agrupa trilhas do lote (carga inicial ou delta)
+    const trilhas: Record<string, PontoLive[]> = {};
     const ultimasPosicoes: Record<
       string,
       {
@@ -119,16 +197,38 @@ export async function GET(request: Request, ctx: Params) {
 
       if (!trilhas[uId]) trilhas[uId] = [];
       trilhas[uId].push([lat, lng, speed, ts]);
+    }
 
-      ultimasPosicoes[uId] = {
-        lat,
-        lng,
-        speedKnots: speed,
-        heading: p.direcao_graus !== null ? Number(p.direcao_graus) : null,
-        registradoEm: String(p.registrado_em),
-        bateriaPct: p.bateria_pct !== null ? Number(p.bateria_pct) : undefined,
+    for (const r of ultimasRows as Record<string, unknown>[]) {
+      if (r.lat === null || r.lng === null) continue;
+      ultimasPosicoes[String(r.user_id)] = {
+        lat: Number(r.lat),
+        lng: Number(r.lng),
+        speedKnots: Number(r.velocidade_nos || 0),
+        heading: r.direcao_graus !== null ? Number(r.direcao_graus) : null,
+        registradoEm: String(r.registrado_em),
+        bateriaPct: r.bateria_pct !== null ? Number(r.bateria_pct) : undefined,
       };
     }
+
+    /*
+     * Na carga inicial a trilha inteira é amostrada por participante. O
+     * espectador não perde a forma do trajeto (a amostragem é uniforme e
+     * SEMPRE preserva o ponto mais recente, que é o que encosta no marcador),
+     * e o payload deixa de crescer sem limite com a duração da travessia.
+     * No delta não se amostra: são poucos pontos e todos importam.
+     */
+    if (!desde) {
+      for (const uId of Object.keys(trilhas)) {
+        trilhas[uId] = amostrarPontos(trilhas[uId], MAX_PONTOS_TRILHA_PROPRIA, TS);
+      }
+    }
+
+    let maiorTs: number | null = null;
+    for (const pontos of Object.values(trilhas)) {
+      for (const p of pontos) if (maiorTs === null || TS(p) > maiorTs) maiorTs = TS(p);
+    }
+    const cursor = proximoCursor(desdeRaw, maiorTs);
 
     const participantes = (partRows as Record<string, unknown>[]).map((p, idx) => {
       const uId = String(p.user_id);
@@ -163,6 +263,12 @@ export async function GET(request: Request, ctx: Params) {
       },
       participantes,
       trilhas,
+      /** `true` = resposta parcial; o cliente deve pedir de novo já. */
+      parcial,
+      /** Devolver em `?desde=` no próximo poll para receber só o que é novo. */
+      cursor,
+      /** `true` quando esta resposta é um delta (o cliente precisa MESCLAR, não substituir). */
+      incremental: desde !== null,
     };
   });
 }

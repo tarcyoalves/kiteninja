@@ -88,12 +88,27 @@ export function passoAmostragem(total: number, limite: number): number {
  * quilômetros da bolinha e a tela sugeriria que o velejador saltou.
  */
 export function amostrarTrilha(pontos: PontoTrilha[], limite: number): PontoTrilha[] {
+  return amostrarPontos(pontos, limite, (p) => p[2]);
+}
+
+/**
+ * Versão genérica de `amostrarTrilha`, parametrizada por como se lê o
+ * timestamp do ponto.
+ *
+ * Existe porque o mapa ao vivo/replay (`/api/downwind/[id]/live`) carrega
+ * `[lat, lng, velocidade, ts]` — quatro elementos, timestamp no índice 3 —
+ * enquanto `PontoTrilha` tem três. Sem esta generalização, aquela rota
+ * precisaria de uma cópia da amostragem, e a regra sutil de "preservar SEMPRE
+ * o mais recente" passaria a existir em dois lugares para divergir num deles.
+ */
+export function amostrarPontos<T>(pontos: T[], limite: number, ts: (p: T) => number): T[] {
   if (pontos.length <= limite) return pontos;
   const passo = passoAmostragem(pontos.length, limite);
-  const saida: PontoTrilha[] = [];
+  const saida: T[] = [];
   for (let i = 0; i < pontos.length; i += passo) saida.push(pontos[i]);
   const ultimo = pontos[pontos.length - 1];
-  if (saida[saida.length - 1]?.[2] !== ultimo[2]) saida.push(ultimo);
+  const ultimoDaSaida = saida[saida.length - 1];
+  if (ultimoDaSaida === undefined || ts(ultimoDaSaida) !== ts(ultimo)) saida.push(ultimo);
   return saida;
 }
 
@@ -112,13 +127,23 @@ export function mesclarTrilha(
   novos: PontoTrilha[],
   maxPontos = MAX_PONTOS_ACUMULADOS
 ): PontoTrilha[] {
+  return mesclarPontos(atual, novos, (p) => p[2], maxPontos);
+}
+
+/** Versão genérica de `mesclarTrilha` — ver `amostrarPontos` para o porquê. */
+export function mesclarPontos<T>(
+  atual: T[],
+  novos: T[],
+  ts: (p: T) => number,
+  maxPontos = MAX_PONTOS_ACUMULADOS
+): T[] {
   if (novos.length === 0) return atual;
 
-  const porTs = new Map<number, PontoTrilha>();
-  for (const p of atual) porTs.set(p[2], p);
-  for (const p of novos) porTs.set(p[2], p);
+  const porTs = new Map<number, T>();
+  for (const p of atual) porTs.set(ts(p), p);
+  for (const p of novos) porTs.set(ts(p), p);
 
-  const juntos = Array.from(porTs.values()).sort((a, b) => a[2] - b[2]);
+  const juntos = Array.from(porTs.values()).sort((a, b) => ts(a) - ts(b));
   return juntos.length > maxPontos ? juntos.slice(juntos.length - maxPontos) : juntos;
 }
 

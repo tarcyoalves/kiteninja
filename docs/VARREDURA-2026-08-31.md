@@ -11,7 +11,7 @@ uma vez, a chance de aparecer de novo é maior que a média.
 |---|---|---|---|
 | V-01 | `/api/downwind/[id]/live` expunha trilha GPS de downwind **privado** | **Alta — privacidade** | ✅ Corrigido |
 | V-02 | Badge do sininho não zerava, e o poll o ressuscitava | Média — UX | ✅ Corrigido |
-| V-03 | Viewer ao vivo baixa o histórico inteiro a cada 5s, sem teto nem cursor | Média — custo | ❌ Aberto |
+| V-03 | Viewer ao vivo baixa o histórico inteiro a cada 5s, sem teto nem cursor | Média — custo | ✅ Corrigido |
 | V-04 | `latestIncomingDm` populado e nunca consumido | Baixa | ❌ Aberto |
 | V-05 | Poll do sininho baixa a lista inteira só para ler um número | Baixa — custo | ❌ Aberto |
 
@@ -110,28 +110,60 @@ Só chamar a função não bastava — sem a guarda, a corrida continuaria.
 
 ---
 
-## V-03 — Viewer ao vivo baixa o histórico inteiro a cada 5 segundos
+## V-03 — Viewer ao vivo baixava o histórico inteiro a cada 5 segundos
 
-**Aberto.** Precisa de decisão antes de mexer.
+**Corrigido.**
 
-`components/downwind/DownwindLiveReplayViewer.tsx` faz poll a cada 5s, e
-`GET /api/downwind/[id]/live` devolve **todas** as posições da travessia toda
-vez — sem `LIMIT`, sem cursor.
+`DownwindLiveReplayViewer` faz poll a cada 5s, e `GET /api/downwind/[id]/live`
+devolvia **todas** as posições da travessia toda vez — sem `LIMIT`, sem cursor.
 
 Conta de uma travessia de 3h com 10 velejadores reportando a cada 45s:
 ~2.400 linhas por resposta, 720 respostas por hora **por espectador**. E o
-payload cresce ao longo da travessia — fica maior justamente no fim, quando
+payload crescia ao longo da travessia — ficava maior justamente no fim, quando
 mais gente está assistindo.
 
-O que chama atenção: a rota irmã `GET /api/downwind/[id]/posicoes` **já
-resolve isso** — tem cursor `desde` e `LIMIT`. O viewer novo reimplementou o
-mesmo problema sem reaproveitar a solução que estava ao lado.
+O que chamava atenção: a rota irmã `GET /api/downwind/[id]/posicoes` **já
+resolvia isso** — cursor `desde`, teto e amostragem, tudo em
+`lib/trilhaDownwind.ts`. A tela nova reimplementou o problema sem reaproveitar
+a solução que estava ao lado.
 
-**Recomendação:** cursor incremental igual ao da rota irmã — carga inicial
-amostrada (`amostrarTrilha`, que já existe em `lib/trilhaDownwind.ts`) e
-delta a cada poll. Mexe no viewer também, por isso não entrou nesta rodada.
+### O que mudou
 
----
+- **Carga inicial** (sem `?desde=`): trilha completa, mas **amostrada** por
+  participante. A amostragem é uniforme e preserva sempre o ponto mais
+  recente, então a forma do trajeto se mantém e o payload para de crescer sem
+  limite com a duração.
+- **Polls seguintes**: só o delta (`?desde=<cursor>`), com teto proporcional ao
+  tamanho do grupo. O viewer **mescla** em vez de substituir.
+- Os helpers viraram genéricos (`amostrarPontos`, `mesclarPontos`) porque esta
+  tela usa pontos de 4 elementos (`[lat, lng, velocidade, ts]`) e
+  `PontoTrilha` tem 3. `amostrarTrilha`/`mesclarTrilha` passaram a delegar —
+  a regra sutil de "preservar sempre o mais recente" continua existindo em um
+  lugar só, em vez de virar duas cópias para divergir.
+
+### Um bug que quase entrou junto
+
+Tornar a rota incremental faria `ultimaPosicao` vir de um lote que só contém
+quem reportou naquele intervalo. Resultado: todo participante que ficou quieto
+apareceria com `ultimaPosicao: null` e **o marcador dele sumiria do mapa** — de
+quem parou de reportar, que é exatamente quem mais importa vigiar numa
+travessia.
+
+A última posição passou a vir de query própria com `LEFT JOIN LATERAL`, uma
+linha por participante, independente do delta — mesmo padrão que a rota irmã
+já usava.
+
+### Nota sobre resposta parcial
+
+Quando o delta bate no teto, a resposta vem marcada como `parcial` e o cursor
+**não salta** — o próximo poll continua de onde parou, sem buraco na trilha.
+
+Chegou a existir um reagendamento imediato (300ms) para fechar o vão mais
+rápido. Foi removido: `parcial` só ocorre quando um delta passa de 60 pontos
+por participante (ou seja, aba fechada por muito tempo), e a implementação
+exigia guardar a própria função num ref — padrão que a regra
+`react-hooks/refs` do React 19 acusa, com razão. Trocar 5s de atraso num caso
+raro por um padrão frágil não valia.
 
 ## V-04 — `latestIncomingDm` populado e nunca consumido
 
