@@ -5,6 +5,7 @@ import React from 'react';
 import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus, Shield, Bell } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { useAppUpdateAvailable } from '../lib/appUpdate';
 
 interface HeaderProps {
   title?: string;
@@ -12,6 +13,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
+  const temAtualizacao = useAppUpdateAvailable();
   const {
     setIsSidebarOpen,
     beachMode,
@@ -37,6 +39,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
   const totalChatUnread = unreadChatCount + dmUnreadCount;
   // Badge do sino (Fase 6): chat/DM + notificações da central, num número só.
   const totalSino = totalChatUnread + notificacoesNaoLidas;
+  const temAlertaNoSino = totalSino > 0 || temAtualizacao;
 
   const { user, isAdmin, openAuthModal } = useAuth();
 
@@ -196,13 +199,13 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
               setIsNotificacoesAbertas(true);
             }}
             className="relative w-8 h-8 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 flex items-center justify-center text-white active:scale-95 transition-all"
-            title={totalSino > 0 ? `${totalSino} notificação(ões) nova(s)` : 'Notificações'}
+            title={temAtualizacao ? 'Nova versão disponível' : totalSino > 0 ? `${totalSino} notificação(ões) nova(s)` : 'Notificações'}
             aria-label="Notificações"
           >
-            <Bell size={16} className={totalSino > 0 ? 'text-cyan-300' : 'text-white'} />
-            {totalSino > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-[#0B1220] animate-bounce">
-                {totalSino}
+            <Bell size={16} className={temAlertaNoSino ? 'text-cyan-300' : 'text-white'} />
+            {temAlertaNoSino && (
+              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black flex items-center justify-center ring-2 ring-[#0B1220] animate-bounce">
+                {totalSino > 0 ? totalSino : '↑'}
               </span>
             )}
           </button>

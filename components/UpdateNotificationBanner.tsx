@@ -1,144 +1,88 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  applyAppUpdate,
+  clearAppUpdateAvailable,
+  detectarNovoCommit,
+  dismissAppUpdate,
+  markAppUpdateAvailable,
+  useAppUpdateAvailable,
+  useAppUpdateCommit,
+} from '../lib/appUpdate';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 
 interface VersionInfo {
-  version: string;
   commit: string;
-  buildTime: string;
-  timestamp: number;
 }
 
 export const UpdateNotificationBanner: React.FC = () => {
   const { downwindAtivo } = useDownwind();
-  const [temAtualizacao, setTemAtualizacao] = useState(false);
-  const [dispensado, setDispensado] = useState(false);
+  const temAtualizacao = useAppUpdateAvailable();
+  const commitDisponivel = useAppUpdateCommit();
   const [atualizando, setAtualizando] = useState(false);
-  const versaoInicialRef = useRef<VersionInfo | null>(null);
+  const commitDoBundle = process.env.NEXT_PUBLIC_BUILD_COMMIT;
 
   const checarVersao = useCallback(async () => {
-    if (typeof window === 'undefined') return;
     try {
       const res = await fetch(`/api/version?_t=${Date.now()}`, {
         cache: 'no-store',
         headers: {
-          'Pragma': 'no-cache',
+          Pragma: 'no-cache',
           'Cache-Control': 'no-cache, no-store, must-revalidate',
         },
       });
       if (!res.ok) return;
+
       const data = (await res.json()) as VersionInfo;
-
-      if (!versaoInicialRef.current) {
-        versaoInicialRef.current = data;
-        return;
-      }
-
-      // Se o commit ou buildTime mudou, há uma nova versão em produção
-      const commitMudou =
-        data.commit !== 'local' &&
-        versaoInicialRef.current.commit !== 'local' &&
-        data.commit !== versaoInicialRef.current.commit;
-
-      const buildMudou =
-        Boolean(data.buildTime) &&
-        Boolean(versaoInicialRef.current.buildTime) &&
-        data.buildTime !== versaoInicialRef.current.buildTime;
-
-      if (commitMudou || buildMudou) {
-        setTemAtualizacao(true);
+      const novoCommit = detectarNovoCommit(commitDoBundle, data.commit);
+      if (novoCommit) {
+        markAppUpdateAvailable(novoCommit);
+      } else {
+        // Remove inclusive um alerta falso deixado por um update do Service
+        // Worker quando o código aberto já é o mesmo que está em produção.
+        clearAppUpdateAvailable();
       }
     } catch {
-      // Falha temporária de rede, tenta novamente no próximo ciclo
+      // Falha temporária de rede não significa que existe atualização.
     }
-  }, []);
+  }, [commitDoBundle]);
 
   const aplicarAtualizacao = useCallback(async () => {
     setAtualizando(true);
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const reg of regs) {
-          if (reg.waiting) {
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-          await reg.update().catch(() => {});
-        }
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch {
-      // Ignora falhas de cache e força o reload limpo
-    }
-
-    // Recarrega a página trazendo o bundle mais novo
-    window.location.reload();
+    await applyAppUpdate();
   }, []);
 
   useEffect(() => {
-    // 1. Registra o Service Worker automaticamente com updateViaCache: 'none'
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-      navigator.serviceWorker
-        .register('/sw.js', { updateViaCache: 'none' })
-        .then((reg) => {
-          reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            if (newWorker) {
-              newWorker.addEventListener('statechange', () => {
-                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  setTemAtualizacao(true);
-                }
-              });
-            }
-          });
-        })
-        .catch(() => {});
-
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        // Se um novo SW tomou controle, recarrega
-        if (!downwindAtivo) {
-          window.location.reload();
-        }
-      });
+    // O SW cuida apenas de push. `updatefound` não identifica versão do app e
+    // não pode acender o banner: o arquivo pode reinstalar sem mudança de código.
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
     }
 
-    // 2. Primeira checagem rápida após inicialização
-    const timeoutInicial = setTimeout(checarVersao, 3000);
-
-    // 3. Checa periodicamente a cada 60 segundos
-    const intervalo = setInterval(() => {
-      if (!document.hidden) {
-        checarVersao();
-      }
+    const timeoutInicial = window.setTimeout(checarVersao, 3000);
+    const intervalo = window.setInterval(() => {
+      if (!document.hidden) checarVersao();
     }, 60000);
 
-    // 4. Checa sempre que o usuário desbloqueia o celular ou volta para o app
-    const onVisibilityChange = () => {
-      if (!document.hidden) {
-        checarVersao();
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.ready.then((reg) => reg.update().catch(() => {}));
-        }
-      }
+    const onAppVisivel = () => {
+      if (!document.hidden) checarVersao();
     };
 
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    window.addEventListener('focus', onVisibilityChange);
+    document.addEventListener('visibilitychange', onAppVisivel);
+    window.addEventListener('focus', onAppVisivel);
 
     return () => {
-      clearTimeout(timeoutInicial);
-      clearInterval(intervalo);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      window.removeEventListener('focus', onVisibilityChange);
+      window.clearTimeout(timeoutInicial);
+      window.clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', onAppVisivel);
+      window.removeEventListener('focus', onAppVisivel);
     };
-  }, [checarVersao, downwindAtivo]);
+  }, [checarVersao]);
 
-  // Nunca interrompe o velejador durante um downwind ativo
-  if (!temAtualizacao || dispensado || downwindAtivo) return null;
+  // Nunca interrompe o velejador durante um downwind ativo.
+  if (!temAtualizacao || downwindAtivo) return null;
 
   return (
     <div className="fixed top-2.5 inset-x-3 z-splash flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
@@ -169,10 +113,10 @@ export const UpdateNotificationBanner: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => setDispensado(true)}
+            onClick={() => dismissAppUpdate(commitDisponivel)}
             className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 active:scale-95 transition-all"
-            aria-label="Dispensar aviso de atualização"
-            title="Lembrar mais tarde"
+            aria-label="Dispensar aviso desta versão"
+            title="Lembrar apenas na próxima versão"
           >
             <X size={14} />
           </button>

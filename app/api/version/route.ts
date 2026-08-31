@@ -3,8 +3,8 @@
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-// Versão do app e identificador único de build
-const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME || new Date().toISOString();
+// O SHA Git é a única identidade de deploy. Horário/timestamp variam entre
+// instâncias serverless e não podem ser usados para decidir se há código novo.
 const COMMIT_SHA =
   process.env.VERCEL_GIT_COMMIT_SHA ||
   process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA ||
@@ -15,8 +15,6 @@ export async function GET() {
     {
       version: '0.1.0',
       commit: COMMIT_SHA,
-      buildTime: BUILD_TIME,
-      timestamp: Date.now(),
     },
     {
       headers: {

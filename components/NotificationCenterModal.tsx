@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Bell,
@@ -21,6 +21,7 @@ import {
 import { formatRelativeTime } from '@/lib/chat';
 import type { AppNotification } from '@/types';
 import { useAoMudar } from '../lib/useAoMudar';
+import { applyAppUpdate, useAppUpdateAvailable } from '../lib/appUpdate';
 
 interface NotificationCenterModalProps {
   aberto: boolean;
@@ -83,28 +84,11 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [processandoInviteId, setProcessandoInviteId] = useState<string | null>(null);
-  const [temNovaVersao, setTemNovaVersao] = useState(false);
+  const temNovaVersao = useAppUpdateAvailable();
   const [atualizandoApp, setAtualizandoApp] = useState(false);
   const [limpandoLidas, setLimpandoLidas] = useState(false);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  // Verifica se há nova versão ao abrir a central
-  useEffect(() => {
-    if (!aberto || typeof window === 'undefined') return;
-    fetch(`/api/version?_t=${Date.now()}`, { cache: 'no-store' })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!data) return;
-        const initialSha = (window as unknown as { __BUILD_COMMIT__?: string }).__BUILD_COMMIT__;
-        if (!initialSha) {
-          (window as unknown as { __BUILD_COMMIT__?: string }).__BUILD_COMMIT__ = data.commit;
-        } else if (data.commit !== 'local' && initialSha !== 'local' && data.commit !== initialSha) {
-          setTemNovaVersao(true);
-        }
-      })
-      .catch(() => {});
-  }, [aberto]);
 
   // "Começou a carregar" é ajuste síncrono e vai no render; o fetch fica no
   // efeito — ver lib/useAoMudar.ts.
@@ -120,10 +104,13 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
     let ativo = true;
 
-    fetch('/api/notifications', { method: 'POST' }).catch(() => {});
-
     (async () => {
       try {
+        // Primeiro registra que a central foi vista; só depois busca a lista.
+        // Antes os dois requests corriam em paralelo e o GET podia devolver
+        // `readAt: null`, escondendo “Limpar lidas” até a próxima abertura.
+        await fetch('/api/notifications', { method: 'POST' }).catch(() => null);
+
         const res = await fetch('/api/notifications', { cache: 'no-store' });
         const body = await res.json().catch(() => null);
         if (!res.ok) {
@@ -165,24 +152,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
   const handleAtualizarApp = async () => {
     setAtualizandoApp(true);
-    try {
-      if ('serviceWorker' in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        for (const reg of regs) {
-          if (reg.waiting) {
-            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-          }
-          await reg.update().catch(() => {});
-        }
-      }
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch {
-      // Ignora falha de cache
-    }
-    window.location.reload();
+    await applyAppUpdate();
   };
 
   const handleApagarNotificacao = async (id: string) => {
