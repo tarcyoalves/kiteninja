@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
@@ -15,11 +15,43 @@ import {
   Loader2,
   Check,
   Trophy,
+  Navigation,
+  Gauge,
+  Clock,
+  X,
+  Crosshair,
 } from 'lucide-react';
 import type { Map as LeafletMap, LayerGroup } from 'leaflet';
 import { mesclarPontos } from '@/lib/trilhaDownwind';
 import { useAoMudar } from '@/lib/useAoMudar';
 import { MAP_TILES } from '@/lib/mapTiles';
+
+function formatarUltimaAtualizacao(registradoEm: string | null | undefined, tsMs?: number): { hora: string; relativo: string } {
+  const ts = tsMs && tsMs > 0 ? tsMs : (registradoEm ? new Date(registradoEm).getTime() : 0);
+  if (!ts || isNaN(ts)) {
+    return { hora: 'Sem registro', relativo: 'Aguardando sinal' };
+  }
+  const date = new Date(ts);
+  const hora = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  
+  let relativo = '';
+  if (diffSec < 15) {
+    relativo = 'agora mesmo';
+  } else if (diffSec < 60) {
+    relativo = `há ${diffSec}s atrás`;
+  } else if (diffSec < 3600) {
+    const min = Math.floor(diffSec / 60);
+    relativo = `há ${min} min atrás`;
+  } else if (diffSec < 86400) {
+    const horas = Math.floor(diffSec / 3600);
+    relativo = `há ${horas}h atrás`;
+  } else {
+    relativo = date.toLocaleDateString('pt-BR');
+  }
+
+  return { hora, relativo };
+}
 
 interface ParticipanteLive {
   userId: string;
@@ -364,30 +396,29 @@ export const DownwindLiveReplayViewer: React.FC<{
             ? `<img src="${p.avatarUrl}" class="w-full h-full object-cover rounded-full" alt="${p.name}" />`
             : `<span class="text-[10px] font-black text-white">${p.name.slice(0, 2).toUpperCase()}</span>`;
 
+          const estaFocado = riderFocadoId === p.userId;
+
           const riderIcon = L.divIcon({
             className: 'rider-live-marker',
             html: `
-              <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer;">
-                <div style="width: 34px; height: 34px; border-radius: 9999px; border: 2.5px solid ${p.corHex}; background-color: #0b1220; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.6);">
+              <div style="display: flex; flex-direction: column; align-items: center; cursor: pointer; transform: ${estaFocado ? 'scale(1.2)' : 'scale(1)'}; transition: transform 0.2s ease;">
+                <div style="width: 36px; height: 36px; border-radius: 9999px; border: ${estaFocado ? '3px' : '2.5px'} solid ${estaFocado ? '#38bdf8' : p.corHex}; background-color: #0b1220; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 14px rgba(0,0,0,0.8);">
                   ${avatarHtml}
                 </div>
-                <div style="margin-top: 2px; padding: 1px 6px; background-color: rgba(11,18,32,0.95); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; font-size: 9px; font-family: monospace; font-weight: 800; color: #ffffff; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.5);">
+                <div style="margin-top: 2px; padding: 1.5px 6px; background-color: rgba(11,18,32,0.95); border: 1px solid ${estaFocado ? '#38bdf8' : 'rgba(255,255,255,0.2)'}; border-radius: 6px; font-size: 9.5px; font-family: monospace; font-weight: 900; color: #ffffff; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.6);">
                   ${speedVal.toFixed(1)} kt
                 </div>
               </div>
             `,
-            iconSize: [36, 54],
-            iconAnchor: [18, 27],
+            iconSize: [38, 56],
+            iconAnchor: [19, 28],
           });
 
           const marker = L.marker([pos.lat, pos.lng], { icon: riderIcon });
-          marker.bindPopup(`
-            <div style="font-family: inherit; padding: 4px;">
-              <p style="font-weight: 900; font-size: 13px; margin: 0 0 4px 0; color: #ffffff;">${p.name}</p>
-              <p style="font-size: 11px; margin: 0; color: #94a3b8;">Velocidade: <b style="color: #38bdf8;">${speedVal.toFixed(1)} nós</b></p>
-              <p style="font-size: 11px; margin: 0; color: #94a3b8;">Distância: <b style="color: #34d399;">${p.distanciaKm.toFixed(1)} km</b></p>
-            </div>
-          `);
+          marker.on('click', () => {
+            setRiderFocadoId(p.userId);
+            map.flyTo([pos.lat, pos.lng], 15, { animate: true, duration: 0.8 });
+          });
           marker.addTo(markerGroup);
         }
       }
@@ -482,6 +513,24 @@ export const DownwindLiveReplayViewer: React.FC<{
 
   const temTrilha = dados && Object.keys(dados.trilhas).length > 0;
   const status = dados?.downwind.status ?? 'planejado';
+
+  // Participante focado selecionado
+  const riderSelecionado = useMemo(() => {
+    if (!riderFocadoId || !dados) return null;
+    return dados.participantes.find((p) => p.userId === riderFocadoId) || null;
+  }, [riderFocadoId, dados]);
+
+  const posicaoRiderSelecionado = useMemo(() => {
+    if (!riderSelecionado) return null;
+    return estadoNoTempo.posicoesAtuais[riderSelecionado.userId] || riderSelecionado.ultimaPosicao;
+  }, [riderSelecionado, estadoNoTempo]);
+
+  const infoAtualizacao = useMemo(() => {
+    if (!posicaoRiderSelecionado) return { hora: 'Sem registro', relativo: 'Aguardando primeiro sinal' };
+    const tsMs = (posicaoRiderSelecionado as { tsMs?: number }).tsMs;
+    const regEm = (posicaoRiderSelecionado as { registradoEm?: string }).registradoEm;
+    return formatarUltimaAtualizacao(regEm, tsMs);
+  }, [posicaoRiderSelecionado]);
 
   return (
     <div className="relative w-full h-full flex flex-col bg-[#070D18] overflow-hidden select-none">
@@ -665,7 +714,118 @@ export const DownwindLiveReplayViewer: React.FC<{
         </aside>
       )}
 
-      {/* 4. Player de Replay e Linha do Tempo (Barra Inferior) */}
+      {/* 4. Modal de Detalhes do Velejador ao Clicar no Avatar / Marcador */}
+      {riderSelecionado && (
+        <div className="absolute left-3 bottom-24 z-[1050] w-full max-w-sm sm:max-w-md bg-[#0B1220]/95 backdrop-blur-xl border border-slate-700/80 rounded-3xl p-4 shadow-2xl shadow-black/90 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-800">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className="w-12 h-12 rounded-full border-2 overflow-hidden flex items-center justify-center bg-slate-800 shrink-0 shadow-lg"
+                style={{ borderColor: riderSelecionado.corHex }}
+              >
+                {riderSelecionado.avatarUrl ? (
+                  <img src={riderSelecionado.avatarUrl} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs font-black text-white">{riderSelecionado.name.slice(0, 2).toUpperCase()}</span>
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black text-white truncate">{riderSelecionado.name}</h3>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 uppercase">
+                    {riderSelecionado.papel === 'velejador' ? 'Velejador' : 'Apoio em Terra'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Estado: <span className="text-slate-200 font-semibold uppercase">{riderSelecionado.estado}</span>
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRiderFocadoId(null)}
+              className="p-1.5 rounded-full bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              aria-label="Fechar detalhes"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {/* Seção: Última Atualização da Posição */}
+          <div className="mt-3 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <Clock size={15} className="text-cyan-400 shrink-0" />
+              <div>
+                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Última atualização</p>
+                <p className="font-mono text-white text-xs font-bold">
+                  {infoAtualizacao.hora} <span className="text-slate-400 font-normal">({infoAtualizacao.relativo})</span>
+                </p>
+              </div>
+            </div>
+
+            {posicaoRiderSelecionado && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (mapInstanceRef.current) {
+                    mapInstanceRef.current.flyTo([posicaoRiderSelecionado.lat, posicaoRiderSelecionado.lng], 16, {
+                      animate: true,
+                      duration: 0.8,
+                    });
+                  }
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-[11px] flex items-center gap-1 transition-all active:scale-95 shrink-0"
+              >
+                <Crosshair size={13} />
+                <span>Centralizar</span>
+              </button>
+            )}
+          </div>
+
+          {/* Grid de Métricas de Performance */}
+          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+            <div className="p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[10px] text-slate-400 font-bold flex items-center justify-center gap-1">
+                <Gauge size={12} className="text-cyan-400" /> Atual
+              </span>
+              <p className="text-sm font-black text-white font-mono mt-0.5">
+                {(posicaoRiderSelecionado?.speedKnots ?? 0).toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
+              </p>
+              <p className="text-[9px] text-slate-500 font-mono">
+                {((posicaoRiderSelecionado?.speedKnots ?? 0) * 1.852).toFixed(1)} km/h
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[10px] text-slate-400 font-bold flex items-center justify-center gap-1">
+                <Trophy size={12} className="text-amber-400" /> Máxima
+              </span>
+              <p className="text-sm font-black text-amber-300 font-mono mt-0.5">
+                {riderSelecionado.velocidadeMaxNos.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
+              </p>
+              <p className="text-[9px] text-slate-500 font-mono">
+                {(riderSelecionado.velocidadeMaxNos * 1.852).toFixed(1)} km/h
+              </p>
+            </div>
+
+            <div className="p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800">
+              <span className="text-[10px] text-slate-400 font-bold flex items-center justify-center gap-1">
+                <Navigation size={12} className="text-emerald-400" /> Distância
+              </span>
+              <p className="text-sm font-black text-emerald-300 font-mono mt-0.5">
+                {riderSelecionado.distanciaKm.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">km</span>
+              </p>
+              <p className="text-[9px] text-slate-500 font-mono">
+                {(riderSelecionado.distanciaKm / 1.852).toFixed(1)} NM
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Player de Replay e Linha do Tempo (Barra Inferior) */}
       {dados && (
         temTrilha ? (
           <footer className="absolute bottom-3 inset-x-3 z-[1000] pointer-events-none flex justify-center">
