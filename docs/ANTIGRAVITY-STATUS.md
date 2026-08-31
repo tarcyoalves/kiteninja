@@ -29,7 +29,7 @@ amostra, mas isso não substitui checar o achado que se vai corrigir.
 
 | ID | Sev | Resumo | Situação |
 |---|---|---|---|
-| ANT-001 | P0 | SOS sem GPS fora de downwind não notifica ninguém | ❌ **Aberto — próxima prioridade** |
+| ANT-001 | P0 | SOS sem GPS fora de downwind não notifica ninguém | ✅ **Corrigido** (ver abaixo) |
 | ANT-002 | P1 | Rate limit bloqueia atualizar posição de SOS ativo | ❌ Aberto |
 | ANT-003 | P1 | Rastreio para ao bloquear a tela / background | 🟡 **Parcial** — tela apagada resolvido; **app fechado NÃO** (ver abaixo) |
 | ANT-004 | P1 | Service Worker sem cache offline | ❌ Aberto |
@@ -117,12 +117,92 @@ arquivo entra em `public/.well-known/assetlinks.json` (Next.js serve
 Difere do roadmap original em um ponto: ANT-005 já saiu (era 2 linhas e uma
 vulnerabilidade confirmada, não fazia sentido esperar uma fase).
 
-1. **ANT-001** — é o único P0 e é risco de vida. Um SOS que diz "enviado" sem
-   ter avisado ninguém é pior que não ter botão de SOS, porque o velejador
-   para de procurar outra saída.
+1. ~~**ANT-001**~~ — **feito.** Detalhe da correção logo abaixo.
 2. **ANT-002** — mesmo subsistema, correção baixa, e o cenário (velejador
    derivando tenta atualizar a posição) é justamente o que sucede o ANT-001.
 3. **ANT-006** e **ANT-012** — baratos, fecham inconsistências de auth/validação.
 4. **ANT-007** — cron externo; depende de decidir onde hospedar o gatilho.
 5. **ANT-004** + **ANT-011** — pacote "experiência Play Store".
 6. Restante conforme o roadmap.
+
+
+---
+
+## ANT-001 — como foi fechado
+
+**O cenário exato:** velejador sozinho, GPS falhou (celular molhado, permissão
+negada, 3 s de timeout), não está em downwind nenhum, não declarou spot no
+chat, e nenhum moderador abriu o app nos últimos 15 minutos.
+
+**O que acontecia:** o SOS era gravado, a tela dizia "SOS Enviado", e **zero
+pessoas eram notificadas**. Pior: a escalada de 5 → 15 → 50 km continuava
+rodando, ampliando o raio no banco a cada dois minutos, sempre chamando
+ninguém. Falha silenciosa, no caminho de vida — e a tela do velejador nunca
+dava um sinal de que ele estava sozinho.
+
+**Duas rodadas de correção.** A primeira (já registrada na seção 6 de
+`scripts/verify-sos.ts`) adicionou a fonte de downwind, que não depende de
+coordenada. Isso resolveu o SOS de quem está numa remada. Não resolveu o de
+quem está sozinho — que é justamente quem mais precisa.
+
+### O que fechou o resto
+
+O seletor agora tem três degraus, e só desce para o próximo quando o anterior
+devolve lista vazia:
+
+| Degrau | Camadas | Depende de |
+|---|---|---|
+| 1 — normal | proximidade, downwind, apoio em terra | GPS **ou** estar numa remada |
+| 2 — fallback | moderadores **com** presença recente, quem declarou o mesmo spot | alguém com o app aberto |
+| 3 — último recurso | moderadores **sem** filtro de presença, quem tem o mesmo estado no `home_spot` | **nada** |
+
+As duas camadas do degrau 3 são a correção, e as duas derrubam um filtro que
+estava errado para esse uso:
+
+- **Moderador sem exigir presença.** O filtro `last_seen_at >= cutoff` faz
+  sentido para responder "quem está perto e pode ajudar agora". Não faz nenhum
+  para o último recurso: o push chega no celular com o app fechado — é
+  exatamente para isso que push existe. Numa base pequena, "nenhum moderador
+  com o app aberto neste instante" é o caso **comum**, e era esse filtro que
+  transformava o último recurso em lista vazia.
+- **Mesmo estado, via `home_spot`.** Esta camada já existia no código e era
+  **inalcançável**: quem chamava sempre passava `estado: null`, então o
+  `else if (estado)` nunca rodava. Agora o estado é derivado do spot do próprio
+  SOS quando há um, ou do `home_spot` do perfil quando não há — a única pista
+  que sobra de onde a pessoa costuma velejar.
+
+### Dois defeitos vizinhos que apareceram no caminho
+
+- **A escalada nunca passava o spot.** `lib/sosEscalada.ts` chamava
+  `selectSosCandidates` sem `spotId`. Ou seja: mesmo depois da primeira
+  correção, as camadas de fallback por spot ficavam mortas em toda escalada.
+  O `spot_id` agora é lido na varredura e repassado (e o mesmo em
+  `/api/sos/active`, o outro gatilho).
+- **Contas desativadas entravam.** Nenhuma das camadas de fallback checava
+  `is_active`. Alerta de socorro para conta suspensa é alerta jogado fora,
+  e nas camadas amplas isso podia ser a maioria da lista.
+
+### Teto
+
+As camadas amplas (mesmo spot, mesmo estado) não têm filtro geográfico: num
+estado com o app popular seriam centenas de pushes de uma vez, dentro do
+caminho crítico do socorro, com tempo de função serverless finito. Ambas têm
+`LIMIT 200` (`MAX_CANDIDATOS_AMPLOS`).
+
+### Como está verificado
+
+- `lib/sosCandidates.test.ts` — a decisão pura de mesclagem das camadas
+  (prioridade, dedupe, memória da escalada). É a parte que, errada, manda o
+  push com o motivo errado: "alguém a 2 km" em vez de "é do seu downwind".
+- `scripts/verify-sos.ts`, **seção 6b** — contra Postgres de verdade, com o
+  cenário montado peça por peça. Inclui a prova de que o filtro de presença era
+  o culpado: a consulta antiga devolve zero no mesmo banco onde a nova devolve
+  o moderador.
+
+### O que isto NÃO resolve
+
+Nada disto entrega push se os segredos de push não estiverem configurados em
+produção — VAPID e `GOOGLE_APPLICATION_CREDENTIALS_JSON`. **Sem eles o
+servidor grava os socorristas em `sos_responders` e não sai push nenhum, em
+silêncio.** Ver `docs/CONFIGURACAO-SEGREDOS.md`. É a pendência que mais
+importa hoje, e ela é do dono — não há como um agente configurá-la.

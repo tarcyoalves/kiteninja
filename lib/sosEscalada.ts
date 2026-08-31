@@ -57,6 +57,12 @@ export async function escalarUmSos(alerta: {
   authorName: string;
   lat: number | null;
   lng: number | null;
+  /**
+   * Spot declarado no SOS. Vai para o seletor de candidatos: sem ele, as
+   * camadas de fallback por spot e por estado ficavam inalcançáveis na
+   * escalada, e um SOS sem GPS ampliava o raio no banco sem chamar ninguém.
+   */
+  spotId: string | null;
   spotName: string | null;
   status: string;
   radiusKm: number;
@@ -115,6 +121,7 @@ export async function escalarUmSos(alerta: {
       : null,
     radiusKm: novoRaio,
     alreadyNotified: alerta.jaNotificados,
+    spotId: alerta.spotId,
   });
 
   if (candidatos.length > 0) {
@@ -193,7 +200,7 @@ export async function escalarUmSos(alerta: {
 export async function varrerEscaladas(agora: Date = new Date()): Promise<ResumoVarredura> {
   const abertos = await sql`
     SELECT sa.id, sa.user_id, sa.lat, sa.lng, sa.status, sa.radius_km,
-           sa.created_at, sa.escalated_at,
+           sa.spot_id, sa.created_at, sa.escalated_at,
            u.name AS author_name,
            sp.name AS spot_name,
            EXISTS (
@@ -228,6 +235,7 @@ export async function varrerEscaladas(agora: Date = new Date()): Promise<ResumoV
           authorName: String(row.author_name),
           lat: row.lat === null ? null : Number(row.lat),
           lng: row.lng === null ? null : Number(row.lng),
+          spotId: row.spot_id === null || row.spot_id === undefined ? null : String(row.spot_id),
           spotName: row.spot_name === null || row.spot_name === undefined ? null : String(row.spot_name),
           status: String(row.status),
           radiusKm: Number(row.radius_km),

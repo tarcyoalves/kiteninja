@@ -109,6 +109,9 @@ export async function GET() {
           authorName: String(row.author_name),
           lat,
           lng,
+          // O spot vai junto: é o que destrava as camadas de fallback por
+          // spot e por estado quando o SOS saiu sem GPS.
+          spotId: row.spot_id === null || row.spot_id === undefined ? null : String(row.spot_id),
           spotName: null,
           status: String(row.status),
           radiusKm,

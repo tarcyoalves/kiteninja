@@ -30,6 +30,47 @@ export interface CandidatoSos {
 }
 
 /**
+ * Junta as camadas de candidatos numa lista única, sem repetir ninguém.
+ *
+ * A ORDEM DAS CAMADAS É A PRIORIDADE: quem aparece numa camada anterior fica
+ * com o motivo dela. Isso importa porque o motivo é o que o socorrista lê no
+ * push — "é do seu downwind" faz ele largar o que está fazendo, "alguém no
+ * seu spot" não. Quem se qualifica pelos dois caminhos recebe UM push, com a
+ * informação mais forte.
+ *
+ * `jaNotificados` é a memória da escalada: quem já foi chamado no raio de
+ * 5 km não é chamado de novo aos 15 km.
+ *
+ * Está separada das consultas de propósito — é a única parte desta decisão
+ * que dá para testar sem banco, e é onde um engano (ordem trocada, dedupe
+ * pelo lado errado) manda o push errado para a pessoa errada.
+ */
+export function mesclarCamadas(
+  camadas: CandidatoSos[][],
+  jaNotificados: Set<string> = new Set()
+): CandidatoSos[] {
+  const porUsuario = new Map<string, CandidatoSos>();
+  for (const camada of camadas) {
+    for (const c of camada) {
+      if (jaNotificados.has(c.userId)) continue;
+      if (!porUsuario.has(c.userId)) porUsuario.set(c.userId, c);
+    }
+  }
+  return [...porUsuario.values()];
+}
+
+/**
+ * Teto de quem é chamado nas camadas amplas (mesmo spot, mesmo estado).
+ *
+ * Existe porque essas camadas não têm filtro geográfico nenhum: num estado
+ * com o app popular, "todo mundo do RN" pode ser centenas de pushes de uma
+ * vez, e o INSERT em `sos_responders` mais o fan-out de push entram no
+ * caminho crítico do socorro — o tempo da função serverless é finito, e
+ * estourá-lo faria o velejador não receber resposta nenhuma.
+ */
+const MAX_CANDIDATOS_AMPLOS = 200;
+
+/**
  * Seleciona quem notificar de um SOS.
  *
  * DUAS FONTES INDEPENDENTES, unidas sem duplicar ninguém:
@@ -85,27 +126,46 @@ export async function selectSosCandidates(args: {
   ]);
 
   // Downwind primeiro: em empate, o motivo mais informativo permanece.
-  const porUsuario = new Map<string, CandidatoSos>();
-  for (const c of [...porDownwind, ...porProximidade]) {
-    if (already.has(c.userId)) continue;
-    if (!porUsuario.has(c.userId)) porUsuario.set(c.userId, c);
-  }
+  const principais = mesclarCamadas([porDownwind, porProximidade], already);
+  if (principais.length > 0) return principais;
 
-  // Se ninguém foi notificado ainda (caso SOS sem GPS fora de downwind),
-  // aplica os fallbacks: moderadores online, depois usuários no mesmo spot/estado.
-  if (porUsuario.size === 0) {
-    const [moderadores, porSpot] = await Promise.all([
-      candidatosModeradores(args.excludeUserId),
-      candidatosPorSpotOuEstado(args.excludeUserId, args.spotId ?? null, null),
-    ]);
+  // NINGUÉM pelas fontes normais. É o cenário do ANT-001: SOS sem GPS, fora de
+  // downwind. A partir daqui a pergunta deixa de ser "quem pode chegar rápido"
+  // e passa a ser "quem existe para ser avisado" — um push para alguém longe é
+  // infinitamente melhor que zero pushes.
+  const [moderadoresOnline, noSpot] = await Promise.all([
+    candidatosModeradores(args.excludeUserId, true),
+    candidatosNoSpot(args.excludeUserId, args.spotId ?? null),
+  ]);
 
-    for (const c of [...moderadores, ...porSpot]) {
-      if (already.has(c.userId)) continue;
-      if (!porUsuario.has(c.userId)) porUsuario.set(c.userId, c);
-    }
-  }
+  const fallback = mesclarCamadas([moderadoresOnline, noSpot], already);
+  if (fallback.length > 0) return fallback;
 
-  return [...porUsuario.values()];
+  /**
+   * ÚLTIMO RECURSO — as duas camadas que fecham o buraco do ANT-001.
+   *
+   * Antes daqui, um SOS sem GPS, fora de downwind, sem spot declarado e sem
+   * moderador que tivesse aberto o app recentemente notificava ZERO pessoas.
+   * O alerta era gravado, a tela dizia "SOS Enviado" e a escalada de
+   * 5 → 15 → 50 km ampliava o raio no banco indefinidamente sem chamar
+   * ninguém. Falha silenciosa, no caminho de vida.
+   *
+   * As duas camadas abaixo derrubam justamente os filtros que causavam isso:
+   *
+   *  - Moderadores SEM exigir presença recente. O filtro de presença faz
+   *    sentido para "quem está por perto e pode ajudar agora"; não faz nenhum
+   *    para o último recurso. O push chega no celular com o app fechado — é
+   *    exatamente para isso que ele serve.
+   *  - Quem está no mesmo ESTADO do velejador, derivado do spot do SOS ou,
+   *    na falta dele, do spot de origem do perfil. Esta camada existia no
+   *    código mas era inalcançável: quem chamava sempre passava `estado: null`.
+   */
+  const [moderadoresOffline, noEstado] = await Promise.all([
+    candidatosModeradores(args.excludeUserId, false),
+    candidatosNoEstadoDoAutor(args.excludeUserId, args.spotId ?? null),
+  ]);
+
+  return mesclarCamadas([moderadoresOffline, noEstado], already);
 }
 
 /** Quem está fisicamente perto agora, com presença recente no app. */
@@ -223,20 +283,48 @@ async function candidatosPorDownwind(
 }
 
 /**
- * Moderadores do sistema — notificados quando não há ninguém por proximidade,
- * downwind ou apoio. São o fallback de último recurso para um SOS sem GPS.
+ * Moderadores do sistema — chamados quando não há ninguém por proximidade,
+ * downwind ou apoio.
+ *
+ * `exigirPresenca` separa dois usos que pareciam um só:
+ *
+ *  - `true`: moderadores que abriram o app dentro da janela de presença. É a
+ *    primeira tentativa — gente com o app na mão responde mais rápido.
+ *  - `false`: TODOS os moderadores ativos, tenham ou não aberto o app. É o
+ *    último recurso, e o filtro de presença aqui era ativamente nocivo: numa
+ *    base pequena, "nenhum moderador com o app aberto agora" é o caso comum,
+ *    e ele transformava o último recurso em lista vazia. O push chega no
+ *    celular com o app fechado.
+ *
+ * Em ambos os casos só contas ativas: notificar conta desativada é push que
+ * ninguém lê.
  */
-async function candidatosModeradores(excludeUserId: string): Promise<CandidatoSos[]> {
+async function candidatosModeradores(
+  excludeUserId: string,
+  exigirPresenca: boolean
+): Promise<CandidatoSos[]> {
   const cutoff = new Date(Date.now() - JANELA_PRESENCA_MS).toISOString();
 
-  const rows = await sql`
-    SELECT DISTINCT u.id AS user_id
-    FROM users u
-    JOIN user_presence p ON p.user_id = u.id
-    WHERE u.id != ${excludeUserId}
-      AND u.role IN ('admin', 'moderator')
-      AND p.last_seen_at >= ${cutoff}
-  `;
+  // Duas consultas completas, escolhidas aqui. O driver HTTP da Neon NÃO
+  // compõe fragmentos: um `sql` aninhado vira VALOR de parâmetro, não SQL —
+  // ver lib/sqlComposicao.test.ts.
+  const rows = exigirPresenca
+    ? await sql`
+        SELECT DISTINCT u.id AS user_id
+        FROM users u
+        JOIN user_presence p ON p.user_id = u.id
+        WHERE u.id != ${excludeUserId}
+          AND u.role IN ('admin', 'moderator')
+          AND u.is_active = TRUE
+          AND p.last_seen_at >= ${cutoff}
+      `
+    : await sql`
+        SELECT u.id AS user_id
+        FROM users u
+        WHERE u.id != ${excludeUserId}
+          AND u.role IN ('admin', 'moderator')
+          AND u.is_active = TRUE
+      `;
 
   return rows.map((r) => {
     const row = r as Record<string, unknown>;
@@ -249,60 +337,80 @@ async function candidatosModeradores(excludeUserId: string): Promise<CandidatoSo
 }
 
 /**
- * Usuários no mesmo spot ou estado do autor do SOS.
+ * Quem declarou estar no MESMO SPOT do SOS, com presença recente.
  *
- * Fallback quando não há moderadores online. Mais abrangente que proximidade
- * (não exige GPS do autor), mas mais específico que "todo mundo".
+ * Não exige GPS de ninguém: o velejador marcou "estou em Ponta do Mel" no
+ * chat e isso basta para saber que ele está na mesma praia.
  */
-async function candidatosPorSpotOuEstado(
+async function candidatosNoSpot(
   excludeUserId: string,
-  spotId: string | null,
-  estado: string | null
+  spotId: string | null
 ): Promise<CandidatoSos[]> {
-  if (!spotId && !estado) return [];
+  if (!spotId) return [];
 
   const cutoff = new Date(Date.now() - JANELA_PRESENCA_MS).toISOString();
 
-  let rows;
-  if (spotId) {
-    rows = await sql`
-      SELECT DISTINCT p.user_id AS user_id
-      FROM user_presence p
-      WHERE p.user_id != ${excludeUserId}
-        AND p.at_spot_id = ${spotId}
-        AND p.last_seen_at >= ${cutoff}
-    `;
-  } else if (estado) {
-    // Primeiro busca o spot do autor para saber o estado
-    const spotRows = await sql`
-      SELECT s.state
-      FROM users u
-      JOIN spots s ON s.id = u.home_spot
-      WHERE u.id = ${excludeUserId}
-        AND u.home_spot IS NOT NULL
-      LIMIT 1
-    `;
-    if (spotRows.length === 0) return [];
-    const autorEstado = (spotRows[0] as Record<string, unknown>).state as string;
+  const rows = await sql`
+    SELECT DISTINCT p.user_id AS user_id
+    FROM user_presence p
+    JOIN users u ON u.id = p.user_id
+    WHERE p.user_id != ${excludeUserId}
+      AND p.at_spot_id = ${spotId}
+      AND p.last_seen_at >= ${cutoff}
+      AND u.is_active = TRUE
+    LIMIT ${MAX_CANDIDATOS_AMPLOS}
+  `;
 
-    rows = await sql`
-      SELECT DISTINCT p.user_id AS user_id
-      FROM user_presence p
-      JOIN spots s ON s.id = p.at_spot_id
-      WHERE p.user_id != ${excludeUserId}
-        AND s.state = ${autorEstado}
-        AND p.last_seen_at >= ${cutoff}
-    `;
-  } else {
-    return [];
-  }
+  return rows.map((r) => ({
+    userId: String((r as Record<string, unknown>).user_id),
+    dist: null,
+    motivo: 'spot_fallback' as const,
+  }));
+}
 
-  return rows.map((r) => {
-    const row = r as Record<string, unknown>;
-    return {
-      userId: String(row.user_id),
-      dist: null,
-      motivo: 'spot_fallback' as const,
-    };
-  });
+/**
+ * Quem está no mesmo ESTADO do velejador em apuros.
+ *
+ * A camada mais ampla que existe, e a última antes de não avisar ninguém. O
+ * estado sai do spot do próprio SOS quando há um; na falta dele, do
+ * `home_spot` do perfil — que é a única pista que sobra de onde a pessoa
+ * costuma velejar quando o GPS falhou e ela não declarou nada.
+ *
+ * Sem filtro de presença, pelo mesmo motivo do moderador offline: no último
+ * recurso a pergunta é "quem existe para ser avisado". Com teto, porque isto
+ * roda dentro do caminho crítico do socorro.
+ */
+async function candidatosNoEstadoDoAutor(
+  excludeUserId: string,
+  spotId: string | null
+): Promise<CandidatoSos[]> {
+  const estadoRows = spotId
+    ? await sql`SELECT state FROM spots WHERE id = ${spotId} LIMIT 1`
+    : await sql`
+        SELECT s.state
+        FROM users u
+        JOIN spots s ON s.id = u.home_spot
+        WHERE u.id = ${excludeUserId}
+        LIMIT 1
+      `;
+
+  if (estadoRows.length === 0) return [];
+  const estado = (estadoRows[0] as Record<string, unknown>).state;
+  if (estado === null || estado === undefined) return [];
+
+  const rows = await sql`
+    SELECT DISTINCT u.id AS user_id
+    FROM users u
+    JOIN spots s ON s.id = u.home_spot
+    WHERE u.id != ${excludeUserId}
+      AND s.state = ${String(estado)}
+      AND u.is_active = TRUE
+    LIMIT ${MAX_CANDIDATOS_AMPLOS}
+  `;
+
+  return rows.map((r) => ({
+    userId: String((r as Record<string, unknown>).user_id),
+    dist: null,
+    motivo: 'spot_fallback' as const,
+  }));
 }

@@ -661,6 +661,114 @@ async function main() {
   await db.query(`UPDATE downwinds SET status = 'em_andamento' WHERE id = $1`, [dwId]);
 
   // =====================================================================
+  console.log('\n6b. Ultimo recurso: SOS sem GPS, sem downwind, sem spot (ANT-001):');
+
+  /**
+   * O buraco que sobrava depois da correção da seção 6.
+   *
+   * Cenario: velejador sozinho, GPS falhou, nao esta em downwind nenhum, nao
+   * declarou spot. As duas fontes normais dao zero. Os fallbacks que existiam
+   * exigiam (a) moderador com o app aberto AGORA e (b) spot declarado — e nao
+   * havia nem um nem outro. Resultado: SOS gravado, tela dizendo "SOS
+   * Enviado", ZERO pessoas notificadas, e a escalada de 5 -> 15 -> 50 km
+   * ampliando o raio no banco indefinidamente sem chamar ninguem.
+   *
+   * As duas camadas de ultimo recurso derrubam exatamente esses dois filtros.
+   * Aqui elas rodam contra Postgres de verdade.
+   */
+  const solitario = await mk('Velejador solitario', 'solitario@kn.test');
+  const modOffline = await mk('Moderador que nao abre o app', 'modoff@kn.test', 'moderator');
+  const conterraneo = await mk('Velejador do mesmo estado', 'conterraneo@kn.test');
+
+  // Ninguem tem presenca: nem o moderador, nem o conterraneo.
+  await db.query(`DELETE FROM user_presence WHERE user_id IN ($1, $2, $3)`, [
+    solitario,
+    modOffline,
+    conterraneo,
+  ]);
+
+  const estadoDoSpot = await db.query<{ state: string }>(
+    `SELECT state FROM spots WHERE id = 'ponta-do-mel'`
+  );
+  await db.query(`UPDATE users SET home_spot = 'ponta-do-mel' WHERE id IN ($1, $2)`, [
+    solitario,
+    conterraneo,
+  ]);
+
+  // Camada A — moderadores SEM exigir presenca (consulta de
+  // candidatosModeradores com exigirPresenca = false).
+  const modsUltimoRecurso = await db.query<{ user_id: string }>(
+    `SELECT u.id AS user_id FROM users u
+     WHERE u.id != $1 AND u.role IN ('admin','moderator') AND u.is_active = TRUE`,
+    [solitario]
+  );
+  check(
+    'moderador sem presenca recente ENTRA no ultimo recurso',
+    modsUltimoRecurso.rows.some(r => r.user_id === modOffline),
+    `moderadores=${modsUltimoRecurso.rows.length}`
+  );
+
+  // A mesma consulta COM o filtro de presenca — a que existia antes — devolve
+  // zero. É a prova de que o filtro era o que causava o silencio.
+  const cutoffUr = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+  const modsComPresenca = await db.query(
+    `SELECT DISTINCT u.id FROM users u
+     JOIN user_presence p ON p.user_id = u.id
+     WHERE u.id != $1 AND u.role IN ('admin','moderator')
+       AND u.is_active = TRUE AND p.last_seen_at >= $2`,
+    [solitario, cutoffUr]
+  );
+  check(
+    'e o filtro de presenca era mesmo o culpado (a consulta antiga da zero)',
+    modsComPresenca.rows.length === 0,
+    `antiga=${modsComPresenca.rows.length} nova=${modsUltimoRecurso.rows.length}`
+  );
+
+  // Camada B — mesmo estado, derivado do home_spot quando nao ha spot no SOS
+  // (consulta de candidatosNoEstadoDoAutor).
+  const estadoRows = await db.query<{ state: string }>(
+    `SELECT s.state FROM users u JOIN spots s ON s.id = u.home_spot
+     WHERE u.id = $1 LIMIT 1`,
+    [solitario]
+  );
+  check(
+    'o estado do velejador sai do home_spot quando o SOS nao tem spot',
+    estadoRows.rows.length === 1 && estadoRows.rows[0].state === estadoDoSpot.rows[0].state,
+    `estado=${estadoRows.rows[0]?.state}`
+  );
+
+  const noEstado = await db.query<{ user_id: string }>(
+    `SELECT DISTINCT u.id AS user_id FROM users u
+     JOIN spots s ON s.id = u.home_spot
+     WHERE u.id != $1 AND s.state = $2 AND u.is_active = TRUE
+     LIMIT 200`,
+    [solitario, estadoRows.rows[0].state]
+  );
+  check(
+    'velejador do mesmo estado e alcancado mesmo sem nunca ter aberto o app',
+    noEstado.rows.some(r => r.user_id === conterraneo),
+    `no_estado=${noEstado.rows.length}`
+  );
+  check(
+    'o proprio autor nao entra na camada de estado',
+    !noEstado.rows.some(r => r.user_id === solitario)
+  );
+
+  // Conta desativada nunca recebe push de socorro: seria alerta jogado fora.
+  await db.query(`UPDATE users SET is_active = FALSE WHERE id = $1`, [conterraneo]);
+  const noEstadoSemDesativado = await db.query<{ user_id: string }>(
+    `SELECT DISTINCT u.id AS user_id FROM users u
+     JOIN spots s ON s.id = u.home_spot
+     WHERE u.id != $1 AND s.state = $2 AND u.is_active = TRUE`,
+    [solitario, estadoRows.rows[0].state]
+  );
+  check(
+    'conta desativada fica de fora do ultimo recurso',
+    !noEstadoSemDesativado.rows.some(r => r.user_id === conterraneo)
+  );
+  await db.query(`UPDATE users SET is_active = TRUE WHERE id = $1`, [conterraneo]);
+
+  // =====================================================================
   console.log('\n7. Contrato da resposta de /api/sos/active (campos que a UI exige):');
 
   /**
