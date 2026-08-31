@@ -12,7 +12,12 @@ env:
   # de compilar qualquer coisa. O runner também já avisa que o Node 20 está
   # sendo descontinuado nas actions.
   NODE_VERSION: '22'
-  JAVA_VERSION: '17'
+  # 21, não 17: o Capacitor 8 compila sua própria biblioteca Android com
+  # `sourceCompatibility JavaVersion.VERSION_21`
+  # (node_modules/@capacitor/android/capacitor/build.gradle). Com o JDK 17 o
+  # Gradle morria em `:capacitor-android:compileDebugJavaWithJavac` com
+  # "error: invalid source release: 21".
+  JAVA_VERSION: '21'
 
 jobs:
   # -----------------------------------------------------------------------
