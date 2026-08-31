@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const css = readFileSync(join(import.meta.dirname, 'globals.css'), 'utf8');
+const capacitorConfig = readFileSync(join(import.meta.dirname, '..', 'capacitor.config.ts'), 'utf8');
 
 /** Remove comentários /* … *\/ para não acusar prosa explicativa como código. */
 function semComentarios(fonte: string): string {
@@ -69,7 +70,7 @@ describe('globals.css — geometria do rodapé', () => {
     expect(valor).not.toContain('env(');
   });
 
-  it('--safe-b é o único lugar que lê a safe-area inferior', () => {
+  it('--safe-b prioriza o inset injetado pelo Capacitor e lê env() uma vez', () => {
     const raiz = semComentarios(css);
     const leituras = raiz.match(/env\(\s*safe-area-inset-bottom/g) ?? [];
     // Só a declaração de --safe-b. Qualquer outra é uma segunda fonte da
@@ -78,7 +79,59 @@ describe('globals.css — geometria do rodapé', () => {
       leituras,
       'env(safe-area-inset-bottom) deve aparecer só em --safe-b; use var(--nav-h) ou var(--safe-b)',
     ).toHaveLength(1);
-    expect(/--safe-b:\s*max\(\s*env\(\s*safe-area-inset-bottom/.test(raiz)).toBe(true);
+    expect(
+      /--safe-b:\s*max\(\s*var\(\s*--safe-area-inset-bottom,\s*env\(\s*safe-area-inset-bottom/.test(raiz),
+      'Android precisa usar --safe-area-inset-bottom do Capacitor antes do fallback env() do PWA',
+    ).toBe(true);
+  });
+
+  it('o inset inferior do Android vem do SystemBars e as barras ficam visíveis', () => {
+    const config = capacitorConfig.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    expect(config).toMatch(/SystemBars\s*:\s*\{/);
+    expect(config).toMatch(/insetsHandling\s*:\s*['"]css['"]/);
+    expect(config).toMatch(/style\s*:\s*['"]DARK['"]/);
+    expect(config).toMatch(/hidden\s*:\s*false/);
+  });
+
+  it('a rota de replay usa inset fixo e não 100vh', () => {
+    const pagina = readFileSync(
+      join(import.meta.dirname, 'dw-live', '[id]', 'page.tsx'),
+      'utf8',
+    );
+    const codigo = pagina.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+    expect(codigo).toContain('fixed inset-0');
+    expect(codigo).not.toMatch(/\b(h|min-h|max-h)-screen\b/);
+    expect(codigo).not.toContain('100vh');
+    expect(codigo).not.toContain('100dvh');
+  });
+
+  it('o viewer deriva HUDs dos mesmos offsets seguros', () => {
+    const raiz = semComentarios(css);
+    for (const token of [
+      '--dw-inline-start',
+      '--dw-inline-end',
+      '--dw-header-reserve',
+      '--dw-footer-reserve',
+    ]) {
+      expect(raiz, `${token} sumiu da geometria do replay`).toContain(token);
+    }
+
+    const viewer = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'downwind', 'DownwindLiveReplayViewer.tsx'),
+      'utf8',
+    );
+    expect(viewer).toContain('dw-live-header');
+    expect(viewer).toContain('dw-live-participants');
+    expect(viewer).toContain('dw-live-rider-card');
+    expect(viewer).toContain('dw-live-footer');
+    expect(viewer).toContain('metricasDaTrilhaReplay');
+    expect(viewer).toContain('dados && !riderSelecionado');
+    expect(viewer).not.toMatch(/className=["'`][^"'`]*\bh-screen\b/);
+    expect(viewer).not.toMatch(/\bbottom-(?:3|24)\b/);
+
+    const rodape = corpoDaRegra('.dw-live-footer');
+    expect(rodape).toContain('var(--safe-b)');
   });
 
   it('nenhuma folga de rodapé soma env() junto de var(--nav-h) (inset em dobro)', () => {

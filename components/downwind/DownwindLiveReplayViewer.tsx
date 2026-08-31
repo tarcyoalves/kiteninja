@@ -5,7 +5,6 @@ import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react'
 import {
   Play,
   Pause,
-  RotateCcw,
   Radio,
   Share2,
   Users,
@@ -22,9 +21,12 @@ import {
   Crosshair,
 } from 'lucide-react';
 import type { Map as LeafletMap, LayerGroup } from 'leaflet';
+import { useRouter } from 'next/navigation';
 import { mesclarPontos } from '@/lib/trilhaDownwind';
 import { useAoMudar } from '@/lib/useAoMudar';
 import { MAP_TILES } from '@/lib/mapTiles';
+import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
+import { metricasDaTrilhaReplay } from '@/lib/metricasReplay';
 
 function formatarUltimaAtualizacao(registradoEm: string | null | undefined, tsMs?: number): { hora: string; relativo: string } {
   const ts = tsMs && tsMs > 0 ? tsMs : (registradoEm ? new Date(registradoEm).getTime() : 0);
@@ -100,13 +102,15 @@ interface LiveApiResponse {
 export const DownwindLiveReplayViewer: React.FC<{
   downwindId: string;
   modoEmbutido?: boolean;
-}> = ({ downwindId, modoEmbutido = false }) => {
+}> = ({ downwindId }) => {
+  const router = useRouter();
   const [dados, setDados] = useState<LiveApiResponse | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [mapLayer, setMapLayer] = useState<'escuro' | 'satelite'>('escuro');
   const [painelParticipantesAberto, setPainelParticipantesAberto] = useState(false);
   const [copiado, setCopiado] = useState(false);
+  const [mapPronto, setMapPronto] = useState(false);
 
   // Estados do Replay Player
   const [isLiveMode, setIsLiveMode] = useState(true);
@@ -167,9 +171,9 @@ export const DownwindLiveReplayViewer: React.FC<{
   }, [carregarDados, isLiveMode]);
 
   // 2. Limites de tempo
-  const { minTsMs, maxTsMs, duracaoTotalMs } = useMemo(() => {
+  const { minTsMs, maxTsMs } = useMemo(() => {
     if (!dados || Object.keys(dados.trilhas).length === 0) {
-      return { minTsMs: 0, maxTsMs: 0, duracaoTotalMs: 0 };
+      return { minTsMs: 0, maxTsMs: 0 };
     }
     let min = Infinity;
     let max = -Infinity;
@@ -185,7 +189,7 @@ export const DownwindLiveReplayViewer: React.FC<{
     if (min === Infinity) min = 0;
     if (max === -Infinity) max = 0;
 
-    return { minTsMs: min, maxTsMs: max, duracaoTotalMs: Math.max(0, max - min) };
+    return { minTsMs: min, maxTsMs: max };
   }, [dados]);
 
   useAoMudar(
@@ -201,6 +205,13 @@ export const DownwindLiveReplayViewer: React.FC<{
     if (typeof window === 'undefined' || !mapContainerRef.current || mapInstanceRef.current) return;
 
     let mounted = true;
+    let resizeObserver: ResizeObserver | null = null;
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const remedir = () => {
+      if (mounted && mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize({ animate: false });
+      }
+    };
 
     import('leaflet').then((L) => {
       if (!mounted || !mapContainerRef.current || mapInstanceRef.current) return;
@@ -212,40 +223,38 @@ export const DownwindLiveReplayViewer: React.FC<{
 
       mapInstanceRef.current = map;
 
-      // Adiciona controle de zoom no topo esquerdo
+      // O mapa ocupa a tela toda; tocar na área livre fecha somente o detalhe
+      // flutuante do rider, sem desmontar o replay nem alterar o painel.
+      map.on('click', () => setRiderFocadoId(null));
+
+      // Adiciona controle de zoom; o CSS do viewer o posiciona abaixo do HUD.
       L.control.zoom({ position: 'topleft' }).addTo(map);
 
-      // Camada de Tiles inicial
-      const tileConfig = MAP_TILES[mapLayer];
-      const tile = L.tileLayer(tileConfig.url, {
-        attribution: tileConfig.attribution,
-        maxNativeZoom: tileConfig.maxNativeZoom ?? 19,
-        maxZoom: 20,
-        subdomains: tileConfig.subdomains ?? 'abcd',
-      }).addTo(map);
-      tileLayerRef.current = tile;
-
-      // Grupos de camadas
+      // Grupos de camadas. A camada de tiles entra no efeito seguinte depois
+      // de `mapPronto`: assim não capturamos `mapLayer` antigo nesta montagem
+      // assíncrona e uma troca rápida de estilo não é sobrescrita.
       spotsLayerRef.current = L.layerGroup().addTo(map);
       polylinesLayerRef.current = L.layerGroup().addTo(map);
       markersLayerRef.current = L.layerGroup().addTo(map);
 
-      // Invalidação periódica para garantir cobertura total da tela
-      const remedir = () => {
-        if (mounted && mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize({ animate: false });
-        }
-      };
+      resizeObserver = new ResizeObserver(remedir);
+      resizeObserver.observe(mapContainerRef.current);
 
-      const ro = new ResizeObserver(remedir);
-      ro.observe(mapContainerRef.current);
-
-      [50, 150, 350, 800, 1500].forEach((ms) => setTimeout(remedir, ms));
+      for (const ms of [50, 150, 350, 800, 1500]) {
+        timers.push(setTimeout(remedir, ms));
+      }
       window.addEventListener('resize', remedir);
+
+      // Dados e Leaflet chegam de forma assíncrona. Este estado força os efeitos
+      // de spots/trilhas a rodarem mesmo quando a API respondeu antes do mapa.
+      setMapPronto(true);
     });
 
     return () => {
       mounted = false;
+      resizeObserver?.disconnect();
+      timers.forEach(clearTimeout);
+      window.removeEventListener('resize', remedir);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -268,12 +277,12 @@ export const DownwindLiveReplayViewer: React.FC<{
       const tile = L.tileLayer(tileConfig.url, {
         attribution: tileConfig.attribution,
         maxNativeZoom: tileConfig.maxNativeZoom ?? 19,
-        maxZoom: 20,
-        subdomains: tileConfig.subdomains ?? 'abcd',
+        maxZoom: tileConfig.maxZoom ?? 20,
+        subdomains: tileConfig.subdomains,
       }).addTo(map);
       tileLayerRef.current = tile;
     });
-  }, [mapLayer]);
+  }, [mapLayer, mapPronto]);
 
   // 5. Calcula posições e trilhas ativas no tempo atual do Replay
   const estadoNoTempo = useMemo(() => {
@@ -290,7 +299,7 @@ export const DownwindLiveReplayViewer: React.FC<{
     for (const [userId, trail] of Object.entries(dados.trilhas)) {
       if (trail.length === 0) continue;
 
-      const pontosFiltrados = tempoCorte > 0 ? trail.filter((p) => p[3] <= tempoCorte) : trail;
+      const pontosFiltrados = trail.filter((p) => p[3] <= tempoCorte);
       trilhasVisiveis[userId] = pontosFiltrados.map((p) => [p[0], p[1]]);
 
       if (pontosFiltrados.length > 0) {
@@ -319,7 +328,7 @@ export const DownwindLiveReplayViewer: React.FC<{
       if (dados.downwind.origemLat && dados.downwind.origemLng) {
         const iconA = L.divIcon({
           className: 'spot-icon-a',
-          html: `<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500 text-slate-950 font-black text-[11px] shadow-xl border border-cyan-200"><span class="w-2 h-2 rounded-full bg-white animate-ping"></span><span>🚩 ${dados.downwind.origemSpotNome || 'Saída'}</span></div>`,
+          html: `<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500 text-slate-950 font-black text-[11px] shadow-xl border border-cyan-200"><span class="w-2 h-2 rounded-full bg-white animate-ping"></span><span>🚩 ${escaparHtml(dados.downwind.origemSpotNome || 'Saída')}</span></div>`,
           iconSize: [130, 30],
           iconAnchor: [65, 15],
         });
@@ -329,14 +338,14 @@ export const DownwindLiveReplayViewer: React.FC<{
       if (dados.downwind.destinoLat && dados.downwind.destinoLng) {
         const iconB = L.divIcon({
           className: 'spot-icon-b',
-          html: `<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-black text-[11px] shadow-xl border border-emerald-200"><span>🏁 ${dados.downwind.destinoSpotNome || 'Chegada'}</span></div>`,
+          html: `<div class="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-black text-[11px] shadow-xl border border-emerald-200"><span>🏁 ${escaparHtml(dados.downwind.destinoSpotNome || 'Chegada')}</span></div>`,
           iconSize: [130, 30],
           iconAnchor: [65, 15],
         });
         L.marker([dados.downwind.destinoLat, dados.downwind.destinoLng], { icon: iconB }).addTo(group);
       }
     });
-  }, [dados]);
+  }, [dados, mapPronto]);
 
   // 7. Desenha Polilinhas e Marcadores dos Velejadores
   useEffect(() => {
@@ -386,15 +395,21 @@ export const DownwindLiveReplayViewer: React.FC<{
           }).addTo(polyGroup);
         }
 
-        // Posição do participante no tempo atual
-        const pos = estadoNoTempo.posicoesAtuais[p.userId] || p.ultimaPosicao;
+        // No modo ao vivo, a query dedicada `ultimaPosicao` serve de fallback
+        // para quem ainda não tem ponto no lote amostrado. No replay isso seria
+        // viajar no tempo: antes da primeira amostra, o avatar aparecia na
+        // posição atual. Portanto o fallback é exclusivo do modo ao vivo.
+        const pos =
+          estadoNoTempo.posicoesAtuais[p.userId] ||
+          (isLiveMode ? p.ultimaPosicao : null);
         if (pos) {
           bounds.extend([pos.lat, pos.lng]);
 
           const speedVal = pos.speedKnots ?? 0;
+          const nome = escaparHtml(p.name);
           const avatarHtml = p.avatarUrl
-            ? `<img src="${p.avatarUrl}" class="w-full h-full object-cover rounded-full" alt="${p.name}" />`
-            : `<span class="text-[10px] font-black text-white">${p.name.slice(0, 2).toUpperCase()}</span>`;
+            ? `<img src="${escaparHtml(p.avatarUrl)}" class="w-full h-full object-cover rounded-full" alt="${nome}" />`
+            : `<span class="text-[10px] font-black text-white">${iniciaisDoNome(p.name)}</span>`;
 
           const estaFocado = riderFocadoId === p.userId;
 
@@ -415,7 +430,10 @@ export const DownwindLiveReplayViewer: React.FC<{
           });
 
           const marker = L.marker([pos.lat, pos.lng], { icon: riderIcon });
-          marker.on('click', () => {
+          marker.on('click', (event) => {
+            // Não deixar o mesmo clique subir até o mapa e fechar o card recém-aberto.
+            L.DomEvent.stopPropagation(event);
+            setPainelParticipantesAberto(false);
             setRiderFocadoId(p.userId);
             map.flyTo([pos.lat, pos.lng], 15, { animate: true, duration: 0.8 });
           });
@@ -432,7 +450,7 @@ export const DownwindLiveReplayViewer: React.FC<{
         hasInitiallyFramed.current = true;
       }
     });
-  }, [dados, estadoNoTempo]);
+  }, [dados, estadoNoTempo, isLiveMode, mapPronto, riderFocadoId]);
 
   // 8. Loop de Animação do Replay (Play/Pause/Speed)
   useEffect(() => {
@@ -522,51 +540,80 @@ export const DownwindLiveReplayViewer: React.FC<{
 
   const posicaoRiderSelecionado = useMemo(() => {
     if (!riderSelecionado) return null;
-    return estadoNoTempo.posicoesAtuais[riderSelecionado.userId] || riderSelecionado.ultimaPosicao;
-  }, [riderSelecionado, estadoNoTempo]);
+    return (
+      estadoNoTempo.posicoesAtuais[riderSelecionado.userId] ||
+      (isLiveMode ? riderSelecionado.ultimaPosicao : null)
+    );
+  }, [estadoNoTempo, isLiveMode, riderSelecionado]);
+
+  const metricasRiderSelecionado = useMemo(() => {
+    if (!riderSelecionado) {
+      return { distanciaKm: 0, velocidadeMaxNos: 0, ultimoRegistroMs: null };
+    }
+
+    const trilha = dados?.trilhas[riderSelecionado.userId] ?? [];
+    const tempoCorte = isLiveMode ? Number.POSITIVE_INFINITY : replayTimeMs;
+    return metricasDaTrilhaReplay(trilha, tempoCorte);
+  }, [dados, isLiveMode, replayTimeMs, riderSelecionado]);
 
   const infoAtualizacao = useMemo(() => {
-    if (!posicaoRiderSelecionado) return { hora: 'Sem registro', relativo: 'Aguardando primeiro sinal' };
-    const tsMs = (posicaoRiderSelecionado as { tsMs?: number }).tsMs;
-    const regEm = (posicaoRiderSelecionado as { registradoEm?: string }).registradoEm;
-    return formatarUltimaAtualizacao(regEm, tsMs);
-  }, [posicaoRiderSelecionado]);
+    if (!riderSelecionado || !posicaoRiderSelecionado) {
+      return { hora: 'Sem posição', relativo: 'Aguardando primeiro sinal' };
+    }
+
+    return formatarUltimaAtualizacao(
+      riderSelecionado.ultimaPosicao?.registradoEm,
+      metricasRiderSelecionado.ultimoRegistroMs ?? undefined,
+    );
+  }, [metricasRiderSelecionado.ultimoRegistroMs, posicaoRiderSelecionado, riderSelecionado]);
+
+  const distanciaRiderSelecionado = Math.max(
+    metricasRiderSelecionado.distanciaKm,
+    riderSelecionado?.distanciaKm ?? 0,
+  );
+  const velocidadeMaxRiderSelecionado = Math.max(
+    metricasRiderSelecionado.velocidadeMaxNos,
+    riderSelecionado?.velocidadeMaxNos ?? 0,
+  );
 
   return (
-    <div className="relative w-full h-full flex flex-col bg-[#070D18] overflow-hidden select-none">
+    <div
+      className={`dw-live-viewer ${temTrilha ? 'dw-live-has-track' : 'dw-live-no-track'} ${painelParticipantesAberto ? 'dw-live-panel-open' : ''} ${riderSelecionado ? 'dw-live-detail-open' : ''} relative w-full h-full flex flex-col bg-[#070D18] overflow-hidden select-none`}
+    >
       {/* 1. HUD Superior Flutuante */}
       {dados && (
-        <header className="absolute top-3 inset-x-3 z-[1000] pointer-events-none flex items-start justify-between gap-2">
-          <div className="pointer-events-auto bg-[#0B1220]/92 backdrop-blur-md border border-slate-800/80 rounded-2xl p-3 shadow-2xl shadow-black/80 max-w-sm">
-            <div className="flex items-center gap-2 mb-1.5">
+        <header className="dw-live-header pointer-events-none">
+          <div className="dw-live-summary pointer-events-auto min-w-0 bg-[#0B1220]/92 backdrop-blur-md border border-slate-800/80 rounded-2xl p-3 shadow-2xl shadow-black/80">
+            <div className="flex items-center gap-2 mb-1.5 min-w-0">
               <button
                 type="button"
-                onClick={() => (window.location.href = '/')}
-                className="p-1 -ml-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+                onClick={() => router.push('/')}
+                className="dw-live-icon-button -ml-1 rounded-xl text-slate-400 hover:text-white transition-colors"
                 title="Voltar ao app"
+                aria-label="Voltar ao KiteNinja"
               >
                 <ChevronLeft size={18} />
               </button>
 
               {status === 'em_andamento' ? (
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 text-[10px] font-black tracking-wide uppercase">
+                <span className="dw-live-status flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 text-[10px] font-black tracking-wide uppercase">
                   <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
                   AO VIVO
                 </span>
               ) : status === 'encerrado' ? (
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-[10px] font-black tracking-wide uppercase">
+                <span className="dw-live-status flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 text-[10px] font-black tracking-wide uppercase">
                   <Trophy size={11} className="text-amber-400" />
                   REPLAY HISTÓRICO
                 </span>
               ) : (
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black tracking-wide uppercase">
+                <span className="dw-live-status flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black tracking-wide uppercase">
                   <Radio size={11} />
                   AGENDADO
                 </span>
               )}
 
               {temTrilha && (
-                <span className="text-[11px] text-slate-400 font-mono">
+                <span className="dw-live-current-time text-[11px] text-slate-400 font-mono whitespace-nowrap">
                   {formatarHoraReplay(isLiveMode ? maxTsMs : replayTimeMs)}
                 </span>
               )}
@@ -574,18 +621,18 @@ export const DownwindLiveReplayViewer: React.FC<{
 
             <h1 className="text-sm font-black text-white leading-tight truncate">{dados.downwind.nome}</h1>
 
-            <div className="flex items-center gap-2 text-[11px] text-slate-300 mt-1">
-              <span className="font-semibold">{dados.downwind.origemSpotNome || 'Saída'}</span>
+            <div className="dw-live-route flex items-center gap-2 text-[11px] text-slate-300 mt-1 min-w-0">
+              <span className="font-semibold truncate">{dados.downwind.origemSpotNome || 'Saída'}</span>
               <ArrowRight size={12} className="text-cyan-400 shrink-0" />
-              <span className="font-semibold">{dados.downwind.destinoSpotNome || 'Chegada'}</span>
+              <span className="font-semibold truncate">{dados.downwind.destinoSpotNome || 'Chegada'}</span>
             </div>
           </div>
 
-          <div className="pointer-events-auto flex items-center gap-1.5 bg-[#0B1220]/92 backdrop-blur-md border border-slate-800/80 rounded-2xl p-1.5 shadow-2xl shadow-black/80">
+          <div className="dw-live-actions pointer-events-auto flex items-center gap-1 bg-[#0B1220]/92 backdrop-blur-md border border-slate-800/80 rounded-2xl p-1.5 shadow-2xl shadow-black/80">
             <button
               type="button"
               onClick={() => setMapLayer(mapLayer === 'escuro' ? 'satelite' : 'escuro')}
-              className={`p-2 rounded-xl transition-all ${
+              className={`dw-live-icon-button rounded-xl transition-all ${
                 mapLayer === 'satelite' ? 'bg-cyan-500 text-slate-950 font-bold' : 'text-slate-300 hover:text-white'
               }`}
               title="Alternar satélite / noturno"
@@ -597,7 +644,7 @@ export const DownwindLiveReplayViewer: React.FC<{
             <button
               type="button"
               onClick={handleCompartilhar}
-              className="p-2 rounded-xl text-slate-300 hover:text-white active:scale-95 transition-all"
+              className="dw-live-icon-button rounded-xl text-slate-300 hover:text-white active:scale-95 transition-all"
               title="Compartilhar link ao vivo"
               aria-label="Compartilhar link ao vivo"
             >
@@ -607,11 +654,15 @@ export const DownwindLiveReplayViewer: React.FC<{
             {dados.participantes.length > 0 && (
               <button
                 type="button"
-                onClick={() => setPainelParticipantesAberto(!painelParticipantesAberto)}
-                className={`p-2 rounded-xl transition-all flex items-center gap-1 text-xs font-bold ${
+                onClick={() => {
+                  setRiderFocadoId(null);
+                  setPainelParticipantesAberto((aberto) => !aberto);
+                }}
+                className={`dw-live-icon-button rounded-xl transition-all flex items-center justify-center gap-1 text-xs font-bold ${
                   painelParticipantesAberto ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:text-white'
                 }`}
-                aria-label="Ver velejadores"
+                aria-label={painelParticipantesAberto ? 'Fechar velejadores' : 'Ver velejadores'}
+                aria-expanded={painelParticipantesAberto}
               >
                 <Users size={16} />
                 <span>{dados.participantes.length}</span>
@@ -642,7 +693,7 @@ export const DownwindLiveReplayViewer: React.FC<{
           <p className="text-xs text-slate-400 max-w-sm mb-4">{erro || 'Este evento não possui dados de rastreamento.'}</p>
           <button
             type="button"
-            onClick={() => (window.location.href = '/')}
+            onClick={() => router.push('/')}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl transition-all"
           >
             Voltar para o KiteNinja
@@ -652,7 +703,7 @@ export const DownwindLiveReplayViewer: React.FC<{
 
       {/* 3. Painel Lateral de Velejadores (Leaderboard) */}
       {dados && painelParticipantesAberto && dados.participantes.length > 0 && (
-        <aside className="absolute right-3 top-20 bottom-28 z-[1000] w-72 bg-[#0B1220]/95 backdrop-blur-xl border border-slate-800 rounded-3xl p-3 shadow-2xl shadow-black/90 flex flex-col animate-in slide-in-from-right-4 duration-200">
+        <aside className="dw-live-participants bg-[#0B1220]/95 backdrop-blur-xl border border-slate-800 rounded-3xl p-3 shadow-2xl shadow-black/90 flex flex-col animate-in slide-in-from-right-4 duration-200">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800 mb-2">
             <h3 className="text-xs font-black text-white flex items-center gap-1.5">
               <Users size={14} className="text-cyan-400" />
@@ -661,9 +712,10 @@ export const DownwindLiveReplayViewer: React.FC<{
             <button
               type="button"
               onClick={() => setPainelParticipantesAberto(false)}
-              className="p-1 rounded-lg text-slate-400 hover:text-white"
+              className="dw-live-icon-button rounded-xl text-slate-400 hover:text-white"
+              aria-label="Fechar velejadores"
             >
-              ✕
+              <X size={16} />
             </button>
           </div>
 
@@ -671,10 +723,16 @@ export const DownwindLiveReplayViewer: React.FC<{
             {dados.participantes.map((p) => {
               const pos = estadoNoTempo.posicoesAtuais[p.userId] || p.ultimaPosicao;
               const speedVal = pos?.speedKnots ?? 0;
+              const metricas = metricasDaTrilhaReplay(
+                dados.trilhas[p.userId] ?? [],
+                isLiveMode ? Number.POSITIVE_INFINITY : replayTimeMs,
+              );
+              const distanciaKm = Math.max(p.distanciaKm, metricas.distanciaKm);
               return (
                 <div
                   key={p.userId}
                   onClick={() => {
+                    setPainelParticipantesAberto(false);
                     setRiderFocadoId(p.userId);
                     if (pos && mapInstanceRef.current) {
                       mapInstanceRef.current.flyTo([pos.lat, pos.lng], 15);
@@ -703,7 +761,7 @@ export const DownwindLiveReplayViewer: React.FC<{
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
                         <span>{pos ? `${speedVal.toFixed(1)} nós` : '0 nós'}</span>
                         <span>•</span>
-                        <span>{p.distanciaKm ? `${p.distanciaKm.toFixed(1)} km` : '0 km'}</span>
+                        <span>{distanciaKm > 0 ? `${distanciaKm.toFixed(1)} km` : '0 km'}</span>
                       </div>
                     </div>
                   </div>
@@ -714,10 +772,13 @@ export const DownwindLiveReplayViewer: React.FC<{
         </aside>
       )}
 
-      {/* 4. Modal de Detalhes do Velejador ao Clicar no Avatar / Marcador */}
+      {/* 4. Detalhes do Velejador ao Clicar no Avatar / Marcador */}
       {riderSelecionado && (
-        <div className="absolute left-3 bottom-24 z-[1050] w-full max-w-sm sm:max-w-md bg-[#0B1220]/95 backdrop-blur-xl border border-slate-700/80 rounded-3xl p-4 shadow-2xl shadow-black/90 animate-in fade-in slide-in-from-bottom-4 duration-200">
-          <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-800">
+        <section
+          className="dw-live-rider-card bg-[#0B1220]/95 backdrop-blur-xl border border-slate-700/80 rounded-3xl p-4 shadow-2xl shadow-black/90 animate-in fade-in slide-in-from-bottom-4 duration-200"
+          aria-label={`Detalhes de ${riderSelecionado.name}`}
+        >
+          <div className="dw-live-rider-head flex items-start justify-between gap-2 pb-3 border-b border-slate-800">
             <div className="flex items-center gap-3 min-w-0">
               <div
                 className="w-12 h-12 rounded-full border-2 overflow-hidden flex items-center justify-center bg-slate-800 shrink-0 shadow-lg"
@@ -746,7 +807,7 @@ export const DownwindLiveReplayViewer: React.FC<{
             <button
               type="button"
               onClick={() => setRiderFocadoId(null)}
-              className="p-1.5 rounded-full bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
+              className="dw-live-icon-button rounded-xl bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors"
               aria-label="Fechar detalhes"
             >
               <X size={16} />
@@ -754,7 +815,7 @@ export const DownwindLiveReplayViewer: React.FC<{
           </div>
 
           {/* Seção: Última Atualização da Posição */}
-          <div className="mt-3 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+          <div className="dw-live-rider-update mt-3 p-2.5 rounded-2xl bg-slate-900/80 border border-slate-800 flex items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2">
               <Clock size={15} className="text-cyan-400 shrink-0" />
               <div>
@@ -776,7 +837,7 @@ export const DownwindLiveReplayViewer: React.FC<{
                     });
                   }
                 }}
-                className="px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-[11px] flex items-center gap-1 transition-all active:scale-95 shrink-0"
+                className="dw-live-touch px-2.5 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 font-bold text-[11px] flex items-center gap-1 transition-all active:scale-95 shrink-0"
               >
                 <Crosshair size={13} />
                 <span>Centralizar</span>
@@ -785,7 +846,7 @@ export const DownwindLiveReplayViewer: React.FC<{
           </div>
 
           {/* Grid de Métricas de Performance */}
-          <div className="grid grid-cols-3 gap-2 mt-3 text-center">
+          <div className="dw-live-rider-metrics grid grid-cols-3 gap-2 mt-3 text-center">
             <div className="p-2.5 rounded-2xl bg-slate-900/60 border border-slate-800">
               <span className="text-[10px] text-slate-400 font-bold flex items-center justify-center gap-1">
                 <Gauge size={12} className="text-cyan-400" /> Atual
@@ -803,10 +864,10 @@ export const DownwindLiveReplayViewer: React.FC<{
                 <Trophy size={12} className="text-amber-400" /> Máxima
               </span>
               <p className="text-sm font-black text-amber-300 font-mono mt-0.5">
-                {riderSelecionado.velocidadeMaxNos.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
+                {velocidadeMaxRiderSelecionado.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
               </p>
               <p className="text-[9px] text-slate-500 font-mono">
-                {(riderSelecionado.velocidadeMaxNos * 1.852).toFixed(1)} km/h
+                {(velocidadeMaxRiderSelecionado * 1.852).toFixed(1)} km/h
               </p>
             </div>
 
@@ -815,23 +876,25 @@ export const DownwindLiveReplayViewer: React.FC<{
                 <Navigation size={12} className="text-emerald-400" /> Distância
               </span>
               <p className="text-sm font-black text-emerald-300 font-mono mt-0.5">
-                {riderSelecionado.distanciaKm.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">km</span>
+                {distanciaRiderSelecionado.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">km</span>
               </p>
               <p className="text-[9px] text-slate-500 font-mono">
-                {(riderSelecionado.distanciaKm / 1.852).toFixed(1)} NM
+                {(distanciaRiderSelecionado / 1.852).toFixed(1)} NM
               </p>
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* 5. Player de Replay e Linha do Tempo (Barra Inferior) */}
-      {dados && (
+      {/* 5. Player de Replay e Linha do Tempo (Barra Inferior).
+          O card de detalhes é um estado focal: em telas baixas não existe espaço
+          seguro para os dois sem sobreposição. Fechar o card restaura o player. */}
+      {dados && !riderSelecionado && (
         temTrilha ? (
-          <footer className="absolute bottom-3 inset-x-3 z-[1000] pointer-events-none flex justify-center">
-            <div className="pointer-events-auto w-full max-w-xl bg-[#0B1220]/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-3 shadow-2xl shadow-black/90 flex flex-col gap-2 ring-1 ring-white/10">
+          <footer className="dw-live-footer pointer-events-none flex justify-center">
+            <div className="dw-live-player pointer-events-auto w-full max-w-xl bg-[#0B1220]/95 backdrop-blur-xl border border-slate-800/90 rounded-3xl p-3 shadow-2xl shadow-black/90 flex flex-col gap-2 ring-1 ring-white/10">
               {/* Barra de Linha do Tempo (Scrubber) */}
-              <div className="flex items-center gap-3">
+              <div className="dw-live-timeline flex items-center gap-3">
                 <span className="text-[10px] font-mono text-slate-400 w-12 text-left">
                   {formatarHoraReplay(isLiveMode ? maxTsMs : replayTimeMs)}
                 </span>
@@ -856,12 +919,12 @@ export const DownwindLiveReplayViewer: React.FC<{
               </div>
 
               {/* Controles de Reprodução */}
-              <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
+              <div className="dw-live-controls flex items-center justify-between gap-2 pt-1 border-t border-slate-800/80">
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     onClick={handleTogglePlay}
-                    className="w-9 h-9 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
+                    className="dw-live-play w-11 h-11 rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 flex items-center justify-center font-bold shadow-lg shadow-cyan-500/20 active:scale-95 transition-all"
                     aria-label={isPlaying ? 'Pausar replay' : 'Reproduzir replay'}
                   >
                     {isPlaying ? <Pause size={16} /> : <Play size={16} className="translate-x-0.5 fill-current" />}
@@ -874,7 +937,7 @@ export const DownwindLiveReplayViewer: React.FC<{
                       const nextIdx = (speeds.indexOf(replaySpeed) + 1) % speeds.length;
                       setReplaySpeed(speeds[nextIdx]);
                     }}
-                    className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono font-bold active:scale-95 transition-all"
+                    className="dw-live-touch px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 text-xs font-mono font-bold active:scale-95 transition-all"
                     title="Velocidade do replay"
                   >
                     {replaySpeed}x
@@ -885,7 +948,7 @@ export const DownwindLiveReplayViewer: React.FC<{
                 <button
                   type="button"
                   onClick={handleIrParaAoVivo}
-                  className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 ${
+                  className={`dw-live-live-button dw-live-touch px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 ${
                     isLiveMode
                       ? 'bg-rose-500/20 border border-rose-500/40 text-rose-300 shadow-md shadow-rose-500/20'
                       : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
@@ -898,7 +961,7 @@ export const DownwindLiveReplayViewer: React.FC<{
             </div>
           </footer>
         ) : (
-          <footer className="absolute bottom-4 inset-x-4 z-[1000] pointer-events-none flex justify-center">
+          <footer className="dw-live-footer dw-live-waiting pointer-events-none flex justify-center">
             <div className="pointer-events-auto px-4 py-2.5 rounded-2xl bg-[#0B1220]/90 backdrop-blur-md border border-slate-800/80 text-xs text-slate-300 flex items-center gap-2 shadow-xl">
               <Radio size={14} className="text-cyan-400 animate-pulse" />
               <span>Aguardando velejadores entrarem na água para exibir telemetria ao vivo.</span>

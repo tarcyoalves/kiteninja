@@ -83,6 +83,15 @@
 :root {
   --app-bg: #0F172A;
 
+  /*
+   * O Capacitor 8 injeta --safe-area-inset-* no Android porque WebViews < 140
+   * não expõem env(safe-area-inset-*) corretamente. No Safari/PWA essas
+   * variáveis não existem e o fallback env() continua sendo a fonte nativa.
+   */
+  --safe-t: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --safe-r: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --safe-l: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+
   /* Tokens geométricos da pílula do menu (components/BottomNav.tsx).
      Se o JSX mudar, mude AQUI e nada mais precisa ser tocado. */
   --nav-pill-h: 58px;  /* `h-[58px]` da <nav> */
@@ -95,7 +104,7 @@
    * antes uns usavam fallback 0.5rem e outros 0px, e os dois números
    * discordavam justamente no desktop, onde ninguém testava.
    */
-  --safe-b: max(env(safe-area-inset-bottom, 0px), 6px);
+  --safe-b: max(var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)), 6px);
 
   /* Retrocompatibilidade: nome antigo da altura da pílula + folga, ainda citado
      em comentários e commits. Derivado, nunca escrito à mão. */
@@ -128,7 +137,7 @@
 }
 
 .safe-area-pt {
-  padding-top: env(safe-area-inset-top, 0.5rem);
+  padding-top: max(var(--safe-t), 0.5rem);
 }
 
 /* Folga para conteúdo que termina logo acima do menu inferior.
@@ -144,7 +153,7 @@
    iPhone. O fallback de 0.75rem serve para navegador sem notch, onde
    env() resolve 0 e o conteúdo ficaria colado na borda. */
 .overlay-safe-top {
-  padding-top: max(env(safe-area-inset-top, 0px), 0.75rem);
+  padding-top: max(var(--safe-t), 0.75rem);
 }
 
 /* Rodapé de overlay: mesma ideia, mas também livra a barra de gestos.
@@ -254,6 +263,230 @@ select {
 .leaflet-container .leaflet-top,
 .leaflet-container .leaflet-bottom { z-index: var(--z-map-ui); }
 .leaflet-container .leaflet-popup { z-index: var(--z-map-ui); }
+
+/* ===========================================================================
+   MAPA AO VIVO / REPLAY — zonas seguras e responsivas
+
+   Esta rota é edge-to-edge no Android. Header, painéis e player derivam dos
+   mesmos insets; nenhum deles usa 100vh nem um `bottom-*` independente.
+   =========================================================================== */
+.dw-live-viewer {
+  --dw-inline-start: calc(var(--safe-l) + 0.75rem);
+  --dw-inline-end: calc(var(--safe-r) + 0.75rem);
+  --dw-header-reserve: 7.625rem;
+  --dw-footer-reserve: calc(var(--safe-b) + 7rem);
+}
+
+.dw-live-viewer.dw-live-no-track {
+  --dw-footer-reserve: calc(var(--safe-b) + 4.875rem);
+}
+
+/* Abrir detalhes substitui o player, em vez de empilhar dois cards na mesma
+   faixa inferior. O botão fechar devolve o replay imediatamente. */
+.dw-live-viewer.dw-live-detail-open {
+  --dw-footer-reserve: calc(var(--safe-b) + 0.75rem);
+}
+
+.dw-live-header {
+  position: absolute;
+  z-index: 1000;
+  top: calc(var(--safe-t) + 0.75rem);
+  left: var(--dw-inline-start);
+  right: var(--dw-inline-end);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.dw-live-summary {
+  flex: 1 1 auto;
+  max-width: 24rem;
+}
+
+.dw-live-actions {
+  flex: 0 0 auto;
+}
+
+.dw-live-icon-button,
+.dw-live-touch {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dw-live-footer {
+  position: absolute;
+  z-index: 1000;
+  left: var(--dw-inline-start);
+  right: var(--dw-inline-end);
+  bottom: calc(var(--safe-b) + 0.375rem);
+}
+
+.dw-live-participants,
+.dw-live-rider-card {
+  position: absolute;
+  z-index: 1000;
+  top: calc(var(--safe-t) + var(--dw-header-reserve));
+  bottom: var(--dw-footer-reserve);
+  max-height: calc(100% - var(--safe-t) - var(--dw-header-reserve) - var(--dw-footer-reserve));
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.dw-live-participants {
+  right: var(--dw-inline-end);
+  width: min(18rem, calc(100% - var(--dw-inline-start) - var(--dw-inline-end)));
+}
+
+.dw-live-rider-card {
+  z-index: 1050;
+  left: var(--dw-inline-start);
+  width: min(28rem, calc(100% - var(--dw-inline-start) - var(--dw-inline-end)));
+  top: auto;
+}
+
+/* O zoom padrão nasce em top:0/left:0, exatamente atrás do cabeçalho. */
+.dw-live-viewer .leaflet-top.leaflet-left {
+  top: calc(var(--safe-t) + var(--dw-header-reserve));
+  left: calc(var(--safe-l) + 0.25rem);
+}
+
+/* Card e painel são estados focais: esconder o zoom evita uma terceira camada
+   interativa competindo pela mesma área, sem desmontar o controle Leaflet. */
+.dw-live-panel-open .leaflet-control-zoom,
+.dw-live-detail-open .leaflet-control-zoom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media (max-width: 480px) {
+  .dw-live-viewer {
+    --dw-header-reserve: 10.25rem;
+  }
+
+  .dw-live-header {
+    flex-direction: column;
+  }
+
+  .dw-live-summary {
+    width: 100%;
+    max-width: none;
+    padding: 0.5rem;
+  }
+
+  .dw-live-actions {
+    align-self: flex-end;
+  }
+
+  .dw-live-route,
+  .dw-live-current-time {
+    display: none;
+  }
+
+  .dw-live-rider-card {
+    right: var(--dw-inline-end);
+    width: auto;
+    padding: 0.75rem;
+    border-radius: 1.25rem;
+  }
+
+  .dw-live-rider-head {
+    padding-bottom: 0.5rem;
+  }
+
+  .dw-live-rider-head > :first-child {
+    gap: 0.5rem;
+  }
+
+  .dw-live-rider-head > :first-child > :first-child {
+    width: 2.5rem;
+    height: 2.5rem;
+  }
+
+  .dw-live-rider-update {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .dw-live-rider-metrics {
+    margin-top: 0.5rem;
+    gap: 0.375rem;
+  }
+
+  .dw-live-rider-metrics > div {
+    padding: 0.5rem 0.25rem;
+    border-radius: 0.875rem;
+  }
+}
+
+/* Em paisagem a altura é o recurso escasso: cabeçalho e player viram linhas
+   compactas; painéis continuam no intervalo medido entre ambos e rolam dentro. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .dw-live-viewer {
+    --dw-header-reserve: 4.5rem;
+    --dw-footer-reserve: calc(var(--safe-b) + 4.75rem);
+  }
+
+  .dw-live-viewer.dw-live-no-track {
+    --dw-footer-reserve: calc(var(--safe-b) + 3.75rem);
+  }
+
+  .dw-live-header {
+    top: calc(var(--safe-t) + 0.375rem);
+    flex-direction: row;
+  }
+
+  .dw-live-summary {
+    width: auto;
+    max-width: none;
+    padding: 0.375rem 0.5rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dw-live-summary > :first-child {
+    margin-bottom: 0;
+  }
+
+  .dw-live-summary .dw-live-route,
+  .dw-live-current-time {
+    display: none;
+  }
+
+  .dw-live-actions {
+    align-self: auto;
+  }
+
+  .dw-live-footer {
+    bottom: calc(var(--safe-b) + 0.25rem);
+  }
+
+  .dw-live-player {
+    max-width: 46rem;
+    padding: 0.5rem;
+    display: grid;
+    grid-template-columns: minmax(11rem, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .dw-live-controls {
+    padding-top: 0;
+    padding-left: 0.5rem;
+    border-top: 0;
+    border-left: 1px solid rgb(30 41 59 / 0.8);
+  }
+
+  .dw-live-rider-card {
+    width: min(28rem, calc(100% - var(--dw-inline-start) - var(--dw-inline-end)));
+    padding: 0.75rem;
+  }
+}
 
 /* ALTURA DO APP — decidida uma vez, no shell.
 
