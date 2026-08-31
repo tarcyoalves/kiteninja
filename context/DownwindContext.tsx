@@ -13,6 +13,7 @@ import {
   abrirConfiguracoesBateria,
   type TrackingStatus,
 } from '../lib/downwindTracker';
+import { useAoMudar } from '../lib/useAoMudar';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -291,25 +292,62 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return () => clearInterval(interval);
   }, [downwindAtivo?.id, downwindAtivo?.status]);
 
+  /*
+   * Decisão de rastreio derivada no RENDER, não recalculada dentro do efeito.
+   * Assim ela também alimenta o texto de diagnóstico sem precisar virar
+   * estado — ver `motivoNaoLigar` logo abaixo.
+   */
+  const idDw = downwindAtivo?.id ?? null;
+  const papelDw = downwindAtivo?.minhaParticipacao.papel ?? null;
+  const estadoDw = downwindAtivo?.minhaParticipacao.estado ?? null;
+  const statusDw = downwindAtivo?.status ?? null;
+
+  const deveRastrear = decidirTracking({
+    isAuthenticated,
+    papel: papelDw,
+    downwindStatus: statusDw,
+    participanteEstado: estadoDw,
+    appNativo: estaNoAppNativo(),
+  });
+
+  /**
+   * Por que o rastreio nativo NÃO deve ligar agora. Texto derivado, não
+   * estado: depende só de valores que já estão no render, então guardá-lo em
+   * `useState` significaria mantê-lo sincronizado à mão — e era isso que
+   * obrigava a chamar `setDiagnosticoTracking` dentro do efeito.
+   */
+  const motivoNaoLigar = (() => {
+    if (!estaNoAppNativo()) return 'Rodando como PWA/navegador — sem serviço nativo.';
+    if (deveRastrear) return null;
+    const motivo = !isAuthenticated
+      ? 'sem sessão iniciada'
+      : statusDw !== 'em_andamento'
+        ? `downwind está "${statusDw ?? 'nenhum'}", não "em_andamento"`
+        : papelDw !== 'velejador'
+          ? `seu papel é "${papelDw}", e só velejador rastreia`
+          : `sua participação está "${estadoDw}", precisa ser "confirmado" ou "navegando"`;
+    return `Rastreio nativo não deve ligar agora: ${motivo}.`;
+  })();
+
+  // "Pedindo token…" é ajuste síncrono e vai no render; a chamada ao plugin
+  // fica no efeito. Ver lib/useAoMudar.ts.
+  useAoMudar(deveRastrear && idDw !== null, (antes) => {
+    if (!antes && deveRastrear && idDw) {
+      setDiagnosticoTracking('Pedindo token de rastreio ao servidor…');
+    } else if (!deveRastrear) {
+      // Limpa o diagnóstico da tentativa anterior; o texto de "não deve
+      // ligar" passa a vir de `motivoNaoLigar`, derivado.
+      setDiagnosticoTracking(null);
+    }
+  });
+
   useEffect(() => {
     if (!estaNoAppNativo()) return;
 
-    const downwindId = downwindAtivo?.id ?? null;
-    const papel = downwindAtivo?.minhaParticipacao.papel ?? null;
-    const estadoParticipante = downwindAtivo?.minhaParticipacao.estado ?? null;
-    const statusDw = downwindAtivo?.status ?? null;
-
-    const deveRastrear = decidirTracking({
-      isAuthenticated,
-      papel,
-      downwindStatus: statusDw,
-      participanteEstado: estadoParticipante,
-      appNativo: true,
-    });
+    const downwindId = idDw;
 
     if (deveRastrear && downwindId && !trackingLigadoRef.current) {
       trackingLigadoRef.current = true;
-      setDiagnosticoTracking('Pedindo token de rastreio ao servidor…');
       iniciarTrackingNativo({
         downwindId,
         baseUrl: window.location.origin,
@@ -335,35 +373,20 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } else if (!deveRastrear && trackingLigadoRef.current) {
       trackingLigadoRef.current = false;
       pararTrackingNativo();
-      setStatusTrackingNativo('inativo');
-      setDiagnosticoTracking('Rastreio nativo encerrado (travessia terminou ou você saiu).');
       obterStatusTrackingNativo().then((st) => {
+        setStatusTrackingNativo('inativo');
+        setDiagnosticoTracking('Rastreio nativo encerrado (travessia terminou ou você saiu).');
         if (st) setTrackingTelemetry(st);
       });
-    } else if (!deveRastrear) {
-      const motivo = !isAuthenticated
-        ? 'sem sessão iniciada'
-        : statusDw !== 'em_andamento'
-          ? `downwind está "${statusDw ?? 'nenhum'}", não "em_andamento"`
-          : papel !== 'velejador'
-            ? `seu papel é "${papel}", e só velejador rastreia`
-            : `sua participação está "${estadoParticipante}", precisa ser "confirmado" ou "navegando"`;
-      setDiagnosticoTracking(`Rastreio nativo não deve ligar agora: ${motivo}.`);
     }
-  }, [
-    isAuthenticated,
-    downwindAtivo?.id,
-    downwindAtivo?.status,
-    downwindAtivo?.minhaParticipacao.papel,
-    downwindAtivo?.minhaParticipacao.estado,
-  ]);
+  }, [deveRastrear, idDw]);
 
   const recarregar = useCallback(async () => {
-    if (!isAuthenticated) {
-      setDownwindAtivo(null);
-      setCarregando(false);
-      return;
-    }
+    // Sem sessão não há o que buscar. O RESET de estado desse caso não mora
+    // mais aqui: virou ajuste no render (`useAoMudar` de `isAuthenticated`),
+    // porque como setState síncrono dentro desta função ele fazia qualquer
+    // efeito que a chamasse cair na cascata de renders. Ver lib/useAoMudar.ts.
+    if (!isAuthenticated) return;
     const minhaVersao = ++versaoRef.current;
     try {
       const data = await api<{ downwind: DownwindAtivo | null }>('/api/downwind/ativo');
@@ -384,9 +407,23 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // demora visivelmente. Sem isto, reabrir o PWA na praia mostraria as abas
   // normais por 1-3s antes do mapa aparecer, e o velejador acharia que perdeu
   // o downwind. O cache só pinta pixel — o servidor confirma ou desfaz.
-  useEffect(() => {
-    const dica = lerDica();
-    if (dica && isAuthenticated) {
+  // A pintura otimista pelo cache é ajuste SÍNCRONO (leitura de localStorage)
+  // e vai no render; `recarregar()` é I/O e continua no efeito abaixo. Em
+  // efeito, a tela chegava a mostrar as abas normais por um quadro antes de
+  // aplicar a dica — exatamente o pisca que este cache existe para evitar.
+  // Ver lib/useAoMudar.ts.
+  useAoMudar(
+    isAuthenticated,
+    () => {
+      if (!isAuthenticated) {
+        // Deslogou: limpa na hora. Em efeito, o mapa ao vivo da conta
+        // anterior ficaria visível por um quadro depois do logout.
+        setDownwindAtivo(null);
+        setCarregando(false);
+        return;
+      }
+      const dica = lerDica();
+      if (!dica) return;
       setDownwindAtivo((atual) =>
         atual ??
         ({
@@ -405,7 +442,24 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           },
         } satisfies DownwindAtivo)
       );
-    }
+    },
+    { naMontagem: true }
+  );
+
+  useEffect(() => {
+    /*
+     * FALSO POSITIVO da regra, verificado à mão: `recarregar` é `async` e todo
+     * `setState` dela acontece DEPOIS do primeiro `await` — ou seja, nunca
+     * síncrono dentro do corpo deste efeito. O React Compiler não enxerga
+     * através da fronteira `async` e assume o pior.
+     *
+     * O QUE TORNARIA ISTO UM ERRO DE VERDADE: alguém acrescentar um `setState`
+     * em `recarregar` ANTES do primeiro `await`. Se este comentário sobreviver a uma
+     * mudança dessas, ele passa a mentir — confira a função antes de confiar.
+     * (Foi exatamente esse o caso de `recarregar`, que tinha um reset síncrono
+     * no ramo sem sessão e foi movido para o render.)
+     */
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver acima
     recarregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -547,7 +601,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         statusTrackingNativo,
         trackingTelemetry,
         abrirConfiguracoesBateria,
-        diagnosticoTracking,
+        diagnosticoTracking: diagnosticoTracking ?? motivoNaoLigar,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,

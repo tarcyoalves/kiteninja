@@ -85,6 +85,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    /*
+     * FALSO POSITIVO, verificado à mão: `refresh` é `async` e todo `setState`
+     * dela acontece depois do `await fetch('/api/auth/me')`. O React Compiler
+     * não enxerga através da fronteira `async` e assume o pior.
+     *
+     * O QUE TORNARIA ISTO UM ERRO DE VERDADE: um `setState` acrescentado em
+     * `refresh` ANTES do primeiro `await` — um `setIsLoading(true)` no topo,
+     * por exemplo. Se isso acontecer, este comentário passa a mentir.
+     */
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver acima
     refresh();
   }, [refresh]);
 

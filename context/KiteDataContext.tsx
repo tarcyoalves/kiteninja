@@ -7,6 +7,7 @@ import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
 import { usePushNotifications } from '../lib/usePushNotifications';
 import { PrefillLogbook } from '../lib/trilhaSessao';
+import { useAoMudar } from '../lib/useAoMudar';
 
 /**
  * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
@@ -428,13 +429,15 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLatestIncomingDm(null);
   }, []);
 
-  // Quando o usuário entra na aba chat, zera os dois contadores de não lidas
-  useEffect(() => {
+  // Quando o usuário entra na aba chat, zera os dois contadores de não lidas.
+  // No render, não em efeito: com useEffect o badge ainda pintava um quadro
+  // com a contagem antiga depois de a aba já ter trocado. Ver lib/useAoMudar.ts.
+  useAoMudar(activeTab, () => {
     if (activeTab === 'chat') {
       clearUnreadChat();
       clearDmUnread();
     }
-  }, [activeTab, clearUnreadChat, clearDmUnread]);
+  });
 
   /*
    * Espelha o modo praia no <html> para que `--app-bg` (globals.css) valha para
@@ -749,11 +752,29 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [loadSpots]);
 
+  // Esvaziar o logbook ao deslogar é ajuste síncrono e vai no render — sem
+  // isto a lista da conta anterior ficava visível por um quadro depois do
+  // logout, que é justamente o que não pode acontecer. As cargas são I/O e
+  // seguem no efeito. Ver lib/useAoMudar.ts.
+  useAoMudar(isAuthenticated, () => {
+    if (!isAuthenticated) setSessions([]);
+  });
+
   useEffect(() => {
-    if (!isAuthenticated) {
-      setSessions([]);
-      return;
-    }
+    if (!isAuthenticated) return;
+    /*
+     * FALSO POSITIVO da regra, verificado à mão: `loadFeedAndEvents/loadSessions` é `async` e todo
+     * `setState` dela acontece DEPOIS do primeiro `await` — ou seja, nunca
+     * síncrono dentro do corpo deste efeito. O React Compiler não enxerga
+     * através da fronteira `async` e assume o pior.
+     *
+     * O QUE TORNARIA ISTO UM ERRO DE VERDADE: alguém acrescentar um `setState`
+     * em `loadFeedAndEvents/loadSessions` ANTES do primeiro `await`. Se este comentário sobreviver a uma
+     * mudança dessas, ele passa a mentir — confira a função antes de confiar.
+     * (Foi exatamente esse o caso de `recarregar`, que tinha um reset síncrono
+     * no ramo sem sessão e foi movido para o render.)
+     */
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver acima
     loadFeedAndEvents();
     loadSessions();
   }, [isAuthenticated, loadFeedAndEvents, loadSessions]);
@@ -1150,6 +1171,19 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Polling regular de SOS a cada 12 segundos quando logado
   useEffect(() => {
     if (!isAuthenticated) return;
+    /*
+     * FALSO POSITIVO da regra, verificado à mão: `fetchActiveSos` é `async` e todo
+     * `setState` dela acontece DEPOIS do primeiro `await` — ou seja, nunca
+     * síncrono dentro do corpo deste efeito. O React Compiler não enxerga
+     * através da fronteira `async` e assume o pior.
+     *
+     * O QUE TORNARIA ISTO UM ERRO DE VERDADE: alguém acrescentar um `setState`
+     * em `fetchActiveSos` ANTES do primeiro `await`. Se este comentário sobreviver a uma
+     * mudança dessas, ele passa a mentir — confira a função antes de confiar.
+     * (Foi exatamente esse o caso de `recarregar`, que tinha um reset síncrono
+     * no ramo sem sessão e foi movido para o render.)
+     */
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver acima
     fetchActiveSos();
     const interval = setInterval(fetchActiveSos, 12000);
     return () => clearInterval(interval);
