@@ -37,26 +37,62 @@ export async function GET(request: Request, ctx: Params) {
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
 
-    // 1. Busca dados do downwind e spots de origem/destino
+    // 1. Busca dados do downwind (por ID do downwind ou pelo ID do evento vinculado)
     const dwRows = await sql`
       SELECT 
         d.id, d.nome, d.status, d.visibilidade, d.iniciado_em, d.encerrado_em,
         s_origem.name AS origem_spot_nome, s_origem.lat AS origem_lat, s_origem.lng AS origem_lng,
         s_destino.name AS destino_spot_nome, s_destino.lat AS destino_lat, s_destino.lng AS destino_lng
       FROM downwinds d
-      -- spot_saida/spot_chegada, NAO origem_spot_id/destino_spot_id: esses
-      -- nomes nunca existiram na tabela (ver lib/schema.sql).
       LEFT JOIN spots s_origem ON s_origem.id = d.spot_saida
       LEFT JOIN spots s_destino ON s_destino.id = d.spot_chegada
-      WHERE d.id = ${id}
+      WHERE d.id = ${id} OR d.event_id = ${id}
       LIMIT 1
     `;
 
     if (dwRows.length === 0) {
+      // Fallback para evento cadastrado que ainda não tem downwind em andamento
+      const evRows = await sql`
+        SELECT 
+          e.id, e.title AS nome, e.spot_name, e.event_date,
+          s.name AS origem_spot_nome, s.lat AS origem_lat, s.lng AS origem_lng
+        FROM events e
+        LEFT JOIN spots s ON s.name = e.spot_name
+        WHERE e.id = ${id}
+        LIMIT 1
+      `;
+
+      if (evRows.length > 0) {
+        const ev = evRows[0] as Record<string, unknown>;
+        return {
+          downwind: {
+            id: String(ev.id),
+            nome: String(ev.nome || 'Evento'),
+            status: 'planejado',
+            visibilidade: 'comunidade',
+            iniciadoEm: null,
+            encerradoEm: null,
+            origemSpotNome: ev.origem_spot_nome ? String(ev.origem_spot_nome) : (ev.spot_name ? String(ev.spot_name) : null),
+            destinoSpotNome: null,
+            origemLat: ev.origem_lat !== null ? Number(ev.origem_lat) : null,
+            origemLng: ev.origem_lng !== null ? Number(ev.origem_lng) : null,
+            destinoLat: null,
+            destinoLng: null,
+            distanciaEstimadaKm: null,
+          },
+          participantes: [],
+          trilhas: {},
+          cursor: null,
+          incremental: false,
+          parcial: false,
+        };
+      }
+
       throw new HttpError(404, 'Downwind não encontrado.');
     }
 
     const dw = dwRows[0] as Record<string, unknown>;
+    const dwId = String(dw.id);
 
     // Distância da travessia em linha reta entre os spots, quando os dois
     // existem — ver o comentário no campo `distanciaEstimadaKm` da resposta.
@@ -89,11 +125,11 @@ export async function GET(request: Request, ctx: Params) {
       if (!user) throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
 
       // Convidado do link de 12h só enxerga o downwind ao qual foi escopado.
-      if (user.guestDownwindId && user.guestDownwindId !== id) {
+      if (user.guestDownwindId && user.guestDownwindId !== dwId) {
         throw new HttpError(404, MSG_DOWNWIND_NAO_ENCONTRADO);
       }
 
-      const { participacao } = await buscarContexto(id, user.id);
+      const { participacao } = await buscarContexto(dwId, user.id);
       const permitido = podeVerReplayAoVivo({
         visibilidade,
         participacao,
@@ -109,22 +145,12 @@ export async function GET(request: Request, ctx: Params) {
         u.name AS user_name, u.avatar_url AS user_avatar_url
       FROM downwind_participantes dp
       JOIN users u ON u.id = dp.user_id
-      WHERE dp.downwind_id = ${id}
+      WHERE dp.downwind_id = ${dwId}
       ORDER BY dp.entrou_em ASC
     `;
 
     /*
      * 3. Posições — carga inicial amostrada OU delta incremental.
-     *
-     * Antes esta rota devolvia TODAS as posições da travessia a cada chamada,
-     * e o viewer faz poll de 5 em 5 segundos. Numa travessia de 3h com 10
-     * velejadores reportando a cada 45s isso dá ~2.400 linhas por resposta,
-     * 720 vezes por hora POR ESPECTADOR — e o payload cresce ao longo da
-     * travessia, ficando maior justamente no fim, quando mais gente assiste.
-     *
-     * A rota irmã (`/posicoes`) já resolvia isso com cursor `desde` e teto; a
-     * tela nova reimplementou o problema sem reaproveitar a solução ao lado.
-     * Agora as duas usam o mesmo lib/trilhaDownwind.ts.
      */
     const url = new URL(request.url);
     const desdeRaw = url.searchParams.get('desde');
@@ -143,7 +169,7 @@ export async function GET(request: Request, ctx: Params) {
             EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
             registrado_em
           FROM downwind_posicoes
-          WHERE downwind_id = ${id} AND registrado_em > ${desde.toISOString()}
+          WHERE downwind_id = ${dwId} AND registrado_em > ${desde.toISOString()}
           ORDER BY user_id, registrado_em ASC
           LIMIT ${tetoDelta}
         `
@@ -153,7 +179,7 @@ export async function GET(request: Request, ctx: Params) {
             EXTRACT(EPOCH FROM registrado_em) * 1000 AS ts_ms,
             registrado_em
           FROM downwind_posicoes
-          WHERE downwind_id = ${id}
+          WHERE downwind_id = ${dwId}
           ORDER BY user_id, registrado_em ASC
         `;
 
@@ -164,21 +190,6 @@ export async function GET(request: Request, ctx: Params) {
     /*
      * Última posição por participante vem de query PRÓPRIA, não do lote de
      * posições acima.
-     *
-     * Isto é obrigatório desde que a rota virou incremental: num delta só
-     * aparecem os participantes que reportaram naquele intervalo, então
-     * derivar a última posição do lote deixaria todo mundo que ficou quieto
-     * com `ultimaPosicao: null` — e o marcador dessas pessoas SUMIRIA do mapa
-     * a cada poll, justamente de quem parou de reportar, que é quem mais
-     * importa vigiar numa travessia.
-     *
-     * LEFT JOIN LATERAL devolve por participante (ou nenhuma posição, com
-     * nulos) — mesmo padrão de /api/downwind/[id]/posicoes.
-     *
-     * São os DOIS pontos mais recentes, não um: velocidade e rumo do marcador
-     * são DERIVADOS de duas posições consecutivas (ver lib/cinematicaTrilha.ts).
-     * Com um ponto só, o marcador de quem não reportou dentro do delta ficaria
-     * sem velocidade nenhuma — e é justamente quem mais importa vigiar.
      */
     const ultimasRows = await sql`
       SELECT dp.user_id, p.lat, p.lng, p.registrado_em,
@@ -191,7 +202,7 @@ export async function GET(request: Request, ctx: Params) {
         WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
         ORDER BY registrado_em DESC LIMIT 2
       ) p ON TRUE
-      WHERE dp.downwind_id = ${id}
+      WHERE dp.downwind_id = ${dwId}
       ORDER BY dp.user_id, p.ordem DESC
     `;
 

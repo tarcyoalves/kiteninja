@@ -499,6 +499,9 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
             url={MAP_TILES[mapStyle].url}
             noWrap={false}
             keepBuffer={6}
+            maxNativeZoom={MAP_TILES[mapStyle].maxNativeZoom ?? 19}
+            maxZoom={20}
+            subdomains={MAP_TILES[mapStyle].subdomains ?? 'abcd'}
           />
 
           <MapController center={mapCenter} zoom={mapZoom} />

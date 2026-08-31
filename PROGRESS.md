@@ -4,6 +4,19 @@ Registro vivo do que já foi feito, o que falta e as decisões que importam para
 quem continuar este trabalho (humano ou agente). Atualize esta lista a cada
 mudança de estado relevante — não deixe o progresso só no chat.
 
+## Atualização — 31/08/2026 (Correção de Carto key no zoom e Visualizador de Eventos / Downwind Ao Vivo)
+
+1. **Eliminação do Erro de Chave do Carto.com ao dar Zoom (`lib/mapTiles.ts`, `components/LeafletMap.tsx`, `components/DownwindMapa.tsx`, `components/downwind/DownwindLiveReplayViewer.tsx`):**
+   - Configurados `maxNativeZoom: 19`, `maxZoom: 20` e `subdomains: 'abcd'` em todas as camadas de tiles do Carto e Esri.
+   - Removido o parâmetro literal `{r}` das URLs dos tiles.
+   - Agora, ao aproximar o zoom além do nível nativo do mapa, o Leaflet reescala as texturas vetorialmente sem realizar requisições fora do limite gratuito do Carto, eliminando completamente a imagem de erro solicitando "API key carto.com".
+
+2. **Correção Completa da Tela de Eventos e Downwind Ao Vivo / Replay (`DownwindLiveReplayViewer.tsx` e `/api/downwind/[id]/live`):**
+   - **Fim da Tela Preta:** Importado `leaflet/dist/leaflet.css` e adicionado `invalidateSize()` pós-montagem com background container `#070D18`, garantindo que o mapa nunca fique preto ou com dimensões colapsadas.
+   - **Renderização de Rastreamento e Telemetria:** Implementados grupos de camadas dedicados (`spotsLayer`, `polylinesLayer`, `markersLayer`), desenhando as trilhas em cores vibrantes, avatares de velejadores com velocidade instantânea em nós (kt), e marcadores de saída (🚩) e chegada (🏁).
+   - **Suporte a Eventos e Downwinds Agendados:** A rota `/api/downwind/[id]/live` agora suporta tanto IDs de downwind quanto IDs de eventos (`events`), exibindo estado agendado elegante e spots no mapa mesmo antes do primeiro velejador entrar na água.
+   - **Botão de Retorno Direto:** Adicionado botão de voltar (`ChevronLeft`) para retornar ao KiteNinja a qualquer momento.
+
 ## Atualização — 26/08/2026 (auto-update PWA/Web, remoção de botão duplicado e menu unificado)
 
 1. **Remoção do Botão Flutuante Duplicado no Mapa (`views/MapView.tsx`):**

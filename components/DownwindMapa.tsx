@@ -276,7 +276,13 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
           rastro e os pinos de participantes por cima.
           `attributionControl` sem `false`: CartoDB exige atribuição visível,
           e o controle padrão do Leaflet a desenha discretamente no canto. */}
-      <TileLayer url={MAP_TILES.oceanico.url} attribution={MAP_TILES.oceanico.attribution} />
+      <TileLayer
+        url={MAP_TILES.oceanico.url}
+        attribution={MAP_TILES.oceanico.attribution}
+        maxNativeZoom={MAP_TILES.oceanico.maxNativeZoom ?? 19}
+        maxZoom={20}
+        subdomains={MAP_TILES.oceanico.subdomains ?? 'abcd'}
+      />
       <MapaController centro={centroInicial} ehPosicaoPropria={minhaPosicaoPropria !== null} />
 
       {saida && (

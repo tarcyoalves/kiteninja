@@ -23,6 +23,9 @@ export interface MapTileConfig {
   attribution: string;
   /** Rótulo curto para UI (botão de alternar estilo, título). */
   rotulo: string;
+  maxNativeZoom?: number;
+  maxZoom?: number;
+  subdomains?: string;
 }
 
 const ATRIBUICAO_CARTO =
@@ -33,18 +36,26 @@ const ATRIBUICAO_ESRI =
 
 export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
   oceanico: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
     attribution: ATRIBUICAO_CARTO,
     rotulo: 'Oceânico Claro',
+    maxNativeZoom: 19,
+    maxZoom: 20,
+    subdomains: 'abcd',
   },
   satelite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: ATRIBUICAO_ESRI,
     rotulo: 'Satélite',
+    maxNativeZoom: 18,
+    maxZoom: 20,
   },
   escuro: {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',
     attribution: ATRIBUICAO_CARTO,
     rotulo: 'Noturno',
+    maxNativeZoom: 19,
+    maxZoom: 20,
+    subdomains: 'abcd',
   },
 };
