@@ -104,12 +104,24 @@ git checkout <branch-designada> && git merge --ff-only main && git push
 git checkout main
 ```
 
-⚠️ **A branch default do repositório no GitHub é `master`**, parada muito
-atrás e sem os workflows. A Vercel faz deploy de `main` (verificado por
-sondagem), mas **workflows com `schedule:` só disparam na branch default** —
-é por isso que `cron-varredura.yml` nunca rodou, e a escalada de SOS e o
-alerta de silêncio de downwind estão inertes. Trocar a default para `main` é
-decisão do dono.
+`master` continua sendo a branch **default** do repositório no GitHub, e por
+isso ela é mantida **idêntica a `main`**. Em 31/08/2026 ela estava 147 commits
+atrás e **sem nenhum workflow**, o que tinha uma consequência silenciosa:
+**workflows com `schedule:` só disparam na branch default**, então
+`cron-varredura.yml` nunca havia rodado — a escalada de SOS (5→15→50 km) e o
+alerta de silêncio de downwind estavam inertes desde sempre.
+
+Ao mexer nos workflows, lembre que **é `master` que o agendador lê**. Depois
+de empurrar para `main`, espelhe:
+
+```bash
+git push origin origin/main:refs/heads/master
+```
+
+O estado antigo de `master` está preservado na branch
+`backup/master-antes-2026-08-31` (`fbe8476`). O único commit que ela tinha e
+`main` não (o `ON CONFLICT` de `sos_responders`) já estava incorporado em
+`main` por outro caminho — foi conferido antes da troca.
 
 ## 7. O que está aberto e depende do dono
 

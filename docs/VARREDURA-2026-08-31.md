@@ -320,3 +320,38 @@ em Build ou Android teria passado despercebida — não haveria mudança de cor
 para reparar. E o comentário desatualizado no workflow ("pulamos a migração")
 é o mesmo tipo de armadilha da "exceção documentada" citada acima: um lugar
 onde alguém já explicou, e por isso ninguém olha de novo.
+
+
+---
+
+## Adendo 2 — a varredura de 5 em 5 minutos nunca havia rodado
+
+Descoberto ao conferir os segredos: o GitHub listava **um** workflow
+registrado (`CI / PR`). O `cron-varredura.yml`, que chama a escalada de SOS e
+o alerta de silêncio de downwind a cada 5 minutos, **não estava registrado**.
+
+A causa é uma regra do GitHub Actions que não perdoa:
+
+> **Workflows com `schedule:` só disparam na branch default do repositório.**
+
+A branch default era `master`, 147 commits atrás de `main` e **sem nenhum
+arquivo em `.github/workflows/`**. O workflow existia só em `main`, então para
+o agendador ele não existia.
+
+Consequência: desde sempre, **a escalada de SOS nunca rodou**. Um pedido de
+socorro sem ninguém por perto ficava parado no raio inicial de 5 km, e o
+alerta de silêncio de downwind (limiar de 5 minutos) nunca disparava. Sobrava
+apenas o cron nativo da Vercel — 1x por dia, inútil para emergência.
+
+Isto é da mesma família dos outros achados desta varredura: **nada estava
+quebrado.** O workflow estava correto, o segredo estava configurado, o código
+das rotas funcionava. O que faltava era o arquivo estar na branch que o
+agendador lê. Nenhum teste, lint ou build faz essa pergunta.
+
+**Resolvido em 31/08/2026** apontando `master` para o mesmo commit de `main`,
+com o estado anterior preservado em `backup/master-antes-2026-08-31`. O
+GitHub registrou o workflow no mesmo minuto.
+
+**Para quem vier depois:** `master` é a branch default e precisa continuar
+espelhando `main`, senão o cron volta a ficar inerte — sem nenhum sinal de
+erro.
