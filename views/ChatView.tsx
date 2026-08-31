@@ -23,6 +23,7 @@ import {
   Users,
   Wind,
 } from 'lucide-react';
+import { useAoMudar } from '@/lib/useAoMudar';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -184,10 +185,17 @@ export const ChatView: React.FC = () => {
     if (noFim) setUnread(0);
   }, []);
 
-  /** Carga inicial da sala */
-  const loadRoom = useCallback(async (target: string) => {
-    setLoading(true);
-    setError(null);
+  /**
+   * Carga inicial da sala — só o I/O.
+   *
+   * O `setLoading(true)`/`setError(null)` que abria esta função saiu daqui de
+   * propósito: quando ela era chamada de dentro de um efeito, esses dois
+   * setState rodavam de forma síncrona depois do React já ter pintado um
+   * quadro com as mensagens da sala ANTERIOR. Quem troca de sala via o chat
+   * velho por um frame. O ajuste agora acontece no render (`useAoMudar`
+   * abaixo) e no handler do botão de retentar — nos dois casos antes da tela.
+   */
+  const buscarSala = useCallback(async (target: string) => {
     sinceRef.current = null;
 
     try {
@@ -260,10 +268,12 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
-  /** Carrega o inbox de conversas diretas (aba "Diretas"). */
-  const loadDms = useCallback(async () => {
-    setDmsLoading(true);
-    setDmsError(null);
+  /**
+   * Carrega o inbox de conversas diretas (aba "Diretas") — só o I/O, pelo
+   * mesmo motivo de `buscarSala`: o "começou a carregar" é ajuste de estado
+   * e pertence ao render, não a um efeito.
+   */
+  const buscarDms = useCallback(async () => {
     try {
       const res = await fetch('/api/chat/dms', { cache: 'no-store' });
       const body = await res.json().catch(() => null);
@@ -276,9 +286,41 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
+  useAoMudar(
+    tab,
+    () => {
+      if (tab !== 'diretas') return;
+      setDmsLoading(true);
+      setDmsError(null);
+    },
+    { naMontagem: true }
+  );
+
   useEffect(() => {
-    if (tab === 'diretas') loadDms();
-  }, [tab, loadDms]);
+    // `buscarDms` é async e não tem NENHUM setState antes do primeiro
+    // `await`: tudo o que ela muda de estado acontece num microtask, depois
+    // do commit. O lint não enxerga isso e acusa a chamada inteira. Vira erro
+    // de verdade no dia em que alguém puser um setState na primeira linha.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (tab === 'diretas') buscarDms();
+  }, [tab, buscarDms]);
+
+  /**
+   * Retentar depois de uma falha. Aqui o setState síncrono é o certo: estamos
+   * num handler de clique, o React agrupa tudo num render só e o spinner
+   * aparece no mesmo quadro em que o botão foi apertado.
+   */
+  const recarregarSala = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    void buscarSala(roomRef.current);
+  }, [buscarSala]);
+
+  const recarregarDms = useCallback(() => {
+    setDmsLoading(true);
+    setDmsError(null);
+    void buscarDms();
+  }, [buscarDms]);
 
   // Ref em vez de dependência direta: sendHeartbeat entra no array de deps do
   // efeito de polling (abaixo) e trocar sua identidade a cada tique de GPS
@@ -310,12 +352,24 @@ export const ChatView: React.FC = () => {
     }
   }, []);
 
-  // Troca de sala
+  // Troca de sala: o estado zera no render, a busca acontece no efeito.
+  useAoMudar(
+    room,
+    () => {
+      setLoading(true);
+      setError(null);
+    },
+    { naMontagem: true }
+  );
+
   useEffect(() => {
-    loadRoom(room).then(() => {
+    // Mesmo caso de `buscarDms`: nenhum setState antes do primeiro `await`.
+    // O zerar síncrono da sala está no `useAoMudar` logo acima.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    buscarSala(room).then(() => {
       scrollToEnd('auto');
     });
-  }, [room, loadRoom, scrollToEnd]);
+  }, [room, buscarSala, scrollToEnd]);
 
   // Garante que SEMPRE abra nas últimas mensagens (rolagem para o final)
   useEffect(() => {
@@ -365,6 +419,9 @@ export const ChatView: React.FC = () => {
     };
 
     if (!document.hidden) {
+      // `loadOnline` só chama setOnline depois do `await fetch`; não há
+      // ajuste síncrono nenhum na abertura da função.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       loadOnline();
       sendHeartbeat();
       start();
@@ -647,7 +704,7 @@ export const ChatView: React.FC = () => {
                 <p className="mt-1 text-xs text-slate-300">{error}</p>
                 <button
                   type="button"
-                  onClick={() => loadRoom(room)}
+                  onClick={recarregarSala}
                   className="mt-3.5 px-5 h-10 rounded-xl bg-cyan-500 text-slate-950 font-black text-xs active:scale-95 transition-transform"
                 >
                   Tentar novamente
@@ -945,7 +1002,7 @@ export const ChatView: React.FC = () => {
           error={dmsError}
           cardBg={cardBg}
           now={nowTick}
-          onRetry={loadDms}
+          onRetry={recarregarDms}
           onOpen={openDmConversation}
         />
       )}

@@ -27,7 +27,15 @@ export function WindParticleLayer({ spots, paused = false }: Props) {
   const reprojetarRef = useRef<(() => void) | null>(null);
 
   // Mantém os spots atuais sem reiniciar a animação a cada refresh de clima.
-  spotsRef.current = spots;
+  //
+  // Atribuição em EFEITO, não no corpo do componente: escrever em ref durante
+  // o render é o que a regra react-hooks/refs proíbe — em render concorrente o
+  // corpo pode rodar mais de uma vez (ou ser descartado) antes de qualquer
+  // coisa chegar à tela, e a escrita já teria acontecido. O efeito roda depois
+  // do commit, quando o valor é definitivo.
+  useEffect(() => {
+    spotsRef.current = spots;
+  }, [spots]);
 
   // Quando o conteúdo de spots chega ou atualiza, reprojeta o campo
   useEffect(() => {

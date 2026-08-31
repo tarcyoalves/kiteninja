@@ -51,7 +51,15 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     abrirLoggerComResumo,
   } = useKiteData();
   const { downwindAtivo, recarregar: recarregarDownwind } = useDownwind();
-  const [selectedMapSpot, setSelectedMapSpot] = useState<Spot>(spots[0] || null);
+  /**
+   * Só a escolha manual vira estado. O spot em foco é DERIVADO: enquanto
+   * ninguém escolheu nada, é o primeiro da lista — que chega da API depois do
+   * primeiro render. Guardar o derivado em estado exigia um efeito de
+   * "conserta depois", e o mapa pintava um quadro sem spot nenhum antes dele
+   * rodar.
+   */
+  const [spotEscolhido, setSpotEscolhido] = useState<Spot | null>(null);
+  const selectedMapSpot: Spot | null = spotEscolhido ?? spots[0] ?? null;
   const [locateStatus, setLocateStatus] = useState<
     'idle' | 'loading' | 'success' | 'error' | 'denied' | 'timeout'
   >('idle');
@@ -123,7 +131,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   );
 
   const handleSelectSpot = useCallback((spot: Spot) => {
-    setSelectedMapSpot(spot);
+    setSpotEscolhido(spot);
     onSelectSpot(spot);
   }, [onSelectSpot]);
 
@@ -298,17 +306,15 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
    */
   useEffect(() => {
     if (typeof window === 'undefined' || !navigator.geolocation) return;
+    // Este é um dos poucos setState-em-efeito que fica: `handleLocateUser`
+    // marca `locateStatus = 'loading'` de forma síncrona, então há mesmo UM
+    // render extra na montagem. A alternativa — já nascer em 'loading' via
+    // inicializador do useState — precisaria ler `navigator.geolocation`
+    // durante o render, o que roda também no servidor e quebraria a
+    // hidratação. Um quadro a mais vale menos que isso.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     handleLocateUser();
   }, [handleLocateUser]);
-
-  /**
-   * Os spots chegam da API depois da primeira renderização, então o estado
-   * inicial pode nascer nulo. Isto tem que ser efeito: setState no corpo do
-   * render dispara re-render em cascata.
-   */
-  useEffect(() => {
-    if (!selectedMapSpot && spots.length > 0) setSelectedMapSpot(spots[0]);
-  }, [selectedMapSpot, spots]);
 
   if (spots.length === 0) {
     return (

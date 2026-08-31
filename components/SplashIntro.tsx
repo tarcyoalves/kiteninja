@@ -31,9 +31,13 @@ const STORAGE_KEY = 'kiteninja:intro-visto';
 
 export const SplashAnimado: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const [leaving, setLeaving] = useState(false);
-  // onDone pode mudar de identidade entre renders; a ref evita reiniciar o timer.
+  // onDone pode mudar de identidade entre renders; a ref evita reiniciar o
+  // timer. Atribuição em efeito, não no render — ver o mesmo caso comentado
+  // em components/WindParticleLayer.tsx.
   const doneRef = useRef(onDone);
-  doneRef.current = onDone;
+  useEffect(() => {
+    doneRef.current = onDone;
+  }, [onDone]);
 
   useEffect(() => {
     const reduzMovimento =
@@ -349,10 +353,13 @@ const SplashVideo: React.FC<{
 }> = ({ video, onDone, onFalha }) => {
   const ref = useRef<HTMLVideoElement | null>(null);
   const [leaving, setLeaving] = useState(false);
+  // Mesma razão do componente acima: ref atualizado em efeito, nunca no render.
   const doneRef = useRef(onDone);
-  doneRef.current = onDone;
   const falhaRef = useRef(onFalha);
-  falhaRef.current = onFalha;
+  useEffect(() => {
+    doneRef.current = onDone;
+    falhaRef.current = onFalha;
+  }, [onDone, onFalha]);
 
   useEffect(() => {
     const reduzMovimento =

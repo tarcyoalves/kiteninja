@@ -71,7 +71,9 @@ interface AbaVelejosProps {
 function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosProps) {
   const [sessoes, setSessoes] = useState<SessionFeedItem[]>([]);
   const [proximoCursor, setProximoCursor] = useState<string | null>(null);
-  const [carregando, setCarregando] = useState(false);
+  // Nasce carregando: a primeira busca dispara na montagem. Começar em
+  // `false` faria a tela pintar um quadro de "feed vazio" antes da resposta.
+  const [carregando, setCarregando] = useState(true);
   const [carregouUmaVez, setCarregouUmaVez] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [puxando, setPuxando] = useState(false);
@@ -86,11 +88,15 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
   const toqueInicialRef = useRef<{ y: number; scrollTopNoInicio: number } | null>(null);
   const [progressoPullVisual, setProgressoPullVisual] = useState(0);
 
-  const carregar = useCallback(async (cursor: string | null, substituir: boolean) => {
+  /**
+   * Só o I/O da busca. O `setCarregando(true)`/`setErro(null)` mora no
+   * `carregar` abaixo: chamado de dentro de um efeito, um setState síncrono
+   * faz o React pintar um quadro com o estado velho antes de refazer. Aqui
+   * todo setState acontece depois do primeiro `await`.
+   */
+  const buscarPagina = useCallback(async (cursor: string | null, substituir: boolean) => {
     if (carregandoRef.current) return;
     carregandoRef.current = true;
-    setCarregando(true);
-    setErro(null);
     try {
       const body = await buscarPaginaFeed(cursor);
       setSessoes((prev) => (substituir ? body.sessoes : [...prev, ...body.sessoes]));
@@ -104,12 +110,26 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
     }
   }, []);
 
+  /** Busca com o "começou a carregar" junto — para handlers de evento. */
+  const carregar = useCallback(
+    (cursor: string | null, substituir: boolean) => {
+      if (carregandoRef.current) return;
+      setCarregando(true);
+      setErro(null);
+      void buscarPagina(cursor, substituir);
+    },
+    [buscarPagina]
+  );
+
   const atualizarDoZero = useCallback(() => carregar(null, true), [carregar]);
 
-  // 1) Ao montar.
+  // 1) Ao montar. Chama a versão sem setState síncrono de propósito — o
+  // estado inicial já é "carregando", não há nada a ajustar.
   useEffect(() => {
-    atualizarDoZero();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // `buscarPagina` não tem setState nenhum antes do primeiro `await` — o
+    // lint não consegue ver isso e acusa a chamada inteira.
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+    void buscarPagina(null, true);
   }, []);
 
   // 3) Voltar de background/troca de aba do navegador.

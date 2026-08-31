@@ -8,6 +8,7 @@ import {
   processarAmostra,
 } from './trilhaSessao';
 import type { PontoTrilha } from './trilhaDownwind';
+import { useAoMudar } from './useAoMudar';
 
 /**
  * Casca fina sobre `watchPosition`: toda decisão (aceitar/rejeitar amostra,
@@ -58,20 +59,43 @@ export function useTrilhaSessao(ativo: boolean): TrilhaSessao {
   // via `paraTrilhaSessao` a cada leitura, mantendo a interface pública
   // exatamente como especificada.
   const estadoRef = useRef(estado);
-  estadoRef.current = estado;
+  // Em efeito, não no render — ver o mesmo caso comentado em
+  // components/WindParticleLayer.tsx. O ref só é lido dentro do callback de
+  // `watchPosition`, que roda bem depois do commit, então atualizar aqui não
+  // atrasa nada.
+  useEffect(() => {
+    estadoRef.current = estado;
+  }, [estado]);
+
+  /*
+   * Os dois ajustes SÍNCRONOS de estado saíram do efeito e vieram para o
+   * render — ver lib/useAoMudar.ts.
+   *
+   * O reinício da trilha é o que mais importa aqui: em efeito, o Modo
+   * Navegação reaberto pintava um quadro com a distância e a velocidade máxima
+   * da sessão ANTERIOR antes de zerar. Numa tela cuja função é mostrar
+   * telemetria de velejo, esse quadro é informação errada na cara do
+   * velejador, não só um detalhe de performance.
+   */
+  useAoMudar(
+    ativo,
+    () => {
+      if (!ativo) return;
+      if (typeof navigator === 'undefined' || !navigator.geolocation) {
+        setEstado((atual) => marcarIndisponivel(atual));
+        return;
+      }
+      // Sessão nova de navegação não herda distância/velocidade máxima de uma
+      // sessão anterior que ficou fechada no meio do caminho.
+      setEstado(ESTADO_INICIAL_TRILHA);
+      estadoRef.current = ESTADO_INICIAL_TRILHA;
+    },
+    { naMontagem: true }
+  );
 
   useEffect(() => {
     if (!ativo) return;
-
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setEstado((atual) => marcarIndisponivel(atual));
-      return;
-    }
-
-    // Reinicia a trilha a cada vez que o Modo Navegação é reaberto: uma
-    // sessão nova de navegação não deve herdar distância/velocidade máxima
-    // de uma sessão anterior que ficou fechada no meio do caminho.
-    setEstado(ESTADO_INICIAL_TRILHA);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return;
 
     const watchId = navigator.geolocation.watchPosition(
       (posicao) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useKiteData } from '../context/KiteDataContext';
 import {
@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Discipline, RiderLevel } from '../types';
+import { useAoMudar } from '@/lib/useAoMudar';
 
 const LEVELS: RiderLevel[] = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'];
 const DISCIPLINES: Discipline[] = [
@@ -64,20 +65,23 @@ export const PerfilView: React.FC = () => {
   // (não do objeto `user` inteiro) para não apagar edições em andamento se
   // outra parte do app (ex: troca de avatar) atualizar o contexto no meio da
   // edição.
-  useEffect(() => {
-    if (!user) return;
-    setWeightKg(String(user.weightKg ?? ''));
-    setHeightCm(user.heightCm ? String(user.heightCm) : '');
-    setRiderLevel(user.riderLevel ?? 'Intermediário');
-    setHomeSpot(user.homeSpot ?? '');
-    setDisciplines(user.disciplines ?? []);
-    setQuiverKites(user.quiverKites ?? []);
-    setQuiverBoards(user.quiverBoards ?? []);
-    setPreferredWindUnit(user.preferredWindUnit ?? 'knots');
-    setNotificarAmigoVelejando(user.notificarAmigoVelejando !== false);
-    setBio(user.bio ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  useAoMudar(
+    user?.id,
+    () => {
+      if (!user) return;
+      setWeightKg(String(user.weightKg ?? ''));
+      setHeightCm(user.heightCm ? String(user.heightCm) : '');
+      setRiderLevel(user.riderLevel ?? 'Intermediário');
+      setHomeSpot(user.homeSpot ?? '');
+      setDisciplines(user.disciplines ?? []);
+      setQuiverKites(user.quiverKites ?? []);
+      setQuiverBoards(user.quiverBoards ?? []);
+      setPreferredWindUnit(user.preferredWindUnit ?? 'knots');
+      setNotificarAmigoVelejando(user.notificarAmigoVelejando !== false);
+      setBio(user.bio ?? '');
+    },
+    { naMontagem: true }
+  );
 
   const toggleDiscipline = (d: Discipline) => {
     setDisciplines((prev) => (prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d]));

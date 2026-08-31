@@ -62,7 +62,17 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
   // não existe convidado velejador). Por isso o split mapa+chat, sem toggle
   // de papel: é o mesmo layout que views/DownwindAoVivoView.tsx usa só para
   // quem é apoio_terra, aqui aplicado direto.
-  const split = useSplitArrastavel(50);
+  // Desestruturado, e não usado como `split.x`: o React Compiler trata o
+  // objeto devolvido pelo hook como se fosse um ref e acusa cada acesso a
+  // propriedade dele durante o render (react-hooks/refs). Separar os valores
+  // aqui dá ao compilador o que ele precisa ver — e, de quebra, deixa o JSX
+  // mais direto.
+  const {
+    containerRef: splitContainerRef,
+    alturaMapaPct: splitAlturaMapaPct,
+    handleProps: splitHandleProps,
+    setAlturaMapaPct: setSplitAlturaMapaPct,
+  } = useSplitArrastavel(50);
 
   // "Já tenho sessão de convidado válida?" — cobre o refresh da página, que
   // reseta o estado React mas não o cookie httpOnly de 12h.
@@ -210,8 +220,8 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
         // Split fixo, sem toggle: este link é sempre apoio em terra, então
         // é sempre o layout de mapa+chat divididos — mesmo componente que
         // views/DownwindAoVivoView.tsx usa para o apoio_terra com conta.
-        <div ref={split.containerRef} className="flex-1 min-h-0 flex flex-col">
-          <div className="relative overflow-hidden shrink-0" style={{ height: `${split.alturaMapaPct}%` }}>
+        <div ref={splitContainerRef} className="flex-1 min-h-0 flex flex-col">
+          <div className="relative overflow-hidden shrink-0" style={{ height: `${splitAlturaMapaPct}%` }}>
             <DownwindMapa
               meuUserId={meuUserId}
               saida={downwind.saida}
@@ -227,7 +237,7 @@ export const ConvidadoView: React.FC<ConvidadoViewProps> = ({ token, downwindNom
             )}
           </div>
 
-          <SplitDragHandle handleProps={split.handleProps} onAtalho={(alvo) => split.setAlturaMapaPct(alvo)} />
+          <SplitDragHandle handleProps={splitHandleProps} onAtalho={(alvo) => setSplitAlturaMapaPct(alvo)} />
 
           <div className="relative flex-1 min-h-0">
             {meuNome && meuRiderId && (
