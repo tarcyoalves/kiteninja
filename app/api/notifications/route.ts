@@ -33,9 +33,37 @@ interface NotificacaoRow {
  * de 50, para não subcontar quando houver mais não lidas acumuladas do que
  * o LIMITE_NOTIFICACOES cobre.
  */
-export async function GET() {
+export async function GET(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+
+    /*
+     * `?apenasContagem=1` devolve SÓ o número de não lidas.
+     *
+     * O badge do sininho consulta esta rota a cada 20 segundos e usa apenas
+     * `naoLidas` — mas recebia a lista inteira de notificações junto, com
+     * todos os JOINs de autor, sessão, comentário e downwind. Custo
+     * desnecessário multiplicado por usuário logado, e compute do Neon é o
+     * maior custo apontado em docs/ANTIGRAVITY-AUDIT-2026.md.
+     *
+     * Parâmetro em vez de rota nova de propósito: é a mesma informação, do
+     * mesmo dono, com a mesma autorização — separar em duas rotas duplicaria
+     * o `requireUser` e o filtro por `recipient_id` sem ganhar nada.
+     */
+    const apenasContagem =
+      new URL(request.url).searchParams.get('apenasContagem') === '1';
+
+    if (apenasContagem) {
+      const contagem = await sql`
+        SELECT COUNT(*)::int AS nao_lidas
+        FROM notifications
+        WHERE recipient_id = ${user.id} AND read_at IS NULL
+      `;
+      return {
+        notificacoes: [],
+        naoLidas: Number((contagem[0] as Record<string, unknown>).nao_lidas),
+      };
+    }
 
     const [rows, naoLidasRows] = await Promise.all([
       sql`

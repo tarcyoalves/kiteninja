@@ -24,3 +24,41 @@ export function deveExibirToastMensagem(
   if (!mensagem) return false;
   return mensagem.id !== jaExibidaId;
 }
+
+/**
+ * Um aviso de mensagem pronto para exibição, vindo do chat geral OU de uma
+ * conversa direta.
+ */
+export interface AvisoMensagem {
+  /** Identidade estável — é o que alimenta `deveExibirToastMensagem`. */
+  id: string;
+  nome: string;
+  texto: string;
+  avatar?: string;
+  /** ISO da mensagem, não do momento em que chegou ao cliente. */
+  quando: string;
+  ehDm: boolean;
+}
+
+/**
+ * Escolhe qual aviso mostrar quando chat geral e DM têm mensagem pendente.
+ *
+ * Só um toast aparece por vez, na mesma posição da tela — sem esta escolha os
+ * dois se sobreporiam.
+ *
+ * Compara `quando` (horário da MENSAGEM) e não a ordem de chegada ao cliente:
+ * os dois watchers fazem poll independente, então a DM mais nova pode chegar
+ * ao navegador depois de uma mensagem de chat mais velha. Ordenar por chegada
+ * mostraria a errada.
+ *
+ * Empate fica com a DM de propósito: é a mensagem endereçada à pessoa, não a
+ * uma sala com todo mundo.
+ */
+export function escolherAvisoMaisRecente(
+  geral: AvisoMensagem | null,
+  dm: AvisoMensagem | null
+): AvisoMensagem | null {
+  if (!geral) return dm;
+  if (!dm) return geral;
+  return Date.parse(dm.quando) >= Date.parse(geral.quando) ? dm : geral;
+}

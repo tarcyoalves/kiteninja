@@ -12,8 +12,8 @@ uma vez, a chance de aparecer de novo é maior que a média.
 | V-01 | `/api/downwind/[id]/live` expunha trilha GPS de downwind **privado** | **Alta — privacidade** | ✅ Corrigido |
 | V-02 | Badge do sininho não zerava, e o poll o ressuscitava | Média — UX | ✅ Corrigido |
 | V-03 | Viewer ao vivo baixa o histórico inteiro a cada 5s, sem teto nem cursor | Média — custo | ✅ Corrigido |
-| V-04 | `latestIncomingDm` populado e nunca consumido | Baixa | ❌ Aberto |
-| V-05 | Poll do sininho baixa a lista inteira só para ler um número | Baixa — custo | ❌ Aberto |
+| V-04 | `latestIncomingDm` populado e nunca consumido | Baixa | ✅ Corrigido |
+| V-05 | Poll do sininho baixa a lista inteira só para ler um número | Baixa — custo | ✅ Corrigido |
 
 Classes varridas que vieram **limpas**: `UPDATE`/`DELETE` sem `RETURNING`
 usados como contagem (o defeito de `trackingToken`, não reincidiu);
@@ -167,52 +167,114 @@ raro por um padrão frágil não valia.
 
 ## V-04 — `latestIncomingDm` populado e nunca consumido
 
-**Aberto.** O watcher de DM preenche `latestIncomingDm` no contexto a cada
-ciclo, e **nenhum componente lê**. Efeito prático: mensagem no chat geral
-mostra toast (`InAppPushToast`), DM não mostra — só incrementa o badge.
+**Corrigido.**
 
-É a terceira ocorrência desta mesma classe nesta base
-(`statusTrackingNativo` e `zerarNotificacoesNaoLidas` foram as outras).
-**Expor no contexto não é entregar ao usuário** — vale como checagem de rotina.
+O watcher de DM preenchia `latestIncomingDm` no contexto a cada ciclo e
+**nenhum componente lia**. Efeito prático: mensagem no chat geral mostrava
+toast (`InAppPushToast`), DM não — só incrementava o badge. Quem recebia uma
+conversa direta com o app aberto noutra aba não via nada acontecer.
 
-Duas saídas honestas: criar o toast de DM, ou remover o estado morto. A
-segunda é legítima — o que não pode é ficar como está, parecendo que existe.
+Era a terceira ocorrência desta mesma classe nesta base (`statusTrackingNativo`
+e `zerarNotificacoesNaoLidas` foram as outras).
 
-Se um toast de DM for criado, ele precisa nascer com a trava de "exibe uma vez
-por id" (`lib/toastMensagem.ts`), senão reintroduz o bug do popup repetido
-documentado em `docs/BUG-TOAST-MENSAGEM-REPETIDO.md`.
+### O que mudou, e por que num componente só
+
+O aviso de DM entrou no **mesmo** `InAppPushToast`, não num componente irmão.
+Criar um segundo toast resolveria a falta, mas abriria outro problema: os dois
+ocupam a mesma posição da tela e podem chegar juntos — apareceriam
+sobrepostos. Um componente só escolhe o mais recente e mostra **um**.
+
+A escolha virou função pura testada (`escolherAvisoMaisRecente` em
+`lib/toastMensagem.ts`). A regra não é óbvia: compara o **horário da
+mensagem**, não a ordem de chegada ao cliente. Os dois watchers fazem poll
+independente, então uma DM mais nova pode chegar ao navegador **depois** de
+uma mensagem de chat mais velha — ordenar por chegada mostraria a errada. No
+empate exato a DM vence, por ser endereçada à pessoa e não a uma sala.
+
+Detalhes que evitam bugs conhecidos:
+
+- `latestIncomingDm` ganhou `createdAt`. Sem identidade estável, o toast não
+  teria como saber que já mostrou aquela DM e reapareceria a cada re-render —
+  exatamente o bug de `docs/BUG-TOAST-MENSAGEM-REPETIDO.md`. O id da DM é
+  `dm:<remetente>:<createdAt>`, porque `/api/chat/dms` devolve a última
+  mensagem da conversa, sem id próprio.
+- Fechar ou tocar no aviso **consome** o evento nos dois canais.
+- A DM leva um selo "DIRETA". Sem ele o aviso seria idêntico ao do chat geral,
+  e a pessoa tocaria esperando cair na conversa privada.
+
+### Limite conhecido
+
+Tocar no aviso de DM leva à **aba de chat**, não à conversa específica. Abrir
+uma DM direto exigiria expor esse controle no contexto — hoje a sala só é
+montada dentro de `views/ChatView.tsx` — e isso é mudança de outro tamanho. O
+destino atual é o mesmo que o sininho já usava.
 
 ---
 
-## V-05 — Poll do sininho baixa a lista inteira para ler um número
+## V-05 — Poll do sininho baixava a lista inteira para ler um número
 
-**Aberto.** O watcher chama `GET /api/notifications` a cada 20s e usa
-**apenas** `body.naoLidas`. A rota devolve a lista completa de notificações
-junto.
+**Corrigido.**
 
-Custo desnecessário multiplicado por usuário logado, e
-`docs/ANTIGRAVITY-AUDIT-2026.md` aponta compute do Neon como o maior custo do
-projeto (resposta 20).
+O watcher chamava `GET /api/notifications` a cada 20s e usava **apenas**
+`body.naoLidas`. A rota devolvia junto a lista completa de notificações, com
+todos os JOINs de autor, sessão, comentário e downwind. Custo desnecessário
+multiplicado por usuário logado — e compute do Neon é o maior custo apontado
+em `docs/ANTIGRAVITY-AUDIT-2026.md` (resposta 20).
 
-**Recomendação:** `GET /api/notifications?apenasContagem=1` devolvendo só o
-número, ou um `HEAD` com o total num cabeçalho. Mudança pequena e isolada.
+Agora `GET /api/notifications?apenasContagem=1` devolve só o número, com um
+`COUNT(*)` e nenhum JOIN.
+
+Parâmetro em vez de rota nova de propósito: é a mesma informação, do mesmo
+dono, com a mesma autorização — separar em duas rotas duplicaria o
+`requireUser` e o filtro por `recipient_id` sem ganhar nada, e criaria dois
+lugares para esquecer de proteger.
 
 ---
 
 ## O que esta varredura sugere sobre o processo
 
-Três dos cinco achados são **estado exposto e não consumido** ou **função
-definida e nunca chamada**. Nenhum deles quebra build, typecheck, teste ou
-lint — todos passam verdes com o defeito presente.
+Os cinco achados foram corrigidos. Mais importante que a lista é o padrão que
+ela expôs.
 
-Vale como varredura periódica barata:
+**Três dos cinco eram estado exposto e nunca consumido, ou função definida e
+nunca chamada** — `latestIncomingDm`, `zerarNotificacoesNaoLidas` e (na rodada
+anterior) `statusTrackingNativo`. Nenhum deles quebra build, typecheck, teste
+ou lint: **todos passam verdes com o defeito presente**. É por isso que
+sobreviveram a várias rodadas de revisão automática.
+
+Varredura periódica barata para essa classe:
 
 ```bash
 # campo do contexto sem nenhum consumidor fora do próprio arquivo
 grep -rn "<campo>" components/ views/ app/ lib/
 ```
 
-E vale como regra de revisão: **ao expor algo num contexto, mostrar na mesma
-mudança quem consome.** Se ainda não há consumidor, o valor não deveria estar
-exposto — ele vira uma promessa que a UI não cumpre, e quem vier depois assume
-que funciona.
+E a regra de revisão que evitaria a maioria: **ao expor algo num contexto,
+mostrar na mesma mudança quem consome.** Sem consumidor, o valor não deveria
+estar exposto — vira promessa que a interface não cumpre, e quem vier depois
+assume que funciona.
+
+**Os outros dois eram desperdício silencioso** (V-03 e V-05): código correto,
+resultado certo na tela, custo multiplicado por usuário e por segundo. Nenhuma
+ferramenta reclama disso — só olhar o que a tela realmente precisa contra o
+que a rota realmente devolve.
+
+Nos dois casos a solução **já existia ao lado**: o V-03 reimplementou um
+problema que `lib/trilhaDownwind.ts` resolvia para a rota irmã, e o V-05
+baixava um payload que ninguém lia. Vale como pergunta de revisão em rota
+nova: *isto já foi resolvido aqui perto?* e *quem chama usa tudo o que estou
+devolvendo?*
+
+## Uma nota sobre auditorias
+
+O achado mais grave (V-01) estava numa rota que **não existia** quando a
+auditoria anterior rodou — e aquela auditoria afirmava, corretamente para o
+momento, que a localização estava protegida.
+
+Some-se a isso o segundo motivo: a rota tinha uma **exceção documentada** no
+`authz.test.ts`, e uma exceção documentada é um lugar onde ninguém olha de
+novo.
+
+As duas coisas juntas sugerem que auditoria não é evento, é rotina — e que
+exceções registradas merecem releitura periódica justamente por parecerem
+resolvidas.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deveExibirToastMensagem } from './toastMensagem';
+import { deveExibirToastMensagem, escolherAvisoMaisRecente } from './toastMensagem';
 
 describe('deveExibirToastMensagem', () => {
   it('não exibe nada quando não há mensagem', () => {
@@ -34,5 +34,48 @@ describe('deveExibirToastMensagem', () => {
     const segunda = { id: 'm2', text: 'bora?' };
     expect(deveExibirToastMensagem(primeira, null)).toBe(true);
     expect(deveExibirToastMensagem(segunda, primeira.id)).toBe(true);
+  });
+});
+
+describe('escolherAvisoMaisRecente', () => {
+  const geral = {
+    id: 'm1',
+    nome: 'Chat',
+    texto: 'oi geral',
+    quando: '2026-08-31T12:00:00.000Z',
+    ehDm: false,
+  };
+  const dm = {
+    id: 'dm:u1:2026-08-31T12:00:05.000Z',
+    nome: 'Tarcyo',
+    texto: 'oi direto',
+    quando: '2026-08-31T12:00:05.000Z',
+    ehDm: true,
+  };
+
+  it('devolve null quando não há aviso nenhum', () => {
+    expect(escolherAvisoMaisRecente(null, null)).toBeNull();
+  });
+
+  it('devolve o único que existe', () => {
+    expect(escolherAvisoMaisRecente(geral, null)).toBe(geral);
+    expect(escolherAvisoMaisRecente(null, dm)).toBe(dm);
+  });
+
+  /**
+   * O caso que motivou a função: os dois watchers fazem poll independente,
+   * então a DM mais nova pode chegar ao cliente DEPOIS de uma mensagem de
+   * chat mais velha. Ordenar por chegada mostraria a errada.
+   */
+  it('escolhe pelo horário da mensagem, não pela ordem de chegada', () => {
+    expect(escolherAvisoMaisRecente(geral, dm)).toBe(dm);
+
+    const geralMaisNovo = { ...geral, quando: '2026-08-31T12:00:09.000Z' };
+    expect(escolherAvisoMaisRecente(geralMaisNovo, dm)).toBe(geralMaisNovo);
+  });
+
+  it('no empate exato, a DM vence — é endereçada à pessoa', () => {
+    const mesmoInstante = { ...dm, quando: geral.quando };
+    expect(escolherAvisoMaisRecente(geral, mesmoInstante)).toBe(mesmoInstante);
   });
 });

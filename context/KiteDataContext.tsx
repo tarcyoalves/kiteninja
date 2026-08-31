@@ -106,7 +106,19 @@ interface KiteDataContextType {
   // uma DM merece notificação mesmo com o usuário já dentro da aba "chat"
   // (ele pode estar no geral ou noutra DM, não necessariamente naquela).
   dmUnreadCount: number;
-  latestIncomingDm: { fromUserId: string; fromUserName: string; text: string; avatarUrl?: string } | null;
+  /**
+   * Última DM recebida enquanto o usuário não estava no chat. `createdAt` é o
+   * que dá identidade à mensagem — sem ele o toast não teria como saber que
+   * já mostrou esta e reapareceria a cada re-render (o bug documentado em
+   * docs/BUG-TOAST-MENSAGEM-REPETIDO.md).
+   */
+  latestIncomingDm: {
+    fromUserId: string;
+    fromUserName: string;
+    text: string;
+    avatarUrl?: string;
+    createdAt: string;
+  } | null;
   clearDmUnread: () => void;
 
   // SOS Emergency System
@@ -400,7 +412,13 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // chat geral acima: ver comentário na interface sobre por quê.
   const [dmUnreadCount, setDmUnreadCount] = useState(0);
   const [latestIncomingDm, setLatestIncomingDm] = useState<
-    { fromUserId: string; fromUserName: string; text: string; avatarUrl?: string } | null
+    {
+      fromUserId: string;
+      fromUserName: string;
+      text: string;
+      avatarUrl?: string;
+      createdAt: string;
+    } | null
   >(null);
   const dmLastSeenRef = useRef<Map<string, string>>(new Map());
   const dmBaselineDoneRef = useRef(false);
@@ -552,6 +570,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
                 fromUserName: c.userName,
                 text: c.lastMessage.text,
                 avatarUrl: c.userAvatar,
+                createdAt: c.lastMessage.createdAt,
               });
 
               if (
@@ -610,7 +629,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       const pedidoEm = Date.now();
       try {
-        const res = await fetch('/api/notifications', { cache: 'no-store' });
+        // `apenasContagem=1`: o badge só precisa do número. Sem isso, cada
+        // ciclo de 20s baixava a lista inteira de notificações com todos os
+        // JOINs — ver o comentário na rota.
+        const res = await fetch('/api/notifications?apenasContagem=1', { cache: 'no-store' });
         if (res.ok) {
           const body = await res.json().catch(() => null);
           // Ignora resposta de um pedido que saiu ANTES de o usuário abrir a
