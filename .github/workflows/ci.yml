@@ -7,7 +7,11 @@ on:
     branches: [main]
 
 env:
-  NODE_VERSION: '20'
+  # 22, não 20: o CLI do Capacitor recusa NodeJS < 22 ("[fatal] The Capacitor
+  # CLI requires NodeJS >=22.0.0") e o job Android morria no `cap sync` antes
+  # de compilar qualquer coisa. O runner também já avisa que o Node 20 está
+  # sendo descontinuado nas actions.
+  NODE_VERSION: '22'
   JAVA_VERSION: '17'
 
 jobs:
@@ -149,7 +153,22 @@ jobs:
         run: npm ci
 
       - name: Build Next.js (skip migration)
-        # DATABASE_URL ausente = pulamos a migração (stage/test)
+        # A `DATABASE_URL` aqui é uma string de mentira, e de propósito.
+        #
+        # O comentário anterior dizia "DATABASE_URL ausente = pulamos a
+        # migração", mas isso deixou de ser verdade: `lib/db.ts` lança no
+        # carregamento do módulo quando a variável não existe, e o
+        # `next build` importa TODA rota de API para coletar os dados de
+        # página. Resultado: "Failed to collect configuration for
+        # /api/admin/chamados/[id]" e o job vermelho — sem nenhuma relação
+        # com o código do commit.
+        #
+        # Um host inexistente é justamente o que se quer: a conexão nunca é
+        # aberta durante o build (as rotas são dinâmicas), então basta que a
+        # string exista e seja sintaticamente válida. Nenhum segredo entra
+        # no CI por causa disto.
+        env:
+          DATABASE_URL: 'postgresql://ci:ci@localhost:5432/ci?sslmode=disable'
         run: npx next build
 
   # -----------------------------------------------------------------------
