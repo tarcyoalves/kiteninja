@@ -296,9 +296,23 @@ por conta própria, e havia tempo:
   para coletar os dados de página. Corrigido com uma connection string de
   mentira apontando para localhost — as rotas são dinâmicas, nenhuma conexão
   é aberta durante o build.
-- **Android** — `NODE_VERSION: '20'`, e o CLI do Capacitor recusa NodeJS < 22
-  (`[fatal] The Capacitor CLI requires NodeJS >=22.0.0`). O `cap sync` morria
-  antes de compilar qualquer coisa.
+- **Android** — **três causas distintas, em série.** Cada correção só
+  revelava a seguinte, porque o job morria cedo demais para chegar nela:
+  1. `NODE_VERSION: '20'` — o CLI do Capacitor recusa NodeJS < 22
+     (`[fatal] The Capacitor CLI requires NodeJS >=22.0.0`). O `cap sync`
+     morria antes de compilar qualquer coisa.
+  2. `android/gradlew` estava no git com modo `100644`, sem bit de execução
+     (`./gradlew: Permission denied`, exit 126). Quem gerou o projeto
+     Capacitor não carregou o bit, e localmente ninguém percebeu porque o
+     Android Studio invoca o Gradle por conta própria. Corrigido com
+     `git update-index --chmod=+x`, que grava o modo no índice.
+  3. `JAVA_VERSION: '17'` — o Capacitor 8 compila a própria biblioteca com
+     `sourceCompatibility JavaVersion.VERSION_21`
+     (`error: invalid source release: 21`).
+
+  **Resultado: CI verde, 8 de 8 jobs**, e o APK de debug volta a ser
+  construído a cada push — o que também dá ao dono um artefato pronto para o
+  teste de rastreio no aparelho, sem depender do Android Studio.
 
 O padrão vale a nota: **um CI cronicamente vermelho deixa de ser sinal.**
 Enquanto os dois jobs falhavam por motivo próprio, uma regressão de verdade
