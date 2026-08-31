@@ -30,6 +30,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useCurtidaOtimista } from '@/lib/useCurtidaOtimista';
 import { formatRelativeTime } from '@/lib/chat';
 import type { SessionComment, SessionDetail } from '@/types';
+import { useAoMudar } from '../lib/useAoMudar';
 
 /**
  * Mesmo Leaflet real do card do feed (não um mapa novo) — a diferença aqui é
@@ -166,16 +167,23 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   // Detalhe da sessão — estado de carregamento PRÓPRIO, independente dos
   // comentários abaixo: se o detalhe chega primeiro, a tela já renderiza sem
   // esperar a segunda requisição terminar.
+  /*
+   * Limpeza síncrona no render, I/O no efeito — ver lib/useAoMudar.ts. Um só
+   * `useAoMudar` cobre os DOIS efeitos abaixo (detalhe e comentários) porque
+   * os dois dependem da mesma chave: abrir outra sessão invalida tudo.
+   */
+  useAoMudar(sessionId, () => {
+    setSessao(null);
+    setErroSessao(null);
+    setComentarios([]);
+    setCarregandoSessao(sessionId !== null);
+    setCarregandoComentarios(sessionId !== null);
+  });
+
   useEffect(() => {
-    if (!sessionId) {
-      setSessao(null);
-      setErroSessao(null);
-      return;
-    }
+    if (!sessionId) return;
 
     let ativo = true;
-    setCarregandoSessao(true);
-    setErroSessao(null);
 
     (async () => {
       try {
@@ -208,13 +216,9 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
   // separados, não Promise.all): um comentário lento nunca atrasa a
   // renderização do detalhe, que já pode ter chegado.
   useEffect(() => {
-    if (!sessionId) {
-      setComentarios([]);
-      return;
-    }
+    if (!sessionId) return;
 
     let ativo = true;
-    setCarregandoComentarios(true);
 
     (async () => {
       try {

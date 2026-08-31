@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Check, Copy, Loader2, Search, Share2, UserCheck, UserPlus, Users, X } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/chat';
+import { useAoMudar } from '../../lib/useAoMudar';
 
 interface RiderResult {
   id: string;
@@ -36,12 +37,18 @@ export const ConvidarVelejadoresSheet: React.FC<ConvidarVelejadoresSheetProps> =
 
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    if (!busca.trim()) {
+  // Busca vazia limpa a lista no render; o debounce e o fetch seguem no
+  // efeito — ver lib/useAoMudar.ts.
+  const termo = busca.trim();
+  useAoMudar(termo, () => {
+    if (!termo) {
       setResultados([]);
       setBuscando(false);
-      return;
     }
+  });
+
+  useEffect(() => {
+    if (!busca.trim()) return;
 
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
 

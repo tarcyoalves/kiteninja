@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 /**
  * Curtida otimista de uma sessão (seção 3 do plano de rede social): pinta no
@@ -20,13 +20,31 @@ export function useCurtidaOtimista(
   // dela, até o próximo fetch trazer a verdade do servidor de novo).
   const [otimista, setOtimista] = useState<{ curtido: boolean; contagem: number } | null>(null);
 
-  // Sempre que uma nova verdade do servidor chega para ESTA sessão (feed
-  // recarregado por pull-to-refresh, por exemplo), o override local perde a
-  // validade — sem isto, um pull-to-refresh que trouxesse curtidas de OUTRAS
-  // pessoas continuaria escondido atrás do valor otimista antigo para sempre.
-  useEffect(() => {
+  /*
+   * Sempre que uma nova verdade do servidor chega para ESTA sessão (feed
+   * recarregado por pull-to-refresh, por exemplo), o override local perde a
+   * validade — sem isto, um pull-to-refresh que trouxesse curtidas de OUTRAS
+   * pessoas continuaria escondido atrás do valor otimista antigo para sempre.
+   *
+   * Ajuste DURANTE O RENDER, não num efeito. É o padrão que a própria
+   * documentação do React recomenda para "estado que precisa mudar quando uma
+   * prop muda": guardar o valor anterior e comparar. Com `useEffect` o React
+   * pintava um quadro com o valor otimista obsoleto antes de corrigir —
+   * cascata de render que a regra react-hooks/set-state-in-effect acusa. Aqui
+   * o React descarta o render em andamento e refaz com o valor certo, sem
+   * nunca mostrar o intermediário.
+   */
+  const [servidorAnterior, setServidorAnterior] = useState({
+    euCurti: euCurtiServidor,
+    curtidas: curtidasServidor,
+  });
+  if (
+    servidorAnterior.euCurti !== euCurtiServidor ||
+    servidorAnterior.curtidas !== curtidasServidor
+  ) {
+    setServidorAnterior({ euCurti: euCurtiServidor, curtidas: curtidasServidor });
     setOtimista(null);
-  }, [euCurtiServidor, curtidasServidor]);
+  }
 
   const curtido = otimista ? otimista.curtido : euCurtiServidor;
   const contagem = otimista ? otimista.contagem : curtidasServidor;

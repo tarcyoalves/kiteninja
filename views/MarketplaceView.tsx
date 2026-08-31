@@ -31,6 +31,7 @@ import {
   parseBRLToCents,
 } from '../lib/marketplace';
 import type { Listing, ListingFilters, ListingSort } from '../types';
+import { useAoMudar } from '../lib/useAoMudar';
 
 const PAGE_SIZE = 24;
 
@@ -94,10 +95,22 @@ export const MarketplaceView: React.FC = () => {
     [queryFiltros]
   );
 
+  /*
+   * "Começou a carregar" é ajuste síncrono e vai no render; a busca fica no
+   * efeito — ver lib/useAoMudar.ts. Roda na montagem também, porque a
+   * primeira carga é aqui.
+   */
+  useAoMudar(
+    `${JSON.stringify(filters)}|${listingsVersion}`,
+    () => {
+      setCarregando(true);
+      setErro(null);
+    },
+    { naMontagem: true }
+  );
+
   useEffect(() => {
     let ativo = true;
-    setCarregando(true);
-    setErro(null);
 
     (async () => {
       try {
@@ -532,12 +545,14 @@ const FiltrosSheet: React.FC<FiltrosSheetProps> = ({ aberto, onFechar, filters, 
 
   // Reabrir o painel precisa mostrar o que está aplicado hoje, não o rascunho
   // abandonado da vez anterior.
-  useEffect(() => {
+  // Rascunho no render, não em efeito: com useEffect o painel pintava um
+  // quadro com o rascunho abandonado da vez anterior antes de corrigir.
+  useAoMudar(aberto ? JSON.stringify(filters) : null, () => {
     if (!aberto) return;
     setRascunho(filters);
     setPrecoMin(filters.minPriceCents !== null ? maskBRLInput(String(filters.minPriceCents)) : '');
     setPrecoMax(filters.maxPriceCents !== null ? maskBRLInput(String(filters.maxPriceCents)) : '');
-  }, [aberto, filters]);
+  });
 
   useEffect(() => {
     if (!aberto) return;

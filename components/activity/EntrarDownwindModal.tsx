@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Check, Compass, Loader2, MapPin, Navigation, Users, X } from 'lucide-react';
 import { Spot } from '@/types';
 import { useDownwind } from '@/context/DownwindContext';
+import { useAoMudar } from '../../lib/useAoMudar';
 
 interface EntrarDownwindModalProps {
   token: string | null;
@@ -43,17 +44,20 @@ export const EntrarDownwindModal: React.FC<EntrarDownwindModalProps> = ({
   const [sucesso, setSucesso] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
+  // Limpeza síncrona no render, fetch no efeito — ver lib/useAoMudar.ts.
+  // A chave junta os dois: fechar o modal OU trocar de convite invalida tudo.
+  const chave = isOpen && token ? token : null;
+  useAoMudar(chave, () => {
+    setDetalhes(null);
+    setErro(null);
+    setSucesso(false);
+    setCarregando(chave !== null);
+  });
+
   useEffect(() => {
-    if (!isOpen || !token) {
-      setDetalhes(null);
-      setErro(null);
-      setSucesso(false);
-      return;
-    }
+    if (!isOpen || !token) return;
 
     let ativo = true;
-    setCarregando(true);
-    setErro(null);
 
     (async () => {
       try {

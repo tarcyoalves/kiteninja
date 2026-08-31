@@ -33,6 +33,7 @@ import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
 import { useSosHold } from '../lib/useSosHold';
 import { urlBase64ToUint8Array } from '../lib/pushClient';
+import { useAoMudar } from '../lib/useAoMudar';
 import { useIsNativeApp } from '../lib/usePushNotifications';
 import { BotoesEmergencia } from './BotoesEmergencia';
 
@@ -94,27 +95,44 @@ export const SidebarDrawer: React.FC = () => {
     (Boolean((window.navigator as unknown as { standalone?: boolean }).standalone) ||
       window.matchMedia('(display-mode: standalone)').matches);
 
-  useEffect(() => {
-    if (user) {
-      setEmergencyName(user.emergencyContactName || '');
-      setEmergencyPhone(user.emergencyContactPhone || '');
-    }
-  }, [user]);
+  // Hidrata o formulário quando o usuário muda. No render, não em efeito:
+  // com useEffect o painel pintava um quadro com o contato do usuário
+  // anterior. Ver lib/useAoMudar.ts.
+  useAoMudar(
+    user,
+    () => {
+      if (user) {
+        setEmergencyName(user.emergencyContactName || '');
+        setEmergencyPhone(user.emergencyContactPhone || '');
+      }
+    },
+    // Precisa rodar na montagem: o painel costuma abrir com o usuário já
+    // carregado, e sem isto o formulário nasceria vazio.
+    { naMontagem: true }
+  );
 
-  useEffect(() => {
-    // No app nativo a Push API do navegador não existe na WebView, mas o push
-    // FUNCIONA (via FCM, registrado por usePushNotifications no provider).
-    // Sem este ramo o botão diria "Ativar Notificações" para sempre, mesmo
-    // com o push já ativo — checar `Notification.permission` ali é a
-    // pergunta errada para o Android.
-    if (ehAppNativo) {
-      setPushEnabled(true);
-      return;
-    }
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      setPushEnabled(Notification.permission === 'granted');
-    }
-  }, [ehAppNativo]);
+  // Estado do push: leitura síncrona de `Notification.permission`, sem I/O.
+  // `useAoMudar` com a própria flag como chave roda na montagem e sempre que
+  // ela mudar — ver lib/useAoMudar.ts.
+  useAoMudar(
+    ehAppNativo,
+    () => {
+      // No app nativo a Push API do navegador não existe na WebView, mas o
+      // push FUNCIONA (via FCM, registrado por usePushNotifications no
+      // provider). Sem este ramo o botão diria "Ativar Notificações" para
+      // sempre, mesmo com o push já ativo — checar `Notification.permission`
+      // ali é a pergunta errada para o Android.
+      if (ehAppNativo) {
+        setPushEnabled(true);
+        return;
+      }
+      if (typeof window !== 'undefined' && 'Notification' in window) {
+        setPushEnabled(Notification.permission === 'granted');
+      }
+    },
+    // Leitura de estado externo: tem que acontecer já na montagem.
+    { naMontagem: true }
+  );
 
   const handleSaveContact = async () => {
     setSavingContact(true);

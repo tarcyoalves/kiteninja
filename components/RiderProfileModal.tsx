@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { BotaoSeguir } from './BotaoSeguir';
 import { CardSessaoFeed } from './CardSessaoFeed';
 import type { RelacaoRider, RiderProfile, SessionFeedItem } from '@/types';
+import { useAoMudar } from '../lib/useAoMudar';
 
 interface RiderProfileModalProps {
   /** `null` = modal fechado — mesmo contrato de `ListingDetailModal`
@@ -57,16 +58,23 @@ export const RiderProfileModal: React.FC<RiderProfileModalProps> = ({
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
+  /*
+   * Limpeza síncrona no render, fetch no efeito. Ver lib/useAoMudar.ts: com
+   * tudo dentro do useEffect, o modal chegava a pintar UM QUADRO com o perfil
+   * do velejador anterior antes de limpar — visível ao abrir dois perfis em
+   * seguida.
+   */
+  useAoMudar(riderId, () => {
+    setRider(null);
+    setVelejos([]);
+    setErro(null);
+    setCarregando(riderId !== null);
+  });
+
   useEffect(() => {
-    if (!riderId) {
-      setRider(null);
-      setVelejos([]);
-      return;
-    }
+    if (!riderId) return;
 
     let ativo = true;
-    setCarregando(true);
-    setErro(null);
 
     (async () => {
       try {

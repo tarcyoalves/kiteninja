@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/chat';
 import type { AppNotification } from '@/types';
+import { useAoMudar } from '../lib/useAoMudar';
 
 interface NotificationCenterModalProps {
   aberto: boolean;
@@ -105,12 +106,19 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
       .catch(() => {});
   }, [aberto]);
 
+  // "Começou a carregar" é ajuste síncrono e vai no render; o fetch fica no
+  // efeito — ver lib/useAoMudar.ts.
+  useAoMudar(aberto, () => {
+    if (aberto) {
+      setCarregando(true);
+      setErro(null);
+    }
+  });
+
   useEffect(() => {
     if (!aberto) return;
 
     let ativo = true;
-    setCarregando(true);
-    setErro(null);
 
     fetch('/api/notifications', { method: 'POST' }).catch(() => {});
 
