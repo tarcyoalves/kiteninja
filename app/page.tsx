@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { useAoMudar } from "@/lib/useAoMudar";
 import { AuthProvider } from "@/context/AuthContext";
 import { KiteDataProvider } from "@/context/KiteDataContext";
 import { DownwindProvider, useDownwind } from "@/context/DownwindContext";
@@ -89,12 +90,14 @@ const MainContent: React.FC = () => {
   // (que é desmontado quando o teclado abre) e não deixar faixa vazia embaixo.
   const tecladoAberto = useKeyboardVisible();
 
-  // Reabre o painel se um novo SOS do usuário for detectado
-  React.useEffect(() => {
-    if (myActiveSos) {
-      setIsSosPanelOpen(true);
-    }
-  }, [myActiveSos]);
+  // Reabre o painel se um novo SOS do usuário for detectado. Ajuste no render
+  // e não em efeito: o SOS é a tela mais urgente do app, e em efeito o React
+  // pintava um quadro inteiro sem o painel antes de abri-lo. A chave é o ID,
+  // não o objeto — o poll do contexto devolve um objeto novo a cada resposta,
+  // e comparar identidade reabriria o painel que o velejador acabou de fechar.
+  useAoMudar(myActiveSos?.id ?? null, () => {
+    if (myActiveSos) setIsSosPanelOpen(true);
+  });
 
   const [tokenConviteUrl, setTokenConviteUrl] = React.useState<string | null>(null);
 
@@ -102,9 +105,13 @@ const MainContent: React.FC = () => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
     const inviteToken = params.get('dw_invite');
-    if (inviteToken) {
-      setTokenConviteUrl(inviteToken);
-    }
+    // Este setState-em-efeito fica: `window.location` não existe no servidor,
+    // então ler a URL num inicializador de `useState` (que roda também no
+    // SSR) daria divergência de hidratação justamente para quem chegou pelo
+    // link de convite. Um render extra na montagem é o preço, e ele só
+    // acontece quando o parâmetro está presente.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (inviteToken) setTokenConviteUrl(inviteToken);
   }, []);
 
   return (
@@ -276,7 +283,7 @@ const MainContent: React.FC = () => {
               window.history.replaceState({}, '', url.pathname + url.search);
             }
           }}
-          spots={useKiteData().spots}
+          spots={spots}
           onEntrou={() => {
             setActiveTab('mapa');
           }}
@@ -395,10 +402,15 @@ const Gate: React.FC = () => {
   // localStorage) e nunca por cima do splash ou da troca de senha
   // obrigatória — ver components/PermissoesOnboarding.tsx.
   const [permissoesFeitas, setPermissoesFeitas] = React.useState(true);
-  React.useEffect(() => {
-    if (!isAuthenticated || !user?.id || mustChangePassword) return;
-    setPermissoesFeitas(permissoesJaPedidas(user.id));
-  }, [isAuthenticated, user?.id, mustChangePassword]);
+  // A leitura do localStorage no render é segura AQUI porque só acontece
+  // depois de `isAuthenticated` virar true — o que exige uma resposta de rede,
+  // ou seja, bem depois da hidratação. No primeiro render (servidor e
+  // cliente) a chave é `null` e nada é lido.
+  const idParaChecarPermissoes =
+    isAuthenticated && !mustChangePassword ? (user?.id ?? null) : null;
+  useAoMudar(idParaChecarPermissoes, () => {
+    if (idParaChecarPermissoes) setPermissoesFeitas(permissoesJaPedidas(idParaChecarPermissoes));
+  });
   // Lazy init: o link para /admin é navegação de página inteira (não rota
   // client-side), então toda volta remonta o Gate do zero. Sem checar
   // introJaVista() aqui, o vídeo tocava de novo a cada ida e volta ao admin

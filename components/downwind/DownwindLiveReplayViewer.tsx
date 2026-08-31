@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import type { Map as LeafletMap } from 'leaflet';
 import { mesclarPontos } from '@/lib/trilhaDownwind';
+import { useAoMudar } from '@/lib/useAoMudar';
 
 interface PontoTrilhaLive {
   0: number; // lat
@@ -178,9 +179,14 @@ export const DownwindLiveReplayViewer: React.FC<{
 
   // 2. Calcula limites de tempo da travessia
   const { minTsMs, maxTsMs, duracaoTotalMs } = useMemo(() => {
+    // Sem trilha nenhuma, o limite é 0 — sentinela de "não há tempo a
+    // mostrar". Antes isto devolvia `Date.now()`, o que é uma leitura de
+    // relógio DURANTE O RENDER: o React 19 acusa como impureza (dois renders
+    // do mesmo estado davam valores diferentes) e o efeito colateral visível
+    // era a barra de tempo exibindo a hora atual num replay vazio.
+    // `formatarHoraReplay` já trata 0 e mostra 00:00:00.
     if (!dados || Object.keys(dados.trilhas).length === 0) {
-      const now = Date.now();
-      return { minTsMs: now, maxTsMs: now, duracaoTotalMs: 0 };
+      return { minTsMs: 0, maxTsMs: 0, duracaoTotalMs: 0 };
     }
     let min = Infinity;
     let max = -Infinity;
@@ -193,18 +199,23 @@ export const DownwindLiveReplayViewer: React.FC<{
       }
     }
 
-    if (min === Infinity) min = Date.now();
-    if (max === -Infinity) max = Date.now();
+    if (min === Infinity) min = 0;
+    if (max === -Infinity) max = 0;
 
     return { minTsMs: min, maxTsMs: max, duracaoTotalMs: Math.max(0, max - min) };
   }, [dados]);
 
-  // Inicializa o replayTimeMs no final da trilha se for modo Live
-  useEffect(() => {
-    if (isLiveMode && maxTsMs > 0) {
-      setReplayTimeMs(maxTsMs);
-    }
-  }, [isLiveMode, maxTsMs]);
+  // Mantém o replayTimeMs colado no fim da trilha enquanto está ao vivo, para
+  // que sair do modo Live já caia no instante mais recente e não no começo da
+  // travessia. Ajuste síncrono de estado: pertence ao render, não a um efeito
+  // (em efeito, o slider aparecia por um quadro na posição antiga).
+  useAoMudar(
+    isLiveMode ? maxTsMs : null,
+    () => {
+      if (isLiveMode && maxTsMs > 0) setReplayTimeMs(maxTsMs);
+    },
+    { naMontagem: true }
+  );
 
   // 3. Inicialização do Mapa Leaflet
   useEffect(() => {

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, Pause, Scissors, Plus, Minus, MoveHorizontal } from 'lucide-react';
+import { useAoMudar } from '@/lib/useAoMudar';
 
 export interface TrechoVideo {
   inicioSeg: number;
@@ -137,12 +138,24 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
   const [modoArraste, setModoArraste] = useState<'inicio' | 'fim' | 'janela' | null>(null);
   const dragStartRef = useRef<{ clientX: number; inicioSeg: number; fimSeg: number } | null>(null);
 
-  // Inicializa o trecho com base no valor inicial
-  useEffect(() => {
-    if (valorInicial && duracaoVideo > 0) {
-      setTrecho(validarValorInicial(valorInicial, duracaoVideo, minSeg, maxSeg));
-    }
-  }, [valorInicial, duracaoVideo, minSeg, maxSeg]);
+  /**
+   * Inicializa o trecho com base no valor inicial — no render, não em efeito.
+   *
+   * A chave é montada com os NÚMEROS, nunca com o objeto `valorInicial`: se o
+   * pai recriasse o objeto a cada render (`valorInicial={{ inicioSeg: 0,
+   * fimSeg: 6 }}` inline, o mais natural de escrever), a comparação por
+   * identidade dispararia o ajuste sem parar. Com os números, um pai desses
+   * também deixa de clobbar o trecho que o velejador acabou de arrastar.
+   */
+  useAoMudar(
+    `${valorInicial?.inicioSeg ?? ''}|${valorInicial?.fimSeg ?? ''}|${duracaoVideo}|${minSeg}|${maxSeg}`,
+    () => {
+      if (valorInicial && duracaoVideo > 0) {
+        setTrecho(validarValorInicial(valorInicial, duracaoVideo, minSeg, maxSeg));
+      }
+    },
+    { naMontagem: true }
+  );
 
   /*
    * Declarada ANTES de handleLoadedMetadata e memoizada de propósito.
@@ -235,8 +248,17 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
     });
   };
 
-  // Início do arraste
-  const iniciarArraste = (modo: 'inicio' | 'fim' | 'janela') => (e: React.PointerEvent) => {
+  /**
+   * Início do arraste.
+   *
+   * Recebe o modo como ARGUMENTO em vez de ser uma fábrica curried
+   * (`iniciarArraste('inicio')`). A versão curried era invocada durante o
+   * render, nos três `onPointerDown` — e o compilador do React 19, vendo uma
+   * chamada de função no render que escreve num ref, acusava acesso a ref
+   * durante o render nos três lugares. Com o argumento, o que vai para o JSX
+   * é um arrow que só roda no evento.
+   */
+  const iniciarArraste = (modo: 'inicio' | 'fim' | 'janela', e: React.PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setModoArraste(modo);
@@ -419,7 +441,7 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
 
           {/* Janela central amarela selecionada (pode ser arrastada inteira) */}
           <div
-            onPointerDown={iniciarArraste('janela')}
+            onPointerDown={(e) => iniciarArraste('janela', e)}
             className={`absolute top-0 bottom-0 border-y-2 border-amber-400 bg-amber-400/15 cursor-grab active:cursor-grabbing flex items-center justify-center group ${
               modoArraste === 'janela' ? 'border-amber-300 bg-amber-400/25' : ''
             }`}
@@ -434,7 +456,7 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
 
           {/* Alça de Início (área de toque ampliada para 44px) */}
           <div
-            onPointerDown={iniciarArraste('inicio')}
+            onPointerDown={(e) => iniciarArraste('inicio', e)}
             className="absolute top-0 bottom-0 w-11 -translate-x-1/2 cursor-ew-resize flex items-center justify-center z-20 group touch-none"
             style={{ left: `${inicioPct}%` }}
             title="Arraste para mudar o início"
@@ -447,7 +469,7 @@ export const VideoTrimmer: React.FC<VideoTrimmerProps> = ({
 
           {/* Alça de Fim (área de toque ampliada para 44px) */}
           <div
-            onPointerDown={iniciarArraste('fim')}
+            onPointerDown={(e) => iniciarArraste('fim', e)}
             className="absolute top-0 bottom-0 w-11 -translate-x-1/2 cursor-ew-resize flex items-center justify-center z-20 group touch-none"
             style={{ left: `${fimPct}%` }}
             title="Arraste para mudar o fim"

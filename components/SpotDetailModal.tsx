@@ -38,6 +38,7 @@ import { getWindColorClass, calculateKiteSize, getSafetyBadgeColor } from '../li
 import { TideCurve } from './TideCurve';
 import { WindTrend } from './WindTrend';
 import { LiveWindTelemetry } from './LiveWindTelemetry';
+import { usePrefereMenosMovimento } from '@/lib/usePrefereMenosMovimento';
 
 interface SpotDetailModalProps {
   spot: Spot | null;
@@ -54,8 +55,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [scrolledDayIndex, setScrolledDayIndex] = useState(0);
 
-  // Estado para prefers-reduced-motion
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const prefersReducedMotion = usePrefereMenosMovimento();
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -67,15 +67,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const dayButtonsNavRef = useRef<HTMLDivElement>(null);
   const dayButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
   const isUserScrollingRef = useRef(false);
-
-  // Detecta prefers-reduced-motion uma vez ao montar
-  useEffect(() => {
-    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setPrefersReducedMotion(media.matches);
-    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
-    media.addEventListener('change', handler);
-    return () => media.removeEventListener('change', handler);
-  }, []);
 
   // Centraliza o botão do dia ativo no cabeçalho horizontal de dias
   useEffect(() => {

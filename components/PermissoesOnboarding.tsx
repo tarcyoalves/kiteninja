@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, Bell, Check, Loader2, MapPin, Siren } from 'lucide-react';
 import { ativarWebPush, pedirLocalizacao } from '../lib/pushClient';
 import { useIsNativeApp } from '../lib/usePushNotifications';
+import { precisaInstalarParaPush, type AmbienteInstalacao } from '../lib/instalacaoIos';
 
 /**
  * Pede localização e notificações UMA VEZ, logo depois do login.
@@ -30,6 +31,87 @@ import { useIsNativeApp } from '../lib/usePushNotifications';
  * outra vez depois de negado (a decisão fica no nível do site, não do app).
  * Quem negou e mudou de ideia usa o botão no menu do avatar, que continua lá.
  */
+
+/**
+ * Uma linha da lista de permissões.
+ *
+ * Fica no escopo do módulo, não dentro do componente: definir um componente
+ * durante o render cria um TIPO novo a cada render, e o React desmonta e
+ * remonta a subárvore inteira em vez de atualizá-la — é o que a regra
+ * `react-hooks/static-components` do React 19 acusa. Aqui isso apagaria a
+ * animação de "concedido" toda vez que o pai renderizasse.
+ */
+const Item = ({
+  icone,
+  titulo,
+  texto,
+  estado,
+}: {
+  icone: React.ReactNode;
+  titulo: string;
+  texto: string;
+  estado: EstadoItem;
+}) => (
+  <div className="flex items-start gap-3">
+    <div
+      className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${
+        estado === 'concedido'
+          ? 'bg-emerald-500/20 text-emerald-300'
+          : estado === 'negado'
+            ? 'bg-slate-800 text-slate-500'
+            : 'bg-cyan-500/15 text-cyan-300'
+      }`}
+    >
+      {estado === 'concedido' ? <Check size={17} /> : icone}
+    </div>
+    <div className="min-w-0">
+      <p className="text-[13px] font-black text-white">{titulo}</p>
+      <p className="text-[11px] text-slate-400 leading-snug">{texto}</p>
+    </div>
+  </div>
+);
+
+/** O que só o navegador sabe — ver lib/instalacaoIos.ts. */
+type AmbienteDoNavegador = Omit<AmbienteInstalacao, 'ehAppNativo'>;
+
+/**
+ * Nada aqui muda durante a sessão: o aparelho não deixa de ser um iPhone, e
+ * instalar o app na tela de início abre uma janela nova. Por isso a inscrição
+ * é vazia e o snapshot é cacheado — `useSyncExternalStore` exige que
+ * `getSnapshot` devolva SEMPRE o mesmo objeto enquanto nada mudou, senão o
+ * React entra em laço de render.
+ */
+function assinarAmbiente(): () => void {
+  return () => {};
+}
+
+let cacheAmbiente: AmbienteDoNavegador | null = null;
+
+function lerAmbienteNoCliente(): AmbienteDoNavegador {
+  if (!cacheAmbiente) {
+    cacheAmbiente = {
+      userAgent: navigator.userAgent,
+      standalone: Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone),
+      displayModeStandalone: window.matchMedia('(display-mode: standalone)').matches,
+    };
+  }
+  return cacheAmbiente;
+}
+
+/**
+ * No servidor não há aparelho nenhum. Devolver "não é iOS" faz o SSR e o
+ * primeiro render do cliente combinarem: o aviso aparece na hidratação, sem
+ * erro de hidratação.
+ */
+const AMBIENTE_NO_SERVIDOR: AmbienteDoNavegador = {
+  userAgent: '',
+  standalone: false,
+  displayModeStandalone: false,
+};
+
+function lerAmbienteNoServidor(): AmbienteDoNavegador {
+  return AMBIENTE_NO_SERVIDOR;
+}
 
 const CHAVE_STORAGE = 'kiteninja:permissoes-pedidas';
 
@@ -80,21 +162,17 @@ export const PermissoesOnboarding: React.FC<{ userId: string; onFechar: () => vo
   // que era ENGANOSA: o suporte existe, só por outro caminho.
   const ehAppNativo = useIsNativeApp();
 
-  // iOS só entrega Web Push quando o app está instalado na tela de início —
-  // no Safari comum o botão existiria mas nunca funcionaria, então avisamos
-  // em vez de deixar o velejador tentar e achar que o app está quebrado.
-  const [precisaInstalar, setPrecisaInstalar] = useState(false);
-  useEffect(() => {
-    if (ehAppNativo) {
-      setPrecisaInstalar(false);
-      return;
-    }
-    const ehIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const instalado =
-      Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone) ||
-      window.matchMedia('(display-mode: standalone)').matches;
-    setPrecisaInstalar(ehIos && !instalado);
-  }, [ehAppNativo]);
+  // iOS só entrega Web Push quando o app está instalado na tela de início.
+  // A leitura do ambiente passa por `useSyncExternalStore` — a API que o React
+  // dá justamente para valores que existem só no cliente. Ela entrega o
+  // snapshot do servidor no SSR e o do navegador na hidratação, sem efeito e
+  // sem o render extra que um `useEffect` com setState causava aqui.
+  const ambiente = useSyncExternalStore(
+    assinarAmbiente,
+    lerAmbienteNoCliente,
+    lerAmbienteNoServidor
+  );
+  const precisaInstalar = precisaInstalarParaPush({ ...ambiente, ehAppNativo });
 
   const conceder = useCallback(async () => {
     setRodando(true);
@@ -135,35 +213,6 @@ export const PermissoesOnboarding: React.FC<{ userId: string; onFechar: () => vo
     onFechar();
   }, [userId, onFechar]);
 
-  const Item = ({
-    icone,
-    titulo,
-    texto,
-    estado,
-  }: {
-    icone: React.ReactNode;
-    titulo: string;
-    texto: string;
-    estado: EstadoItem;
-  }) => (
-    <div className="flex items-start gap-3">
-      <div
-        className={`shrink-0 w-9 h-9 rounded-xl flex items-center justify-center ${
-          estado === 'concedido'
-            ? 'bg-emerald-500/20 text-emerald-300'
-            : estado === 'negado'
-              ? 'bg-slate-800 text-slate-500'
-              : 'bg-cyan-500/15 text-cyan-300'
-        }`}
-      >
-        {estado === 'concedido' ? <Check size={17} /> : icone}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[13px] font-black text-white">{titulo}</p>
-        <p className="text-[11px] text-slate-400 leading-snug">{texto}</p>
-      </div>
-    </div>
-  );
 
   return (
     <div className="fixed inset-0 z-modal flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4">

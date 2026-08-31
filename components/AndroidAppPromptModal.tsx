@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useIsNativeApp } from '../lib/usePushNotifications';
+import { useAoMudar } from '../lib/useAoMudar';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -25,7 +26,14 @@ export const AndroidAppPromptModal: React.FC<{
 }> = ({ forcarAbertura = false, onFechar }) => {
   const { user } = useAuth();
   const ehAppNativo = useIsNativeApp();
-  const [aberto, setAberto] = useState(false);
+  /**
+   * Só a abertura AUTOMÁTICA é estado. `forcarAbertura` (o velejador pediu
+   * pelo menu) é derivado — copiá-lo para dentro do estado num efeito fazia o
+   * modal levar um quadro para aparecer depois do clique, e era um dos
+   * setState síncronos em efeito que o React 19 acusa.
+   */
+  const [abertoAutomatico, setAbertoAutomatico] = useState(false);
+  const aberto = forcarAbertura || abertoAutomatico;
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
 
   useEffect(() => {
@@ -43,13 +51,15 @@ export const AndroidAppPromptModal: React.FC<{
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
+  /**
+   * Fecha a abertura automática quando o velejador troca de conta ou sai: o
+   * convite é por usuário, e sem isto o modal de quem saiu continuaria na
+   * tela do próximo login.
+   */
+  useAoMudar(user?.id ?? null, () => setAbertoAutomatico(false));
 
-    if (forcarAbertura) {
-      setAberto(true);
-      return;
-    }
+  useEffect(() => {
+    if (typeof window === 'undefined' || forcarAbertura) return;
 
     // Só exibe automaticamente se for Android no navegador comum (não nativo, não standalone PWA)
     const isAndroid = /Android/i.test(navigator.userAgent);
@@ -57,10 +67,9 @@ export const AndroidAppPromptModal: React.FC<{
       window.matchMedia('(display-mode: standalone)').matches ||
       Boolean((window.navigator as unknown as { standalone?: boolean }).standalone);
 
-    if (!isAndroid || ehAppNativo || isStandalone || !user) {
-      setAberto(false);
-      return;
-    }
+    // Não elegível: nada a fazer — `abertoAutomatico` só vira `true` depois
+    // desta checagem passar, então ele já está em `false` aqui.
+    if (!isAndroid || ehAppNativo || isStandalone || !user) return;
 
     // Verifica se o usuário dispensou nas últimas 48 horas
     const dispensadoEm = localStorage.getItem('kiteninja_android_prompt_dismissed_at');
@@ -73,14 +82,17 @@ export const AndroidAppPromptModal: React.FC<{
 
     // Abre suavemente após 2.5 segundos do login
     const timer = setTimeout(() => {
-      setAberto(true);
+      setAbertoAutomatico(true);
     }, 2500);
 
     return () => clearTimeout(timer);
   }, [user, ehAppNativo, forcarAbertura]);
 
   const fechar = () => {
-    setAberto(false);
+    // Quando o modal foi aberto por `forcarAbertura`, quem fecha de verdade é
+    // o pai, apagando a flag — é ele que a controla. `onFechar` existe para
+    // isso; sem ele o modal forçado não teria como sumir.
+    setAbertoAutomatico(false);
     if (typeof window !== 'undefined') {
       localStorage.setItem('kiteninja_android_prompt_dismissed_at', Date.now().toString());
     }
