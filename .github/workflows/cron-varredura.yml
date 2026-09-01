@@ -13,14 +13,34 @@ name: Varredura periódica (SOS + downwind)
 # vercel.json mantém os crons nativos só em frequência diária (manutenção/
 # fallback); a varredura frequente de verdade roda aqui.
 #
-# LIMITAÇÃO CONHECIDA: o `schedule` do GitHub Actions não é garantido no
-# minuto exato — sob carga da plataforma, a execução pode atrasar vários
-# minutos (a documentação do GitHub Actions é explícita sobre isso). Para
-# SOS (emergência) e downwind (silêncio de segurança), isso significa que o
-# tempo real de detecção pode exceder o limiar configurado. Não há
-# contorno gratuito para isso fora da Vercel; se precisão de minuto for
-# crítica, mova para o plano Pro da Vercel (cron "* * * * *") ou um
-# scheduler dedicado (cron-job.org, Upstash QStash).
+# ⚠️ MEDIDO EM PRODUÇÃO, 31/08-01/09/2026: o atraso NÃO é de "vários
+# minutos". É de HORAS.
+#
+# Em 21,5 h de observação, com `*/5` configurado (259 execuções esperadas),
+# o GitHub rodou este workflow SEIS vezes:
+#
+#     31/08 19:15 -> 31/08 23:14 = 4,0 h
+#     31/08 23:14 -> 01/09 01:50 = 2,6 h
+#     01/09 01:50 -> 01/09 06:55 = 5,1 h
+#     01/09 06:55 -> 01/09 12:23 = 5,5 h
+#     01/09 12:23 -> 01/09 16:48 = 4,4 h
+#
+# Intervalo médio: 4,3 h — uma execução a cada ~52 agendadas. O GitHub trata
+# `schedule` em repositório gratuito como trabalho de baixa prioridade e o
+# posterga sob carga; a documentação avisa que não há garantia de horário.
+#
+# O QUE ISSO SIGNIFICA NA ÁGUA: a escalada de SOS amplia o raio aos 2 min
+# (5 -> 15 -> 50 km). Com varredura a cada 4,3 h, um pedido de socorro
+# disparado às 17h só teria a primeira ampliação por volta das 21h. Para
+# emergência isso é, na prática, o mesmo que não ter escalada.
+#
+# Este workflow FUNCIONA — os dois `curl` respondem 2xx, o CRON_SECRET está
+# correto — mas a frequência o torna insuficiente para o que ele existe.
+# Ele fica como rede de segurança de última instância.
+#
+# A SOLUÇÃO REAL é um scheduler que honre o minuto: cron-job.org (grátis) ou
+# Upstash QStash apontando para as duas rotas com o CRON_SECRET no header,
+# ou o plano Pro da Vercel (cron "* * * * *"). Ver docs/OPERACAO-SOS.md.
 
 on:
   schedule:
