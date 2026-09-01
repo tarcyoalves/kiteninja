@@ -125,7 +125,10 @@ O estado antigo de `master` está preservado na branch
 
 ## 7. O que está aberto e depende do dono
 
-- **Branch default → `main`** (acima). Destrava a varredura de 5 em 5 minutos.
+- **Scheduler externo para a escalada de SOS.** O cron do GitHub roda, e roda
+  com sucesso — mas a **4,3 h de intervalo**, não aos 5 min configurados
+  (medido: 6 execuções onde deveriam ter sido 259). Para emergência isso é
+  insuficiente. Passo a passo em `docs/CRON-EXTERNO-SOS.md`.
 - **Teste de rastreio num Android real.** O CI publica o APK de debug como
   artefato a cada push; o banner de diagnóstico na tela diz onde o fluxo para.
 
@@ -139,4 +142,5 @@ O estado antigo de `master` está preservado na branch
 | `VARREDURA-2026-08-31.md` | Varredura de falhas + o CI vermelho por motivo próprio |
 | `ANTIGRAVITY-STATUS.md` | Situação por achado da auditoria (ANT-001 fechado) |
 | `CONFIGURACAO-SEGREDOS.md` | Passo a passo dos segredos |
+| `CRON-EXTERNO-SOS.md` | Por que a escalada precisa de scheduler externo |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |
