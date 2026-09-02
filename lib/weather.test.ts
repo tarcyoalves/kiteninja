@@ -202,3 +202,75 @@ describe('toChartDatum', () => {
     expect(extremeLow).toBeGreaterThanOrEqual(0.1);
   });
 });
+
+/**
+ * Cache compartilhado entre instâncias.
+ *
+ * O `Map` do módulo só existe dentro de uma instância serverless. Com muitos
+ * usuários no mesmo spot, cada instância fria repetia a chamada à Open-Meteo —
+ * o gargalo de escala apontado nas auditorias. A correção é pedir o Data Cache
+ * do Next (`next.revalidate`), que é compartilhado entre todas as instâncias do
+ * deploy.
+ *
+ * Este teste existe porque a regressão é invisível: trocar de volta para
+ * `cache: 'no-store'` não quebra nenhuma tela, só multiplica o custo em
+ * produção, onde ninguém está olhando.
+ */
+describe('política de cache das chamadas externas', () => {
+  const respostaFalsa = (): Response =>
+    new Response(
+      JSON.stringify({
+        hourly: {
+          time: ['2026-09-02T00:00'],
+          temperature_2m: [27],
+          pressure_msl: [1012],
+          weather_code: [0],
+          is_day: [1],
+          wind_speed_10m: [15],
+          wind_direction_10m: [110],
+          wind_gusts_10m: [19],
+        },
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } }
+    );
+
+  async function capturarInits(
+    lat: number,
+    lng: number,
+    forceRefresh: boolean
+  ): Promise<RequestInit[]> {
+    const inits: RequestInit[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = ((_url: string, init?: RequestInit) => {
+      inits.push(init ?? {});
+      return Promise.resolve(respostaFalsa());
+    }) as typeof globalThis.fetch;
+    try {
+      await getSpotWeather(lat, lng, 1, forceRefresh);
+    } finally {
+      globalThis.fetch = original;
+    }
+    return inits;
+  }
+
+  it('usa o Data Cache do Next no caminho normal', async () => {
+    // Coordenada improvável, para não colidir com o cache em memória dos
+    // outros testes deste arquivo.
+    const inits = await capturarInits(-11.1111, -37.7777, false);
+    expect(inits.length).toBeGreaterThan(0);
+    for (const init of inits) {
+      const next = (init as { next?: { revalidate?: number } }).next;
+      expect(next?.revalidate).toBe(600);
+      expect(init.cache).toBeUndefined();
+    }
+  });
+
+  it('respeita o refresh explícito do usuário sem cache nenhum', async () => {
+    const inits = await capturarInits(-11.2222, -37.8888, true);
+    expect(inits.length).toBeGreaterThan(0);
+    for (const init of inits) {
+      expect(init.cache).toBe('no-store');
+      expect((init as { next?: unknown }).next).toBeUndefined();
+    }
+  });
+});

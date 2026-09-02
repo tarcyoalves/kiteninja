@@ -31,8 +31,16 @@ const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const MARINE_URL = 'https://marine-api.open-meteo.com/v1/marine';
 const TZ = 'America/Fortaleza';
 
-/** Cache em memória por instância serverless. */
-const CACHE_TTL_MS = 10 * 60 * 1000;
+/**
+ * Janela de validade da previsão.
+ *
+ * Vale para os dois níveis de cache: o Data Cache do Next (compartilhado entre
+ * instâncias, em segundos) e o `Map` em memória desta instância (em ms). O
+ * modelo GFS publica de hora em hora, então 10 min mantém a tela atual sem
+ * bombardear a Open-Meteo.
+ */
+const CACHE_TTL_SEGUNDOS = 10 * 60;
+const CACHE_TTL_MS = CACHE_TTL_SEGUNDOS * 1000;
 const FETCH_TIMEOUT_MS = 8000;
 
 type IconName = 'sun' | 'moon' | 'cloud-sun' | 'cloud-moon' | 'cloud' | 'rain';
@@ -192,12 +200,31 @@ function opt(v: number | null | undefined, decimais: number): number | null {
   return Number(v.toFixed(decimais));
 }
 
-async function getJson<T>(url: string, retries = 1): Promise<T | null> {
+/**
+ * Busca com cache compartilhado entre instâncias.
+ *
+ * O `Map` no fim deste arquivo só vive dentro de uma instância serverless. Em
+ * produção há muitas instâncias simultâneas, então N usuários no mesmo spot
+ * viravam N chamadas à Open-Meteo mesmo com o cache "quente" — que é exatamente
+ * o problema de escala apontado nas auditorias.
+ *
+ * `next: { revalidate }` põe a resposta no Data Cache do Next, que é
+ * compartilhado entre todas as instâncias do deploy. Assim o mesmo spot gera
+ * uma chamada externa a cada `CACHE_TTL_SEGUNDOS`, independente de quantos
+ * usuários pedirem. Não exige Redis nem credencial nova.
+ *
+ * Com `semCache` (refresh explícito do usuário) volta a `no-store`: as duas
+ * opções são mutuamente exclusivas no fetch do Next.
+ */
+async function getJson<T>(url: string, retries = 1, semCache = false): Promise<T | null> {
+  const politicaDeCache: RequestInit = semCache
+    ? { cache: 'no-store' }
+    : ({ next: { revalidate: CACHE_TTL_SEGUNDOS } } as RequestInit);
   for (let attempt = 0; attempt <= retries; attempt++) {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(url, { signal: ctrl.signal, cache: 'no-store' });
+      const res = await fetch(url, { signal: ctrl.signal, ...politicaDeCache });
       if (res.ok) {
         return (await res.json()) as T;
       }
@@ -437,8 +464,8 @@ export async function getSpotWeather(
 
   // Em paralelo: a marinha é opcional e não deve somar latência.
   const [fc, mar] = await Promise.all([
-    getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${forecastQs}`),
-    getJson<{ hourly: MarineBlock }>(`${MARINE_URL}?${marineQs}`),
+    getJson<{ hourly: HourlyBlock }>(`${FORECAST_URL}?${forecastQs}`, 1, forceRefresh),
+    getJson<{ hourly: MarineBlock }>(`${MARINE_URL}?${marineQs}`, 1, forceRefresh),
   ]);
 
   // Fallback: se rede falhar completamente, aproveita cache anterior (stale-while-revalidate)
