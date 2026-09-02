@@ -126,6 +126,175 @@ function extrairTemplatesSql(fonte: string): string[] {
   return encontrados;
 }
 
+/**
+ * Igual a `extrairTemplatesSql`, mas cada `${...}` vira `$1`, `$2`, ... — do
+ * jeito que o driver do Neon realmente monta a consulta.
+ *
+ * POR QUE AS DUAS VERSÕES EXISTEM
+ *
+ * A versão com NULL prova que TABELAS E COLUNAS existem. Ela é cega, porém,
+ * para tudo que depende de TIPO: `NULL` literal se molda ao contexto, um
+ * parâmetro `$n` não. Se o Postgres não consegue inferir o tipo de um
+ * parâmetro, ele recusa a consulta inteira com 42P18 — em produção, em
+ * runtime, com a rota devolvendo 500.
+ *
+ * FOI EXATAMENTE ISSO QUE ACONTECEU: um `${ufFiltro}` escrito dentro de um
+ * COMENTÁRIO SQL (`-- ... (${ufFiltro} IS NULL) ...`). O JavaScript interpola
+ * antes de o Postgres ver o texto, então o comentário virou um parâmetro de
+ * verdade; o lexer do Postgres descarta o resto da linha depois do `--`, e o
+ * parâmetro ficou enviado porém sem uso nenhum, sem contexto para tipo.
+ * `GET /api/events` passou a devolver 500 para todo mundo, e o dono relatou
+ * "criei um downwind e não apareceu nada".
+ *
+ * A varredura com NULL passava verde: com `-- ... (NULL IS NULL) ...` não há
+ * parâmetro nenhum, só um comentário inofensivo.
+ */
+function extrairTemplatesComParametros(fonte: string): string[] {
+  const encontrados: string[] = [];
+  const inicio = /\bsql`/g;
+  let m: RegExpExecArray | null;
+  while ((m = inicio.exec(fonte))) {
+    let i = m.index + m[0].length;
+    let corpo = '';
+    let n = 0;
+    for (; i < fonte.length; i++) {
+      const c = fonte[i];
+      if (c === '\\') {
+        corpo += fonte[i] + (fonte[i + 1] ?? '');
+        i++;
+        continue;
+      }
+      if (c === '$' && fonte[i + 1] === '{') {
+        let prof = 1;
+        i += 2;
+        for (; i < fonte.length && prof > 0; i++) {
+          if (fonte[i] === '{') prof++;
+          else if (fonte[i] === '}') prof--;
+        }
+        i--;
+        corpo += `$${++n}`;
+        continue;
+      }
+      if (c === '`') break;
+      corpo += c;
+    }
+    encontrados.push(corpo);
+  }
+  return encontrados;
+}
+
+/**
+ * Prepara TODA consulta de app/api com os parâmetros no lugar, como o driver
+ * envia. Pega o que a varredura com NULL não vê: tipo indeterminado (42P18),
+ * parâmetro perdido em comentário, e incompatibilidade de tipo real.
+ */
+async function varrerParametrosDasRotas(db: PGlite): Promise<void> {
+  const arquivos = listarArquivosTs(join(process.cwd(), 'app', 'api'));
+  const falhas: string[] = [];
+  let validadas = 0;
+  let n = 0;
+
+  for (const arquivo of arquivos) {
+    const nomeCurto = arquivo.replace(process.cwd() + '/', '');
+    for (const template of extrairTemplatesComParametros(readFileSync(arquivo, 'utf8'))) {
+      // Os comentários FICAM: é dentro deles que o defeito se esconde.
+      const limpo = template.trim();
+      if (!/^(SELECT|INSERT|UPDATE|DELETE|WITH)\b/i.test(limpo.replace(/--[^\n]*/g, '').trim())) {
+        continue;
+      }
+      validadas++;
+      try {
+        await db.exec(`PREPARE param_${++n} AS ${limpo}`);
+      } catch (err) {
+        const motivo = err instanceof Error ? err.message.split('\n')[0] : String(err);
+        falhas.push(`${nomeCurto}: ${motivo}`);
+      }
+    }
+  }
+
+  check(
+    `toda consulta aceita os PARÂMETROS que o driver envia (${validadas} consultas)`,
+    falhas.length === 0,
+    falhas.join(' | ')
+  );
+}
+
+/**
+ * Guarda direta: interpolação dentro de comentário SQL.
+ *
+ * A varredura de parâmetros acima pega o sintoma (42P18) quando o parâmetro
+ * perdido fica sem tipo. Esta pega a CAUSA sempre, inclusive nos casos em que
+ * o parâmetro órfão por acaso ainda tipa e o erro só apareceria mais tarde,
+ * com outro dado.
+ *
+ * Vale para as duas armadilhas da mesma família, ambas já cometidas aqui:
+ * interpolação num comentário (vira parâmetro que o Postgres nunca vê) e
+ * crase num comentário (encerra o template literal no meio da consulta — essa
+ * o tsc pega, mas só depois de produzir um erro de sintaxe incompreensível).
+ */
+function varrerComentariosDosTemplates(): void {
+  const arquivos = listarArquivosTs(join(process.cwd(), 'app', 'api'));
+  const suspeitos: string[] = [];
+
+  for (const arquivo of arquivos) {
+    const nomeCurto = arquivo.replace(process.cwd() + '/', '');
+    const fonte = readFileSync(arquivo, 'utf8');
+    // Percorre o texto bruto de cada template (sem substituir nada) e olha
+    // linha a linha o que vem depois de `--`.
+    for (const bruto of extrairTemplatesBrutos(fonte)) {
+      for (const linha of bruto.split('\n')) {
+        const corte = linha.indexOf('--');
+        if (corte === -1) continue;
+        const comentario = linha.slice(corte);
+        if (comentario.includes('${')) {
+          suspeitos.push(`${nomeCurto}: interpolação em comentário SQL -> ${comentario.trim().slice(0, 70)}`);
+        }
+      }
+    }
+  }
+
+  check(
+    'nenhum comentário SQL contém interpolação (vira parâmetro fantasma)',
+    suspeitos.length === 0,
+    suspeitos.join(' | ')
+  );
+}
+
+/** O texto do template exatamente como está no arquivo, sem trocar nada. */
+function extrairTemplatesBrutos(fonte: string): string[] {
+  const out: string[] = [];
+  const re = /\bsql`/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(fonte))) {
+    let i = m.index + m[0].length;
+    let corpo = '';
+    for (; i < fonte.length; i++) {
+      const c = fonte[i];
+      if (c === '\\') {
+        corpo += fonte[i] + (fonte[i + 1] ?? '');
+        i++;
+        continue;
+      }
+      if (c === '$' && fonte[i + 1] === '{') {
+        let prof = 1;
+        const inicio = i;
+        i += 2;
+        for (; i < fonte.length && prof > 0; i++) {
+          if (fonte[i] === '{') prof++;
+          else if (fonte[i] === '}') prof--;
+        }
+        i--;
+        corpo += fonte.slice(inicio, i + 1);
+        continue;
+      }
+      if (c === '`') break;
+      corpo += c;
+    }
+    out.push(corpo);
+  }
+  return out;
+}
+
 async function varrerSelectsDasRotas(db: PGlite): Promise<void> {
   const arquivos = listarArquivosTs(join(process.cwd(), 'app', 'api'));
   const falhasLeitura: string[] = [];
@@ -3003,6 +3172,8 @@ async function main() {
 
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
   await varrerSelectsDasRotas(db);
+  await varrerParametrosDasRotas(db);
+  varrerComentariosDosTemplates();
 
   await db.close();
 }

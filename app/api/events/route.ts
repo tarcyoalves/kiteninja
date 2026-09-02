@@ -75,8 +75,16 @@ export async function GET(request: Request) {
           SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
         )
       )
-      -- Filtro de estado. Sem filtro (${ufFiltro} IS NULL) tudo passa; com
-      -- filtro, evento de UF desconhecida fica de fora — ver eventoCasaComUf.
+      -- Filtro de estado: sem filtro tudo passa; com filtro, evento de UF
+      -- desconhecida fica de fora (ver eventoCasaComUf em lib/uf.ts).
+      --
+      -- ATENCAO: dentro deste template, um comentario SQL NAO e inerte. O
+      -- JavaScript interpola antes de o Postgres ver o texto, entao uma
+      -- interpolacao escrita num comentario vira um PARAMETRO de verdade; o
+      -- lexer do Postgres descarta o resto da linha e aquele parametro fica
+      -- enviado porem sem uso, sem contexto para inferir tipo. Erro 42P18,
+      -- que derrubou esta rota inteira em producao. Crase tambem nao pode:
+      -- ela encerra o template literal ali mesmo.
       AND (${ufFiltro}::text IS NULL OR e.uf = ${ufFiltro})
       /*
        * event_at, não event_date: a segunda é TEXT com a data por extenso em

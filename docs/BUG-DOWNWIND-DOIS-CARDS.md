@@ -101,3 +101,76 @@ Mais nove checks em `scripts/verify-sql.ts` cobrem o comportamento contra
 Postgres real: fechado escondido de terceiro, comunidade visível para todos,
 criador vendo o próprio fechado, uma linha por downwind, filtro de UF nos dois
 sentidos, e a corrida do disparo único.
+
+---
+
+# Adendo — a agenda voltou a sumir (02/09, 22:29)
+
+O dono criou um downwind e não apareceu nada. Desta vez a causa foi minha, no
+commit anterior, e é uma armadilha que vale documentar porque não é óbvia.
+
+## O erro
+
+Produção (Vercel runtime errors), rota `/api/events`:
+
+```
+NeonDbError: could not determine data type of parameter $5   (42P18)
+```
+
+`GET /api/events` devolvia 500 para todos. `loadFeedAndEvents` usa
+`Promise.allSettled` e só aplica o resultado quando `fulfilled`, então a lista
+de eventos ficava com o valor anterior — vazia. O downwind ERA criado (o POST
+funcionava); a agenda é que não carregava.
+
+## A causa: interpolação dentro de comentário SQL
+
+```ts
+sql`
+  ...
+  -- Filtro de estado. Sem filtro (${ufFiltro} IS NULL) tudo passa; com
+  AND (${ufFiltro}::text IS NULL OR e.uf = ${ufFiltro})
+`
+```
+
+Um comentário SQL **não é inerte dentro de um template literal**. O JavaScript
+interpola antes de o Postgres ver qualquer coisa, então aquele `${ufFiltro}` do
+comentário virou o parâmetro `$5` de verdade, enviado junto dos outros. O lexer
+do Postgres descarta tudo depois de `--`, então `$5` chega declarado e **nunca
+é usado** — sem contexto, não há como inferir tipo. 42P18.
+
+O cast `::text` que eu tinha escrito com cuidado estava no `$6`. O parâmetro
+sem tipo era o do comentário.
+
+## Segunda armadilha, na própria correção
+
+A primeira versão do comentário de correção usava **crases** em volta de `--`
+para destacá-lo. Crase dentro de um template literal **encerra o template ali
+mesmo**. O arquivo deixou de compilar, e — pior — a varredura nova passou
+verde, porque o extrator parava na crase e nunca chegava aos parâmetros reais.
+
+Foi só rodando `tsc` depois da correção que isso apareceu. A lição operacional:
+**a contraprova de um teste novo não vale se o arquivo em que ela roda estiver
+quebrado de outro jeito.**
+
+## Por que nenhuma verificação pegava
+
+`scripts/verify-sql.ts` troca todo `${...}` por `NULL` antes de validar. Isso
+prova que tabelas e colunas existem, e é cego para tudo que dependa de tipo:
+`NULL` literal se molda ao contexto, `$n` não. Com `-- ... (NULL IS NULL) ...`
+o comentário fica inofensivo e o check passa.
+
+## Duas verificações novas
+
+1. **`varrerParametrosDasRotas`** — prepara TODA consulta com `$1..$n` no
+   lugar, como o driver envia. Pega o sintoma exato: 217 consultas validadas,
+   e com o bug de volta ela reprova com a mesma mensagem da produção.
+2. **`varrerComentariosDosTemplates`** — pega a CAUSA direto: nenhum comentário
+   SQL pode conter `${`. Cobre também o caso em que o parâmetro órfão por acaso
+   tipa e o erro só apareceria depois, com outro dado.
+
+Ambas verificadas nos dois sentidos.
+
+## Regra para quem escrever SQL aqui
+
+Dentro de um `` sql`...` ``, um comentário `--` não pode conter **nem `${` nem
+crase**. As duas coisas são código, não texto.
