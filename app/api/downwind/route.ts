@@ -2,6 +2,7 @@
 import { handle, readJson } from '@/lib/api';
 import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
 import { rateLimiters } from '@/lib/rateLimit';
+import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import { str } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';
@@ -30,6 +31,30 @@ export const dynamic = 'force-dynamic';
 export async function GET() {
   return handle(async () => {
     const user = await requireUser();
+
+    /*
+     * Encerra as travessias abandonadas ANTES de listar.
+     *
+     * Isto existe porque depender só do cron não funciona na prática. O
+     * `encerrarAbandonados` também roda em /api/cron/downwind-silencio, mas o
+     * `schedule` do GitHub Actions entrega uma execução a cada ~4,3 h (medido
+     * — ver docs/CRON-EXTERNO-SOS.md). Na vida real isso apareceu assim: um
+     * downwind iniciado em 31/08 seguia marcado "Na água agora" no dia 02/09,
+     * porque a varredura ainda não tinha passado.
+     *
+     * Aqui a varredura acontece no momento em que alguém abre a lista — que é
+     * exatamente quando o dado errado seria visto. É o mesmo padrão preguiçoso
+     * que a purga de trilha e a escalada de SOS já usam nesta base: sem cron
+     * confiável no plano gratuito, quem passa pela porta faz a faxina.
+     *
+     * Não derruba a listagem se falhar: ver um downwind com status velho é
+     * ruim, não ver downwind nenhum é pior.
+     */
+    try {
+      await encerrarAbandonados();
+    } catch (err) {
+      console.error('[downwind] varredura preguiçosa de abandonados falhou', err);
+    }
 
     /*
      * Convidado do link de 12h enxerga só o downwind ao qual foi escopado —
