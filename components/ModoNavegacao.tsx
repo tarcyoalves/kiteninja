@@ -348,6 +348,37 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
             sinal para quem acompanha em terra) não valem nada. A pessoa está
             confiando na tela, então isto precisa ser tão visível quanto os
             avisos de wake lock acima — não um detalhe discreto. */}
+        {/*
+            Velejo anterior que ficou salvo no aparelho porque o app fechou
+            antes de registrar. NÃO é retomado sozinho: somar o velejo de
+            ontem ao de hoje colocaria distância errada no histórico. Quem
+            decide é o velejador — ver lib/trilhaPersistida.ts.
+        */}
+        {trilha.recuperavel && (
+          <div className="mt-2 max-w-[280px] p-2.5 rounded-xl border border-cyan-500/40 bg-cyan-500/10">
+            <p className="text-[11px] leading-snug text-cyan-200">
+              Achamos um velejo de{' '}
+              <strong>{trilha.recuperavel.distanciaKm.toFixed(1)} km</strong> que ficou
+              sem registrar. Retomar de onde parou?
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={trilha.retomar}
+                className="flex-1 h-8 rounded-lg bg-cyan-500 text-slate-950 font-black text-[11px] active:scale-95 transition-transform"
+              >
+                Retomar
+              </button>
+              <button
+                type="button"
+                onClick={trilha.descartar}
+                className="flex-1 h-8 rounded-lg bg-slate-800 border border-slate-600 text-slate-300 font-black text-[11px] active:scale-95 transition-transform"
+              >
+                Descartar
+              </button>
+            </div>
+          </div>
+        )}
         {trilha.indisponivel && (
           <p className="mt-2 max-w-[260px] text-[11px] leading-snug text-rose-400 flex items-start gap-1.5">
             <AlertTriangle size={13} className="shrink-0 mt-0.5" />

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ESTADO_INICIAL_TRILHA,
   EstadoTrilha,
@@ -9,6 +9,12 @@ import {
 } from './trilhaSessao';
 import type { PontoTrilha } from './trilhaDownwind';
 import { useAoMudar } from './useAoMudar';
+import {
+  CHAVE_TRILHA_EM_ANDAMENTO,
+  desserializarTrilha,
+  serializarTrilha,
+  valePenaRecuperar,
+} from './trilhaPersistida';
 
 /**
  * Casca fina sobre `watchPosition`: toda decisão (aceitar/rejeitar amostra,
@@ -45,12 +51,38 @@ export interface TrilhaSessao {
    * (`paraPrefillLogbook`) ter uma geometria para reduzir e enviar.
    */
   pontos: PontoTrilha[];
+  /**
+   * Trilha de uma sessão anterior que ficou salva no aparelho porque o app
+   * fechou antes de registrar — `null` quando não há nada a recuperar.
+   *
+   * NÃO é aplicada sozinha, de propósito. Retomar por conta própria correria
+   * o risco de somar o velejo de ontem ao de hoje, e a distância errada iria
+   * parar no histórico do velejador. Quem decide é ele, pelo aviso na tela.
+   */
+  recuperavel: { distanciaKm: number; velocidadeMaxNos: number; pontos: PontoTrilha[] } | null;
+  /** Adota a trilha recuperada e continua dali. */
+  retomar: () => void;
+  /** Joga fora a trilha salva e segue com a sessão do zero. */
+  descartar: () => void;
 }
 
-function paraTrilhaSessao(estado: EstadoTrilha): TrilhaSessao {
+type TelemetriaTrilha = Omit<TrilhaSessao, 'recuperavel' | 'retomar' | 'descartar'>;
+
+function paraTrilhaSessao(estado: EstadoTrilha): TelemetriaTrilha {
   const { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel, pontos } = estado;
   return { distanciaKm, velocidadeNos, velocidadeMaxNos, ultimaPosicaoEm, indisponivel, pontos };
 }
+
+/**
+ * De quanto em quanto tempo a trilha viva é copiada para o localStorage.
+ *
+ * Dez segundos, não a cada ponto: `localStorage.setItem` é síncrono e
+ * bloqueia a thread principal, e o GPS entrega amostra a cada poucos
+ * segundos. O custo de perder os últimos 10 s de trilha num fechamento
+ * abrupto é irrelevante perto de travar a tela de telemetria durante o
+ * velejo.
+ */
+const INTERVALO_SALVAR_MS = 10_000;
 
 export function useTrilhaSessao(ativo: boolean): TrilhaSessao {
   const [estado, setEstado] = useState<EstadoTrilha>(ESTADO_INICIAL_TRILHA);
@@ -58,6 +90,7 @@ export function useTrilhaSessao(ativo: boolean): TrilhaSessao {
   // retorno público) fora do React state para não expor esse campo interno
   // via `paraTrilhaSessao` a cada leitura, mantendo a interface pública
   // exatamente como especificada.
+  const [recuperado, setRecuperado] = useState<EstadoTrilha | null>(null);
   const estadoRef = useRef(estado);
   // Em efeito, não no render — ver o mesmo caso comentado em
   // components/WindParticleLayer.tsx. O ref só é lido dentro do callback de
@@ -86,12 +119,43 @@ export function useTrilhaSessao(ativo: boolean): TrilhaSessao {
         return;
       }
       // Sessão nova de navegação não herda distância/velocidade máxima de uma
-      // sessão anterior que ficou fechada no meio do caminho.
+      // sessão anterior que ficou fechada no meio do caminho. Se houver uma
+      // trilha salva, ela fica em `recuperavel` e só entra se o velejador
+      // mandar — ver o comentário do campo.
       setEstado(ESTADO_INICIAL_TRILHA);
       estadoRef.current = ESTADO_INICIAL_TRILHA;
+      setRecuperado(lerTrilhaSalva());
     },
     { naMontagem: true }
   );
+
+  /*
+   * Cópia periódica para o aparelho.
+   *
+   * Sem isto, fechar o app apagava o velejo inteiro — e fechar o app não é
+   * acidente raro nesse cenário, é o cenário: 2 h de GPS ativo drenam
+   * bateria, o navegador de celular descarta aba em segundo plano, o celular
+   * vive molhado no bolso. Ver lib/trilhaPersistida.ts.
+   */
+  useEffect(() => {
+    if (!ativo || typeof window === 'undefined') return;
+
+    const id = setInterval(() => {
+      const atual = estadoRef.current;
+      if (atual.pontos.length === 0) return;
+      try {
+        window.localStorage.setItem(
+          CHAVE_TRILHA_EM_ANDAMENTO,
+          serializarTrilha(atual, Date.now())
+        );
+      } catch {
+        // Cota estourada ou storage bloqueado (janela anônima): perder o
+        // backup é ruim, travar o velejo em andamento é pior.
+      }
+    }, INTERVALO_SALVAR_MS);
+
+    return () => clearInterval(id);
+  }, [ativo]);
 
   useEffect(() => {
     if (!ativo) return;
@@ -130,5 +194,54 @@ export function useTrilhaSessao(ativo: boolean): TrilhaSessao {
     };
   }, [ativo]);
 
-  return paraTrilhaSessao(estado);
+  const retomar = useCallback(() => {
+    setRecuperado((salvo) => {
+      if (salvo) {
+        setEstado(salvo);
+        estadoRef.current = salvo;
+      }
+      return null;
+    });
+    limparTrilhaSalva();
+  }, []);
+
+  const descartar = useCallback(() => {
+    setRecuperado(null);
+    limparTrilhaSalva();
+  }, []);
+
+  return {
+    ...paraTrilhaSessao(estado),
+    recuperavel: valePenaRecuperar(recuperado)
+      ? {
+          distanciaKm: recuperado!.distanciaKm,
+          velocidadeMaxNos: recuperado!.velocidadeMaxNos,
+          pontos: recuperado!.pontos,
+        }
+      : null,
+    retomar,
+    descartar,
+  };
+}
+
+/** Leitura defensiva: storage bloqueado não pode derrubar o Modo Navegação. */
+function lerTrilhaSalva(): EstadoTrilha | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return desserializarTrilha(
+      window.localStorage.getItem(CHAVE_TRILHA_EM_ANDAMENTO),
+      Date.now()
+    );
+  } catch {
+    return null;
+  }
+}
+
+export function limparTrilhaSalva(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(CHAVE_TRILHA_EM_ANDAMENTO);
+  } catch {
+    // idem
+  }
 }

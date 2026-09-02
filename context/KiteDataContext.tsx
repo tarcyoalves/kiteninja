@@ -5,6 +5,7 @@ import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit,
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
+import { limparTrilhaSalva } from '../lib/useTrilhaSessao';
 import { usePushNotifications } from '../lib/usePushNotifications';
 import { PrefillLogbook } from '../lib/trilhaSessao';
 import { useAoMudar } from '../lib/useAoMudar';
@@ -911,6 +912,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       });
       setSessions((prev) => [{ ...created, likesCount: 0, commentsCount: 0 } as SessionLog, ...prev]);
       if (sessionData.isPublic) loadFeedAndEvents();
+      /*
+       * O velejo virou registro: a cópia de emergência da trilha no aparelho
+       * cumpriu o papel e precisa sair. Sem isto, a próxima abertura do Modo
+       * Navegação ofereceria "retomar" um velejo JÁ SALVO — e aceitar viraria
+       * uma segunda sessão com a mesma distância no histórico.
+       *
+       * Só depois do `await` dar certo: se o servidor recusou, o backup é a
+       * única cópia que resta e apagá-lo aqui perderia o velejo de vez.
+       */
+      limparTrilhaSalva();
       return { ok: true };
     } catch (err) {
       // Não feche o formulário nem apague o que foi digitado. Em conexão ruim
