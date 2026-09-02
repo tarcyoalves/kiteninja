@@ -1,17 +1,26 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import {
   applyAppUpdate,
   clearAppUpdateAvailable,
   detectarNovoCommit,
   dismissAppUpdate,
+  limparParametroDeAtualizacao,
   markAppUpdateAvailable,
+  podeAtualizarSozinho,
+  resultadoDaAtualizacao,
   useAppUpdateAvailable,
   useAppUpdateCommit,
 } from '../lib/appUpdate';
 import { RefreshCw, Sparkles, X } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
+import { useKiteData } from '../context/KiteDataContext';
+
+/** O resultado não muda durante a vida da página: a URL do carregamento é fixa. */
+function assinarNada(): () => void {
+  return () => {};
+}
 
 interface VersionInfo {
   commit: string;
@@ -19,10 +28,28 @@ interface VersionInfo {
 
 export const UpdateNotificationBanner: React.FC = () => {
   const { downwindAtivo } = useDownwind();
+  const { myActiveSos, isLoggerOpen, isNewPostOpen } = useKiteData();
   const temAtualizacao = useAppUpdateAvailable();
   const commitDisponivel = useAppUpdateCommit();
   const [atualizando, setAtualizando] = useState(false);
   const commitDoBundle = process.env.NEXT_PUBLIC_BUILD_COMMIT;
+
+  /*
+   * A tentativa anterior deu certo? Sem esta checagem não havia como saber: o
+   * app recarregava e torcia, e se o WebView entregasse a versão antiga assim
+   * mesmo, o aviso voltava em 60 s num laço silencioso.
+   *
+   * Via `useSyncExternalStore` e não `useState`: a resposta depende de
+   * `window.location`, que não existe no servidor. Um inicializador de
+   * `useState` roda também no SSR e devolveria `false` lá contra `true` aqui —
+   * divergência de hidratação. O snapshot do servidor é explicitamente
+   * `false`, e o valor real entra no primeiro quadro do cliente.
+   */
+  const falhouAoAtualizar = useSyncExternalStore(
+    assinarNada,
+    () => resultadoDaAtualizacao(window.location.search, process.env.NEXT_PUBLIC_BUILD_COMMIT) === 'falhou',
+    () => false
+  );
 
   const checarVersao = useCallback(async () => {
     try {
@@ -54,6 +81,45 @@ export const UpdateNotificationBanner: React.FC = () => {
     await applyAppUpdate();
   }, []);
 
+  /*
+   * ATUALIZAÇÃO SOZINHA — o ponto desta tela.
+   *
+   * Antes o aviso só avisava. Quem ignorasse o popup, ou o fechasse no X (que
+   * grava a dispensa em localStorage), ficava na versão antiga por tempo
+   * indefinido. Quando a versão nova conserta um SOS que não escala ou um
+   * downwind que não registra, "o usuário decide quando atualizar" é o mesmo
+   * que "não atualiza".
+   *
+   * Só acontece quando não há nada a perder e ninguém está olhando — ver
+   * `podeAtualizarSozinho`. Na prática: o app foi para o segundo plano, e
+   * quando a pessoa voltar já encontra a versão nova.
+   */
+  useEffect(() => {
+    if (!temAtualizacao || atualizando) return;
+
+    const tentarSozinho = () => {
+      const seguro = podeAtualizarSozinho({
+        temDownwindAtivo: Boolean(downwindAtivo),
+        temSosAtivo: Boolean(myActiveSos),
+        temModalAberto: isLoggerOpen || isNewPostOpen,
+        appVisivel: !document.hidden,
+      });
+      if (seguro) void applyAppUpdate();
+    };
+
+    document.addEventListener('visibilitychange', tentarSozinho);
+    return () => document.removeEventListener('visibilitychange', tentarSozinho);
+  }, [temAtualizacao, atualizando, downwindAtivo, myActiveSos, isLoggerOpen, isNewPostOpen]);
+
+  /*
+   * O `__app_update` cumpriu o papel de furar o cache neste carregamento e não
+   * pode ficar na barra de endereço: o app compartilha links (o convite de
+   * downwind é `/?dw_invite=…`) e o parâmetro viajaria junto.
+   */
+  useEffect(() => {
+    limparParametroDeAtualizacao();
+  }, []);
+
   useEffect(() => {
     // O SW cuida apenas de push. `updatefound` não identifica versão do app e
     // não pode acender o banner: o arquivo pode reinstalar sem mudança de código.
@@ -82,7 +148,27 @@ export const UpdateNotificationBanner: React.FC = () => {
   }, [checarVersao]);
 
   // Nunca interrompe o velejador durante um downwind ativo.
-  if (!temAtualizacao || downwindAtivo) return null;
+  if (downwindAtivo) return null;
+
+  /*
+   * A atualização foi pedida e o app voltou com a versão antiga. Insistir no
+   * mesmo botão só repetiria o laço; o que resolve no WebView do Android é
+   * fechar o app de vez e abrir de novo.
+   */
+  if (falhouAoAtualizar && !temAtualizacao) {
+    return (
+      <div className="fixed top-2.5 inset-x-3 z-splash flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
+        <div className="pointer-events-auto max-w-md w-full bg-[#0B1220]/95 border border-amber-400/50 rounded-2xl p-3 shadow-xl backdrop-blur-xl text-slate-100">
+          <p className="text-xs font-black text-amber-200">Não foi possível atualizar</p>
+          <p className="mt-0.5 text-[10px] text-amber-100/80 leading-snug">
+            Feche o app completamente e abra de novo para carregar a versão nova.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!temAtualizacao) return null;
 
   return (
     <div className="fixed top-2.5 inset-x-3 z-splash flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">

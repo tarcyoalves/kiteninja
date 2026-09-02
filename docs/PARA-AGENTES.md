@@ -149,4 +149,5 @@ O estado antigo de `master` está preservado na branch
 | `CONFIGURACAO-SEGREDOS.md` | Passo a passo dos segredos |
 | `CRON-EXTERNO-SOS.md` | Por que a escalada precisa de scheduler externo |
 | `VARREDURA-REGISTRO-2026-09-02.md` | Os quatro jeitos de o app perder o velejo que mediu |
+| `ATUALIZACAO-DO-APP.md` | Como o Android se atualiza sozinho (e quando precisa de APK novo) |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |
