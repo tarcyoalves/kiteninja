@@ -55,6 +55,11 @@ Não as contorne. Cada uma nasceu de um bug real que chegou em produção.
 | `lib/sqlComposicao.test.ts` | `` ${sql`...`} `` aninhado. O driver HTTP da Neon **não compõe fragmentos** — o `sql` interno vira um *valor de parâmetro*, não SQL. |
 | `lib/authz.test.ts` | Rota de mutação sem justificativa registrada. |
 
+E a pergunta que as travas **não** fazem, e que achou quatro defeitos numa
+varredura só: **"e se o usuário simplesmente fechar o app aqui?"** — mais a
+sua irmã, **"está salvo, mas a pessoa vai encontrar?"**. Ver
+`VARREDURA-REGISTRO-2026-09-02.md`.
+
 ## 4. Armadilhas específicas desta base
 
 **O driver da Neon não compõe SQL.** `${sql\`DEFAULT\`}` vira um objeto como
@@ -143,4 +148,5 @@ O estado antigo de `master` está preservado na branch
 | `ANTIGRAVITY-STATUS.md` | Situação por achado da auditoria (ANT-001 fechado) |
 | `CONFIGURACAO-SEGREDOS.md` | Passo a passo dos segredos |
 | `CRON-EXTERNO-SOS.md` | Por que a escalada precisa de scheduler externo |
+| `VARREDURA-REGISTRO-2026-09-02.md` | Os quatro jeitos de o app perder o velejo que mediu |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |

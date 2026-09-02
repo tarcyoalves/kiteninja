@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
 import { SessionLog, Discipline } from '../types';
+import { AvisoVelejoNaoRegistrado } from '../components/AvisoVelejoNaoRegistrado';
 
 export const SessionsView: React.FC = () => {
   const { sessions, deleteSession, setIsLoggerOpen, beachMode } = useKiteData();
@@ -58,6 +59,10 @@ export const SessionsView: React.FC = () => {
 
   return (
     <div className="flex flex-col min-h-full pb-24 p-3 space-y-4 max-w-lg mx-auto w-full">
+      {/* Primeiro item da tela de propósito: é aqui que a pessoa vem procurar
+          o velejo que não apareceu. Ver components/AvisoVelejoNaoRegistrado. */}
+      <AvisoVelejoNaoRegistrado />
+
       {/* Top Banner KPI Cards */}
       <div
         className={`p-4 rounded-2xl border shadow-xl transition-colors ${

@@ -3,6 +3,7 @@ import {
   TETO_PONTOS_BRUTOS,
   type EstadoTrilha,
 } from './trilhaSessao';
+import { paraPrefillLogbook, type PrefillLogbook } from './trilhaSessao';
 import type { PontoTrilha } from './trilhaDownwind';
 
 /**
@@ -144,4 +145,52 @@ export function desserializarTrilha(bruto: string | null, agoraMs: number): Esta
 export function valePenaRecuperar(estado: EstadoTrilha | null): boolean {
   if (!estado) return false;
   return estado.pontos.length >= 2 && estado.distanciaKm > 0;
+}
+
+
+/**
+ * Monta o preenchimento do formulário de logbook a partir de uma trilha
+ * recuperada do aparelho.
+ *
+ * A SUTILEZA QUE IMPORTA: a duração sai do ÚLTIMO PONTO da trilha, nunca de
+ * `Date.now()`. O velejador pode reabrir o app horas depois — no dia seguinte,
+ * até — e usar o relógio de agora somaria todo o tempo em que o app esteve
+ * fechado à duração do velejo. Um velejo de 90 minutos viraria um de 14 horas
+ * no histórico dele.
+ *
+ * É exatamente o mesmo cuidado de `instanteDeEncerramento` em
+ * `lib/downwindAbandono.ts`: o instante em que o GPS parou de reportar é a
+ * melhor aproximação que existe do instante em que a pessoa saiu da água.
+ */
+export function prefillDeTrilhaSalva(estado: EstadoTrilha): PrefillLogbook | null {
+  const pontos = estado.pontos;
+  if (pontos.length < 2) return null;
+
+  const iniciadoEm = new Date(pontos[0][2]);
+  const terminadoEm = new Date(pontos[pontos.length - 1][2]);
+  if (terminadoEm.getTime() <= iniciadoEm.getTime()) return null;
+
+  return paraPrefillLogbook(
+    {
+      distanciaKm: estado.distanciaKm,
+      velocidadeMaxNos: estado.velocidadeMaxNos,
+      iniciadoEm,
+      trilha: pontos,
+    },
+    terminadoEm
+  );
+}
+
+/** Lê e valida a trilha salva. Storage bloqueado não pode derrubar a tela. */
+export function lerTrilhaRecuperavel(agoraMs: number = Date.now()): EstadoTrilha | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const salvo = desserializarTrilha(
+      window.localStorage.getItem(CHAVE_TRILHA_EM_ANDAMENTO),
+      agoraMs
+    );
+    return valePenaRecuperar(salvo) ? salvo : null;
+  } catch {
+    return null;
+  }
 }

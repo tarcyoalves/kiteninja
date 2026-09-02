@@ -5,6 +5,7 @@ import { X, Camera, MapPin, Send, Loader2 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompress';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
+import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
 
 export const NewPostModal: React.FC = () => {
   const { isNewPostOpen, setIsNewPostOpen, spots, addPost } = useKiteData();
@@ -108,6 +109,15 @@ export const NewPostModal: React.FC = () => {
             type="button"
             onClick={() => {
               if (publicando || processandoFoto) return;
+              // Ver lib/descarteFormulario.ts: só pergunta se houver texto
+              // escrito ou foto anexada — a foto é o item mais caro de
+              // refazer, porque exige sair do app para achar o arquivo.
+              if (
+                temTrabalhoNaoSalvo({ textos: [title, content], temFoto: Boolean(photoUrl) }) &&
+                !window.confirm(MSG_DESCARTAR_FORMULARIO)
+              ) {
+                return;
+              }
               setPublicacaoErro(null);
               setIsNewPostOpen(false);
             }}

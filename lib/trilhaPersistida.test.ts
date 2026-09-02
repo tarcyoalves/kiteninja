@@ -3,6 +3,7 @@ import {
   desserializarTrilha,
   serializarTrilha,
   valePenaRecuperar,
+  prefillDeTrilhaSalva,
   VALIDADE_TRILHA_SALVA_MS,
 } from './trilhaPersistida';
 import { ESTADO_INICIAL_TRILHA, TETO_PONTOS_BRUTOS, type EstadoTrilha } from './trilhaSessao';
@@ -149,5 +150,56 @@ describe('valePenaRecuperar', () => {
     expect(valePenaRecuperar(comTrilha({ distanciaKm: 0 }))).toBe(false);
     expect(valePenaRecuperar(comTrilha({ pontos: [[-4.9, -37, AGORA]] }))).toBe(false);
     expect(valePenaRecuperar(null)).toBe(false);
+  });
+});
+
+describe('prefillDeTrilhaSalva', () => {
+  const trilhaDeUmaHora: EstadoTrilha = {
+    ...ESTADO_INICIAL_TRILHA,
+    distanciaKm: 18.4,
+    velocidadeMaxNos: 22,
+    pontos: [
+      [-4.9, -37.0, AGORA],
+      [-4.95, -37.0, AGORA + 30 * 60_000],
+      [-5.0, -37.0, AGORA + 60 * 60_000],
+    ],
+  };
+
+  /**
+   * A sutileza que motivou a função. O velejador pode reabrir o app no dia
+   * seguinte; usar `Date.now()` como fim somaria todo o tempo de app fechado
+   * à duração, e um velejo de 60 minutos viraria um de 14 horas no histórico.
+   * Mesmo cuidado de `instanteDeEncerramento` em lib/downwindAbandono.ts.
+   */
+  it('a duração sai do último ponto, não do relógio de agora', () => {
+    const prefill = prefillDeTrilhaSalva(trilhaDeUmaHora);
+    expect(prefill?.durationMinutes).toBe(60);
+  });
+
+  it('leva distância, velocidade máxima e a trilha', () => {
+    const prefill = prefillDeTrilhaSalva(trilhaDeUmaHora);
+    expect(prefill?.distanceKm).toBeCloseTo(18.4, 1);
+    expect(prefill?.trilhaReduzida?.length).toBeGreaterThan(0);
+  });
+
+  it('trilha curta demais não vira prefill', () => {
+    expect(prefillDeTrilhaSalva({ ...ESTADO_INICIAL_TRILHA, pontos: [] })).toBeNull();
+    expect(
+      prefillDeTrilhaSalva({ ...ESTADO_INICIAL_TRILHA, pontos: [[-4.9, -37, AGORA]] })
+    ).toBeNull();
+  });
+
+  /** Relógio do aparelho mexido no meio da sessão: sem duração confiável. */
+  it('fim anterior ao início não vira prefill', () => {
+    expect(
+      prefillDeTrilhaSalva({
+        ...ESTADO_INICIAL_TRILHA,
+        distanciaKm: 5,
+        pontos: [
+          [-4.9, -37, AGORA],
+          [-4.95, -37, AGORA - 60_000],
+        ],
+      })
+    ).toBeNull();
   });
 });

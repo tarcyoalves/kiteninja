@@ -155,5 +155,94 @@ Isso não aparece em teste, lint ou build. Aparece quando se pergunta: *"e se
 o usuário simplesmente fechar o app aqui?"*
 
 Vale rodar essa pergunta contra todo fluxo que acumula estado antes de
-persistir. Os dois candidatos que sobraram e ainda não foram investigados:
-o rascunho de post no feed, e o formulário de logbook preenchido pela metade.
+persistir.
+
+
+---
+
+## Achado 3 — o velejo recuperado ficava escondido no lugar errado
+
+Descoberto ao conferir a própria correção do achado 2, e é a mesma armadilha
+do downwind invisível: **um dado salvo que ninguém encontra é um dado
+perdido.**
+
+A trilha passou a sobreviver ao fechamento do app, mas o único lugar que
+oferecia recuperá-la era o **Modo Navegação**. E ninguém abre o Modo
+Navegação para procurar um velejo perdido — a pessoa vai ao **Logbook**,
+porque é lá que o velejo deveria estar e não está.
+
+Pior: no Modo Navegação o botão diz "Retomar", que é voltar a navegar. Quem
+já saiu da água não quer navegar de novo; quer **registrar**.
+
+### A correção
+
+`components/AvisoVelejoNaoRegistrado.tsx`, como primeiro item do Logbook:
+
+> ⚠️ **Velejo sem registro** — O app fechou antes de você salvar. Guardamos
+> **18,4 km** e **60 min** de trilha.
+> [ Registrar agora ] [ Descartar ]
+
+"Registrar agora" abre o formulário do logbook já preenchido com a trilha.
+
+**A sutileza que custou uma função pura** (`prefillDeTrilhaSalva`): a duração
+sai do **último ponto da trilha**, nunca de `Date.now()`. O velejador pode
+reabrir o app no dia seguinte, e usar o relógio de agora somaria todo o tempo
+de app fechado — um velejo de 60 minutos viraria um de 14 horas no histórico.
+É o mesmo cuidado de `instanteDeEncerramento` no downwind abandonado, e é a
+terceira vez que essa armadilha aparece nesta base.
+
+O card **não** apaga a trilha ao abrir o formulário. Quem apaga é o
+`addSession`, depois de o servidor confirmar: se a pessoa abrir e fechar sem
+salvar, ou a rede cair, o backup precisa continuar existindo.
+
+---
+
+## Achado 4 — fechar o formulário apagava a digitação sem perguntar
+
+Os dois formulários que acumulam trabalho — logbook (27 campos) e post do
+feed (texto + foto) — não guardam rascunho.
+
+**O que investiguei antes de mexer:** o clique no fundo escuro **não** fecha
+esses modais. Só o X fecha, e ele é um alvo pequeno no canto. O risco de
+toque acidental, que era minha suspeita inicial, não existe.
+
+Sobrou o risco real: um X sem pergunta apaga em silêncio o que a pessoa
+acabou de escrever.
+
+### Por que confirmação, e não rascunho persistido
+
+Considerei persistir os rascunhos e **decidi contra**, por três razões:
+
+1. O dado caro (a trilha do GPS) já está protegido em duas camadas —
+   `localStorage` e o card do Logbook.
+2. Um rascunho salvo do logbook **conflitaria com o preenchimento vindo do
+   GPS**: com os dois presentes, qual ganha? Seria uma fonte de bug nova para
+   proteger poucos minutos de digitação.
+3. A foto do post é base64 e pesaria no `localStorage`, justamente onde a
+   trilha precisa de espaço.
+
+A confirmação resolve o mesmo risco sem criar estado novo.
+
+`lib/descarteFormulario.ts` decide quando perguntar, e a regra é: **só se
+houver trabalho de verdade**. Ficam de fora os campos que já nascem
+preenchidos — spot padrão, disciplina, nota, tamanho de kite, e tudo que veio
+do GPS. Uma confirmação que aparece sempre é uma confirmação que ninguém lê.
+
+---
+
+## Resumo dos quatro achados
+
+| # | Defeito | Onde estava a falha |
+|---|---|---|
+| 1 | Travessia abandonada sem registro | gravar dependia de alguém apertar "encerrar" |
+| 2 | Fechar o app apagava o velejo | a trilha só existia em memória |
+| 3 | Velejo recuperado escondido | salvo, mas oferecido no lugar onde ninguém procura |
+| 4 | Digitação descartada em silêncio | fechar não perguntava nada |
+
+Os quatro têm a mesma raiz: **o app media o dado certo e depois o perdia**,
+sempre num momento em que nenhuma verificação automática estava olhando.
+
+E o achado 3 merece nota à parte, porque nasceu de conferir a correção do
+achado 2: **corrigir um defeito é o melhor momento para encontrar o
+seguinte.** A pergunta que o revelou foi "está salvo — mas a pessoa vai
+encontrar?", e ela não é feita por teste nenhum.

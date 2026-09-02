@@ -6,6 +6,7 @@ import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
 import { compressImage } from '../lib/imageCompress';
+import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
 
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar, para não travar o navegador com arquivos gigantes
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -218,6 +219,15 @@ export const SessionLoggerModal: React.FC = () => {
             type="button"
             onClick={() => {
               if (isSaving || isCompressingPhoto) return;
+              // Pergunta só quando há trabalho digitado de verdade — ver
+              // lib/descarteFormulario.ts. Confirmação que aparece sempre é
+              // confirmação que ninguém lê.
+              if (
+                temTrabalhoNaoSalvo({ textos: [notes, boardModel], temFoto: Boolean(photoUrl) }) &&
+                !window.confirm(MSG_DESCARTAR_FORMULARIO)
+              ) {
+                return;
+              }
               setSaveError('');
               setIsLoggerOpen(false);
             }}
