@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "br.com.kiteninja.app",
+      "sha256_cert_fingerprints": [
+        "SUBSTITUIR_PELA_IMPRESSAO_SHA256_DO_KEYSTORE_DE_RELEASE"
+      ]
+    }
+  }
+]

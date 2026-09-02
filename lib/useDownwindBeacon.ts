@@ -1,6 +1,39 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import {
+  CHAVE_FILA_POSICOES,
+  descartarVencidas,
+  desserializarFila,
+  enfileirar,
+  proximoLote,
+  serializarFila,
+  type PosicaoPendente,
+} from './filaPosicoes';
+
+/**
+ * Leitura e escrita da fila, sempre defensivas: storage bloqueado (janela
+ * anônima) ou cota estourada não podem derrubar o beacon de quem está na
+ * água. Perder o backup é ruim; parar de reportar posição é muito pior.
+ */
+function lerFila(): PosicaoPendente[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    return desserializarFila(window.localStorage.getItem(CHAVE_FILA_POSICOES));
+  } catch {
+    return [];
+  }
+}
+
+function gravarFila(fila: PosicaoPendente[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    if (fila.length === 0) window.localStorage.removeItem(CHAVE_FILA_POSICOES);
+    else window.localStorage.setItem(CHAVE_FILA_POSICOES, serializarFila(fila));
+  } catch {
+    // idem
+  }
+}
 
 /**
  * Envia a posição do velejador para `POST /api/downwind/[id]/posicoes`.
@@ -61,6 +94,22 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
     if (!ativo || !downwindId) return;
     let cancelado = false;
 
+    /** Uma posição, com o horário em que o GPS a mediu. */
+    const postar = (p: PosicaoPendente) =>
+      fetch(`/api/downwind/${downwindId}/posicoes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lat: p.lat,
+          lng: p.lng,
+          accuracyM: p.accuracyM,
+          // A rota já aceitava isto para o serviço nativo reportar pontos
+          // coletados offline. A fila web usa o mesmo contrato: o que vale é
+          // quando o GPS mediu, não quando a rede deixou enviar.
+          registradoEm: p.registradoEmMs,
+        }),
+      });
+
     const enviar = async () => {
       // Sem checar `document.hidden`: o celular no colete, com a tela
       // apagada, é o cenário-alvo deste beacon — ver o cabeçalho.
@@ -69,15 +118,63 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
       try {
         const pos = await lerPosicaoAlta();
         if (cancelado || !pos) return;
-        const resp = await fetch(`/api/downwind/${downwindId}/posicoes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ lat: pos.lat, lng: pos.lng, accuracyM: pos.accuracyM }),
-        });
-        // fetch só rejeita em falha de rede: 4xx/5xx resolve normalmente. Sem
-        // checar `ok`, um erro do servidor contaria como posição entregue e o
-        // indicador de sinal mentiria para quem acompanha em terra.
-        if (!cancelado && resp.ok) setUltimaPosicaoEm(new Date());
+
+        const atual: PosicaoPendente = {
+          lat: pos.lat,
+          lng: pos.lng,
+          accuracyM: pos.accuracyM ?? null,
+          registradoEmMs: Date.now(),
+        };
+
+        let entregou = false;
+        try {
+          const resp = await postar(atual);
+          // fetch só rejeita em falha de rede: 4xx/5xx resolve normalmente. Sem
+          // checar `ok`, um erro do servidor contaria como posição entregue e o
+          // indicador de sinal mentiria para quem acompanha em terra.
+          entregou = resp.ok;
+        } catch {
+          entregou = false;
+        }
+        if (cancelado) return;
+
+        if (!entregou) {
+          /*
+           * A posição NÃO se perde mais. Antes, o `catch` a descartava em
+           * silêncio, e numa praia com 4G oscilante cada falha virava um
+           * buraco permanente na trilha — de alguém que está na água.
+           */
+          gravarFila(enfileirar(lerFila(), atual));
+          return;
+        }
+
+        setUltimaPosicaoEm(new Date());
+
+        /*
+         * A rede voltou: drena o que ficou para trás, do mais antigo para o
+         * mais novo, em lotes que cabem no rate limit (120/min) sem sufocar
+         * o envio normal. Um ponto recusado volta para a fila.
+         */
+        const pendentes = descartarVencidas(lerFila(), Date.now());
+        if (pendentes.length === 0) {
+          if (lerFila().length > 0) gravarFila([]);
+          return;
+        }
+
+        const { lote, resto } = proximoLote(pendentes);
+        const naoEntregues: PosicaoPendente[] = [];
+        for (const p of lote) {
+          if (cancelado) break;
+          try {
+            const r = await postar(p);
+            if (!r.ok) naoEntregues.push(p);
+          } catch {
+            // Rede caiu de novo no meio do lote: o resto continua na fila.
+            naoEntregues.push(p);
+            break;
+          }
+        }
+        gravarFila([...naoEntregues, ...resto]);
       } catch {
         // Best-effort: nunca deve estourar na UI de quem está na água.
       } finally {
