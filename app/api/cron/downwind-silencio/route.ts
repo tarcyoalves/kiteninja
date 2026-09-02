@@ -1,6 +1,6 @@
 import { handle } from '@/lib/api';
 import { HttpError } from '@/lib/auth';
-import { varrerSilencos, limparAlertasAntigos } from '@/lib/downwindSilencio';
+import { varrerSilencos, limparAlertasAntigos, encerrarAbandonados } from '@/lib/downwindSilencio';
 
 /**
  * Varredura periódica de silêncios em downwinds.
@@ -50,17 +50,26 @@ export async function GET(request: Request) {
     const resumo = await varrerSilencos();
 
     // 2. Limpa alertas antigos (resolvedos há mais de 7 dias)
+    /*
+     * Encerra as travessias que ninguém encerrou e grava o resumo delas.
+     * Sem isto, `resumirEPurgar` nunca roda para um downwind abandonado e a
+     * distância/velocidade/trilha do velejador ficam NULL para sempre — a
+     * travessia não fica registrada. Ver lib/downwindAbandono.ts.
+     */
+    const abandonados = await encerrarAbandonados();
+
     const limpos = await limparAlertasAntigos(7);
 
     const duracaoMs = Date.now() - inicio;
 
-    console.log(`[cron/downwind-silencio] ${resumo.examinados} participantes verificados, ${resumo.silencios.length} alertas detectados, ${resumo.erros} erros, ${limpos} alertas antigos limpos (${duracaoMs}ms)`);
+    console.log(`[cron/downwind-silencio] ${resumo.examinados} participantes verificados, ${resumo.silencios.length} alertas detectados, ${resumo.erros} erros, ${abandonados.encerrados.length} abandonados encerrados, ${limpos} alertas antigos limpos (${duracaoMs}ms)`);
 
     return {
       ok: true,
       examinados: resumo.examinados,
       silencios: resumo.silencios.length,
       erros: resumo.erros,
+      abandonadosEncerrados: abandonados.encerrados.length,
       limpos,
       duracaoMs,
     };

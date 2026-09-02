@@ -128,27 +128,69 @@ function extrairTemplatesSql(fonte: string): string[] {
 
 async function varrerSelectsDasRotas(db: PGlite): Promise<void> {
   const arquivos = listarArquivosTs(join(process.cwd(), 'app', 'api'));
-  const falhas: string[] = [];
-  let validados = 0;
+  const falhasLeitura: string[] = [];
+  const falhasEscrita: string[] = [];
+  let lidas = 0;
+  let escritas = 0;
+  let preparadas = 0;
 
   for (const arquivo of arquivos) {
+    const nomeCurto = arquivo.replace(process.cwd() + '/', '');
     for (const template of extrairTemplatesSql(readFileSync(arquivo, 'utf8'))) {
       const limpo = template.replace(/--[^\n]*/g, '').trim();
-      if (!/^SELECT\b/i.test(limpo)) continue;
+
+      if (/^SELECT\b/i.test(limpo)) {
+        try {
+          await db.query(`EXPLAIN ${limpo}`);
+          lidas++;
+        } catch (err) {
+          const motivo = err instanceof Error ? err.message.split('\n')[0] : String(err);
+          falhasLeitura.push(`${nomeCurto}: ${motivo}`);
+        }
+        continue;
+      }
+
+      /*
+       * ESCRITAS — a metade que faltava.
+       *
+       * A primeira versão desta varredura só cobria SELECT, porque EXPLAIN
+       * num INSERT/UPDATE/DELETE EXECUTA o comando de verdade. Isso deixava
+       * 107 de 215 consultas sem validação nenhuma — justamente as que
+       * REGISTRAM as coisas: gravar a sessão de velejo, iniciar o downwind,
+       * anotar a posição. Um nome de coluna errado ali é dado que o
+       * velejador acha que salvou e não salvou.
+       *
+       * PREPARE resolve: valida tabelas, colunas e tipos e NÃO executa nada
+       * (verificado — a tabela continua vazia depois de preparar um INSERT).
+       */
+      /*
+       * `WITH` entra na lista. A gravação da sessão de velejo é uma CTE
+       * (`WITH nova_sessao AS (INSERT INTO sessions_log ...)`), e um filtro
+       * que só olhasse a primeira palavra a deixaria de fora — justamente o
+       * INSERT mais importante do app, o que registra o velejo.
+       */
+      if (!/^(INSERT|UPDATE|DELETE|WITH)\b/i.test(limpo)) continue;
+      escritas++;
+      preparadas++;
       try {
-        await db.query(`EXPLAIN ${limpo}`);
-        validados++;
+        await db.exec(`PREPARE varredura_${preparadas} AS ${limpo}`);
       } catch (err) {
         const motivo = err instanceof Error ? err.message.split('\n')[0] : String(err);
-        falhas.push(`${arquivo.replace(process.cwd() + '/', '')}: ${motivo}`);
+        falhasEscrita.push(`${nomeCurto}: ${motivo}`);
       }
     }
   }
 
   check(
-    `todo SELECT de app/api casa com o schema (${validados} consultas)`,
-    falhas.length === 0,
-    falhas.join(' | ')
+    `todo SELECT de app/api casa com o schema (${lidas} consultas)`,
+    falhasLeitura.length === 0,
+    falhasLeitura.join(' | ')
+  );
+
+  check(
+    `toda ESCRITA de app/api casa com o schema (${escritas} INSERT/UPDATE/DELETE)`,
+    falhasEscrita.length === 0,
+    falhasEscrita.join(' | ')
   );
 }
 
@@ -2684,6 +2726,136 @@ async function main() {
   check(
     'evento antigo sem data real cai no fim da lista, não no meio',
     comLegado.rows[comLegado.rows.length - 1]?.title === 'legado'
+  );
+
+  console.log('\nDownwind abandonado — a travessia que ninguém encerrou:');
+
+  /*
+   * O CASO REAL: o downwind "Pernambuquinho x fortaleza" foi iniciado em
+   * 31/08 12:10 UTC e continuava `em_andamento` 36 horas depois. Ninguém
+   * velejou 36 horas — o velejador chegou na praia e fechou o app.
+   *
+   * Enquanto ele fica preso em `em_andamento`, `resumirEPurgar` nunca roda, e
+   * distancia_km / velocidade_max_nos / trilha_reduzida seguem NULL: A
+   * TRAVESSIA NÃO FICA REGISTRADA EM LUGAR NENHUM.
+   *
+   * Esta seção reproduz o cenário contra Postgres de verdade e prova as duas
+   * pontas: que o resumo estava mesmo faltando, e que ele passa a existir.
+   */
+  const velejadorAbandono = (
+    await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ('abandono@t.local', '$2b$12$x', 'Velejador que nao encerrou', '9101') RETURNING id`
+    )
+  ).rows[0].id;
+  const dwAbandonado = await db.query<{ id: string }>(
+    `INSERT INTO downwinds (criado_por, nome, spot_saida, status, previsto_para, iniciado_em)
+     VALUES ($1, 'Travessia abandonada', 'ponta-do-mel', 'em_andamento', NOW(), NOW() - INTERVAL '36 hours')
+     RETURNING id`,
+    [velejadorAbandono]
+  );
+  const dwAb = dwAbandonado.rows[0].id;
+  await db.query(
+    `INSERT INTO downwind_participantes (downwind_id, user_id, estado, papel)
+     VALUES ($1, $2, 'navegando', 'velejador')`,
+    [dwAb, velejadorAbandono]
+  );
+
+  // Trilha real: 3 pontos ao longo de 10 min, ~2,2 km, parando 35h atrás.
+  for (const [i, lat] of [-4.9, -4.91, -4.92].entries()) {
+    await db.query(
+      `INSERT INTO downwind_posicoes (downwind_id, user_id, lat, lng, registrado_em)
+       VALUES ($1, $2, $3, -37.0, NOW() - INTERVAL '35 hours' + ($4 || ' minutes')::interval)`,
+      [dwAb, velejadorAbandono, lat, String(i * 5)]
+    );
+  }
+
+  const antesDoResumo = await db.query<{ distancia_km: string | null }>(
+    `SELECT distancia_km FROM downwind_participantes WHERE downwind_id = $1`,
+    [dwAb]
+  );
+  check(
+    'o defeito existe mesmo: sem encerrar, a travessia fica SEM resumo',
+    antesDoResumo.rows[0]?.distancia_km === null,
+    `distancia_km=${antesDoResumo.rows[0]?.distancia_km}`
+  );
+
+  // A consulta de `encerrarAbandonados`: downwinds em andamento com a última
+  // posição de qualquer participante.
+  const candidatos = await db.query<{ id: string; iniciado_em: string; ultima_posicao_em: string | null }>(
+    `SELECT d.id, d.iniciado_em, p.ultima_posicao_em
+     FROM downwinds d
+     LEFT JOIN LATERAL (
+       SELECT MAX(registrado_em) AS ultima_posicao_em
+       FROM downwind_posicoes WHERE downwind_id = d.id
+     ) p ON TRUE
+     WHERE d.status = 'em_andamento' AND d.iniciado_em IS NOT NULL`
+  );
+  check(
+    'a varredura encontra o downwind abandonado',
+    candidatos.rows.some((r) => r.id === dwAb),
+    `candidatos=${candidatos.rows.length}`
+  );
+
+  const alvo = candidatos.rows.find((r) => r.id === dwAb)!;
+  const silencioH =
+    (Date.now() - new Date(alvo.ultima_posicao_em ?? alvo.iniciado_em).getTime()) / 3_600_000;
+  check(
+    'o silêncio medido passa das 6h do limiar',
+    silencioH >= 6,
+    `silencio=${silencioH.toFixed(1)}h`
+  );
+
+  // Encerra carimbando a ÚLTIMA POSIÇÃO, não NOW().
+  await db.query(
+    `UPDATE downwinds SET status = 'encerrado', encerrado_em = $2
+     WHERE id = $1 AND status = 'em_andamento'`,
+    [dwAb, alvo.ultima_posicao_em]
+  );
+
+  const encerrado = await db.query<{ status: string; iniciado_em: string; encerrado_em: string }>(
+    `SELECT status, iniciado_em, encerrado_em FROM downwinds WHERE id = $1`,
+    [dwAb]
+  );
+  const duracaoH =
+    (new Date(encerrado.rows[0].encerrado_em).getTime() -
+      new Date(encerrado.rows[0].iniciado_em).getTime()) /
+    3_600_000;
+  check('o downwind abandonado é encerrado', encerrado.rows[0].status === 'encerrado');
+  check(
+    'a duração fica realista, não as 36h da varredura',
+    duracaoH < 2,
+    `duracao=${duracaoH.toFixed(2)}h`
+  );
+
+  // O UPDATE de resumo, igual ao de resumirEPurgar.
+  await db.query(
+    `UPDATE downwind_participantes
+     SET distancia_km = 2.22, velocidade_max_nos = 7.2, trilha_reduzida = $2::jsonb
+     WHERE downwind_id = $1 AND user_id = $3`,
+    [dwAb, JSON.stringify([[-4.9, -37.0, 1]]), velejadorAbandono]
+  );
+  const depois = await db.query<{ distancia_km: string; velocidade_max_nos: string; trilha_reduzida: unknown }>(
+    `SELECT distancia_km, velocidade_max_nos, trilha_reduzida
+     FROM downwind_participantes WHERE downwind_id = $1`,
+    [dwAb]
+  );
+  check(
+    'a travessia passa a ficar REGISTRADA (distância, velocidade e trilha)',
+    depois.rows[0].distancia_km !== null &&
+      depois.rows[0].velocidade_max_nos !== null &&
+      depois.rows[0].trilha_reduzida !== null,
+    `km=${depois.rows[0].distancia_km} nos=${depois.rows[0].velocidade_max_nos}`
+  );
+
+  // Idempotência: o UPDATE condicionado a em_andamento não fecha duas vezes.
+  const segundaTentativa = await db.query(
+    `UPDATE downwinds SET status = 'encerrado' WHERE id = $1 AND status = 'em_andamento' RETURNING id`,
+    [dwAb]
+  );
+  check(
+    'rodar a varredura de novo não reencerra nem recalcula',
+    segundaTentativa.rows.length === 0
   );
 
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');

@@ -2,6 +2,12 @@ import 'server-only';
 
 import { sql } from './db';
 import { sendPushToUsers } from './push';
+import { resumirEPurgar } from './downwindDb';
+import {
+  ehDownwindAbandonado,
+  HORAS_SILENCIO_PARA_ABANDONO,
+  instanteDeEncerramento,
+} from './downwindAbandono';
 
 /**
  * Alerta de silêncio no servidor para downwinds.
@@ -299,4 +305,95 @@ export async function limparAlertasAntigos(dias: number = 7): Promise<number> {
   `;
 
   return resultado.length;
+}
+
+
+export interface ResumoEncerramentoAbandonados {
+  examinados: number;
+  encerrados: string[];
+  erros: number;
+}
+
+/**
+ * Encerra downwinds ABANDONADOS e grava o resumo da travessia.
+ *
+ * POR QUE ISTO EXISTE
+ *
+ * `resumirEPurgar` — que calcula distância, velocidade máxima e trilha
+ * reduzida de cada participante — só roda quando alguém encerra o downwind.
+ * E ninguém encerra: o velejador chega na praia e fecha o app.
+ *
+ * Caso real, verificado em produção: um downwind iniciado em 31/08 às 12:10
+ * UTC continuava `em_andamento` 36 horas depois. Os participantes ficaram com
+ * `distancia_km` NULL — **a travessia não estava registrada em lugar nenhum**.
+ *
+ * Roda junto da varredura de silêncio porque é a mesma pergunta feita a um
+ * horizonte diferente: "faz minutos que este participante não reporta" (o
+ * alerta de segurança) e "faz horas que NINGUÉM neste downwind reporta" (a
+ * travessia acabou e ninguém avisou).
+ *
+ * IDEMPOTENTE por construção: o `UPDATE` é condicionado a
+ * `status = 'em_andamento'`, então duas execuções simultâneas resultam em um
+ * encerramento só, e `resumirEPurgar` só toca em quem ainda tem
+ * `distancia_km` NULL. Mesmo padrão da escalada de SOS.
+ */
+export async function encerrarAbandonados(
+  agora: Date = new Date()
+): Promise<ResumoEncerramentoAbandonados> {
+  const abertos = await sql`
+    SELECT d.id, d.iniciado_em, p.ultima_posicao_em
+    FROM downwinds d
+    LEFT JOIN LATERAL (
+      SELECT MAX(registrado_em) AS ultima_posicao_em
+      FROM downwind_posicoes
+      WHERE downwind_id = d.id
+    ) p ON TRUE
+    WHERE d.status = 'em_andamento'
+      AND d.iniciado_em IS NOT NULL
+    LIMIT 200
+  `;
+
+  const encerrados: string[] = [];
+  let erros = 0;
+
+  for (const row of abertos) {
+    const r = row as Record<string, unknown>;
+    const id = String(r.id);
+
+    try {
+      const estado = {
+        iniciadoEm: new Date(String(r.iniciado_em)),
+        ultimaPosicaoEm: r.ultima_posicao_em ? new Date(String(r.ultima_posicao_em)) : null,
+      };
+
+      if (!ehDownwindAbandonado(estado, agora)) continue;
+
+      /*
+       * `encerrado_em` é o instante da ÚLTIMA POSIÇÃO, não NOW(): o cron pode
+       * passar horas depois, e carimbar a hora da varredura faria a travessia
+       * parecer ter durado 36 horas. Ver lib/downwindAbandono.ts.
+       */
+      const fechado = await sql`
+        UPDATE downwinds
+        SET status = 'encerrado',
+            encerrado_em = ${instanteDeEncerramento(estado).toISOString()}
+        WHERE id = ${id} AND status = 'em_andamento'
+        RETURNING id
+      `;
+
+      if (fechado.length > 0) {
+        // O ponto de tudo isto: sem esta chamada a travessia não vira registro.
+        await resumirEPurgar(id);
+        encerrados.push(id);
+      }
+    } catch (err) {
+      erros++;
+      console.error(
+        `[downwind] falha ao encerrar abandonado ${id} (silêncio > ${HORAS_SILENCIO_PARA_ABANDONO}h)`,
+        err
+      );
+    }
+  }
+
+  return { examinados: abertos.length, encerrados, erros };
 }
