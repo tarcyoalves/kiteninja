@@ -2858,6 +2858,149 @@ async function main() {
     segundaTentativa.rows.length === 0
   );
 
+  console.log('\nVisibilidade do downwind — quem vê o que na agenda:');
+
+  /*
+   * O RELATO: "criei um DW e não apareceu para outros usuários".
+   *
+   * Não era bug de listagem — o WHERE do GET /api/events sempre esteve certo.
+   * Era que POST /api/events inseria em `downwinds` SEM a coluna
+   * `visibilidade`, caindo no DEFAULT 'privado', e o formulário nem
+   * perguntava. Estes checks fixam as DUAS metades: privado esconde de
+   * terceiro (a proteção precisa continuar existindo) e comunidade aparece
+   * (a proteção não pode voltar a engolir tudo).
+   */
+  async function novoUsuario(apelido: string, riderId: string): Promise<string> {
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, name, rider_id)
+       VALUES ($1, '$2b$12$x', $2, $3) RETURNING id`,
+      [`${apelido}@t.local`, apelido, riderId]
+    );
+    return r.rows[0].id;
+  }
+  const dono = await novoUsuario('dono-visib', '9101');
+  const outro = await novoUsuario('outro-visib', '9102');
+
+  async function criarDwComEvento(nome: string, visib: string): Promise<string> {
+    const ev = await db.query<{ id: string }>(
+      `INSERT INTO events (title, event_date, event_at, location, spot_name, type, description, organizer, uf)
+       VALUES ($1, '05 de setembro de 2026', '2026-09-05T11:00:00Z', 'Galinhos', 'Galinhos',
+               'Downwind', 'check-visibilidade', 'dono', 'RN')
+       RETURNING id`,
+      [nome]
+    );
+    const eventId = ev.rows[0].id;
+    const dw = await db.query<{ id: string }>(
+      `INSERT INTO downwinds (nome, criado_por, previsto_para, visibilidade, event_id)
+       VALUES ($1, $2, '2026-09-05T11:00:00Z', $3, $4) RETURNING id`,
+      [nome, dono, visib, eventId]
+    );
+    await db.query(
+      `INSERT INTO downwind_participantes (downwind_id, user_id, papel, eh_organizador)
+       VALUES ($1, $2, 'velejador', TRUE)`,
+      [dw.rows[0].id, dono]
+    );
+    return dw.rows[0].id;
+  }
+
+  const dwFechado = await criarDwComEvento('fechado-check', 'privado');
+  const dwAberto = await criarDwComEvento('aberto-check', 'comunidade');
+
+  /** O MESMO WHERE de GET /api/events, com o mesmo filtro de UF. */
+  async function agendaDe(userId: string, uf: string | null): Promise<string[]> {
+    const r = await db.query<{ title: string }>(
+      `SELECT e.title
+         FROM events e
+         LEFT JOIN downwinds d ON d.event_id = e.id
+        WHERE (
+          d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = $1 OR EXISTS (
+            SELECT 1 FROM downwind_participantes dp
+             WHERE dp.downwind_id = d.id AND dp.user_id = $1
+          )
+        )
+        AND ($2::text IS NULL OR e.uf = $2)
+        AND e.description = 'check-visibilidade'`,
+      [userId, uf]
+    );
+    return r.rows.map((x) => x.title).sort();
+  }
+
+  const agendaDoOutro = await agendaDe(outro, null);
+  check(
+    'downwind FECHADO não aparece para quem não participa',
+    !agendaDoOutro.includes('fechado-check'),
+    agendaDoOutro.join(',')
+  );
+  check(
+    'downwind de COMUNIDADE aparece para todo mundo — o bug do relato',
+    agendaDoOutro.includes('aberto-check'),
+    agendaDoOutro.join(',')
+  );
+
+  const agendaDoDono = await agendaDe(dono, null);
+  check(
+    'quem criou o downwind fechado continua vendo o próprio',
+    agendaDoDono.includes('fechado-check') && agendaDoDono.includes('aberto-check'),
+    agendaDoDono.join(',')
+  );
+
+  // Só um card por downwind: o UNIQUE parcial em downwinds(event_id) garante
+  // que um evento não pode ter dois downwinds pendurados, e o LEFT JOIN não
+  // multiplica linhas. Era daí que vinham os dois cards na tela.
+  const linhasPorEvento = await db.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM events e
+       LEFT JOIN downwinds d ON d.event_id = e.id
+      WHERE e.description = 'check-visibilidade' AND e.title = 'aberto-check'`
+  );
+  check(
+    'cada downwind rende UMA linha na agenda, nunca duas',
+    linhasPorEvento.rows[0].n === 1,
+    `linhas=${linhasPorEvento.rows[0].n}`
+  );
+
+  const agendaCe = await agendaDe(outro, 'CE');
+  check(
+    'filtro por estado exclui evento de outra UF',
+    agendaCe.length === 0,
+    agendaCe.join(',')
+  );
+  const agendaRn = await agendaDe(outro, 'RN');
+  check(
+    'filtro por estado inclui o evento da UF pedida',
+    agendaRn.includes('aberto-check'),
+    agendaRn.join(',')
+  );
+
+  console.log('\nAviso à comunidade — disparo único:');
+
+  const primeiroAviso = await db.query(
+    `UPDATE downwinds SET notificado_em = NOW() WHERE id = $1 AND notificado_em IS NULL RETURNING id`,
+    [dwAberto]
+  );
+  check('o primeiro aviso passa', primeiroAviso.rows.length === 1);
+
+  const segundoAviso = await db.query(
+    `UPDATE downwinds SET notificado_em = NOW() WHERE id = $1 AND notificado_em IS NULL RETURNING id`,
+    [dwAberto]
+  );
+  check(
+    'o segundo aviso não passa — a trava é do banco, não da tela',
+    segundoAviso.rows.length === 0,
+    `linhas=${segundoAviso.rows.length}`
+  );
+
+  // Downwind fechado nunca deveria chegar ao UPDATE (podeNotificarSeguidores
+  // barra antes), mas se chegasse por bug de rota, o dado prova que não foi
+  // anunciado — é o que uma auditoria futura vai olhar.
+  const fechadoAnunciado = await db.query<{ notificado_em: string | null }>(
+    `SELECT notificado_em FROM downwinds WHERE id = $1`,
+    [dwFechado]
+  );
+  check(
+    'downwind fechado permanece sem marca de anúncio',
+    fechadoAnunciado.rows[0].notificado_em === null
+  );
+
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
   await varrerSelectsDasRotas(db);
 

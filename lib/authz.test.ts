@@ -273,6 +273,8 @@ describe('autorização das rotas de API', () => {
       'rollback manual de criação de downwind: desfaz o downwind que a própria requisição acabou de criar se a inserção de participante ou evento falhar',
     'downwind/route.ts::DELETE FROM events':
       'rollback manual de criação de evento comunitário: desfaz o evento que a própria requisição acabou de criar se a criação do downwind falhar',
+    'downwind/[id]/notificar/route.ts::UPDATE downwinds':
+      'marca UM downwind como já anunciado (WHERE id = ${id} AND notificado_em IS NULL), não dado de usuário. A autorização vem antes, de podeNotificarSeguidores (lib/downwindVisibilidade.ts), que exige criado_por = user.id — carregado do banco na mesma rota. O WHERE não filtra por user_id de propósito: o AND notificado_em IS NULL é a trava de corrida, e é ele que precisa estar no WHERE para que dois toques simultâneos colidam no banco em vez de virarem dois pushes. Filtrar por dono ali seria redundante (já checado) e enfraqueceria a leitura da condição que realmente importa.',
   };
 
   it('mutação de dado do usuário filtra por user_id', () => {
@@ -402,6 +404,25 @@ describe('autorização das rotas de API', () => {
         rel === 'downwind/invite/[token]/route.ts'
       ) {
         expect(/user\.id/.test(r.src)).toBe(true);
+        continue;
+      }
+
+      /*
+       * Aviso à comunidade: não é ação de admin, é do ORGANIZADOR daquele
+       * downwind. A rota carrega `criado_por` do banco e passa a comparação
+       * com `user.id` para `podeNotificarSeguidores` (lib/downwindVisibilidade),
+       * que também exige visibilidade de comunidade, status aberto e disparo
+       * inédito.
+       *
+       * A exigência abaixo é POSITIVA de propósito: não basta isentar a rota,
+       * ela tem que conter as duas marcas. Se alguém remover a comparação de
+       * dono, ou trocar a função pura por uma checagem inline, este teste
+       * reprova — que é o ponto, porque o dano aqui é push em nome de um
+       * downwind alheio.
+       */
+      if (rel === 'downwind/[id]/notificar/route.ts') {
+        expect(/criado_por[\s\S]{0,80}user\.id/.test(r.src)).toBe(true);
+        expect(/podeNotificarSeguidores\(/.test(r.src)).toBe(true);
         continue;
       }
 

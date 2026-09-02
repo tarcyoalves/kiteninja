@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation, DownwindResumo } from '../types';
+import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/mockSpots';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
@@ -58,7 +58,6 @@ interface KiteDataContextType {
   addSafetyAlert: (alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => void;
   events: KiteEvent[];
   /** Downwinds visíveis para este velejador — ver GET /api/downwind. */
-  downwinds: DownwindResumo[];
   toggleEventRegistration: (eventId: string) => void;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
   /**
@@ -87,6 +86,10 @@ interface KiteDataContextType {
     spotSaidaId: string;
     spotChegadaId?: string;
     previstoPara: string;
+    /** 'comunidade' entra na agenda de todos; 'privado' só por convite.
+     *  Omitir cai no padrão fechado do servidor — ver
+     *  lib/downwindVisibilidade.ts. */
+    visibilidade?: 'privado' | 'comunidade';
   }) => Promise<{ ok: boolean; error?: string }>;
 
   // UI States
@@ -344,7 +347,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
    * um downwind privado não gera evento e não aparecia em lugar nenhum — nem
    * para quem o criou. Ver o comentário da rota.
    */
-  const [downwinds, setDownwinds] = useState<DownwindResumo[]>([]);
   const [windUnit, setWindUnit] = useState<WindUnit>('nós');
   const [beachMode, setBeachMode] = useState<boolean>(false);
 
@@ -721,16 +723,23 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const ultimoLoadFeedRef = useRef(0);
 
   const loadFeedAndEvents = useCallback(async () => {
-    const [postsR, eventsR, alertsR, downwindsR] = await Promise.allSettled([
+    /*
+     * `/api/downwind` saiu daqui: era o que alimentava a segunda lista da aba
+     * Eventos, e essa lista deixou de existir (todo downwind agora tem evento,
+     * então a agenda já mostra todos). Manter a chamada seria uma requisição a
+     * cada abertura do app para preencher um estado que nada renderiza.
+     *
+     * A varredura de downwind abandonado, que pegava carona nessa rota,
+     * mudou junto para GET /api/events — ver o comentário lá.
+     */
+    const [postsR, eventsR, alertsR] = await Promise.allSettled([
       api<{ posts: CommunityPost[] }>('/api/posts'),
       api<{ events: KiteEvent[] }>('/api/events'),
       api<{ alerts: SafetyOccurrence[] }>('/api/alerts'),
-      api<{ downwinds: DownwindResumo[] }>('/api/downwind'),
     ]);
     if (postsR.status === 'fulfilled') setPosts(postsR.value.posts);
     if (eventsR.status === 'fulfilled') setEvents(eventsR.value.events);
     if (alertsR.status === 'fulfilled') setSafetyAlerts(alertsR.value.alerts);
-    if (downwindsR.status === 'fulfilled') setDownwinds(downwindsR.value.downwinds);
     ultimoLoadFeedRef.current = Date.now();
   }, []);
 
@@ -1060,6 +1069,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     spotSaidaId: string;
     spotChegadaId?: string;
     previstoPara: string;
+    /** 'comunidade' entra na agenda de todos; 'privado' só por convite.
+     *  Omitir cai no padrão fechado do servidor — ver
+     *  lib/downwindVisibilidade.ts. */
+    visibilidade?: 'privado' | 'comunidade';
   }): Promise<{ ok: boolean; error?: string }> => {
     try {
       await api<{ id: string; downwindId: string }>('/api/events', {
@@ -1276,7 +1289,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         safetyAlerts,
         addSafetyAlert,
         events,
-        downwinds,
         toggleEventRegistration,
         deleteEvent,
         refreshEventsAndAlerts: loadFeedAndEvents,

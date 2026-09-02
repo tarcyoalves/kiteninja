@@ -4,13 +4,46 @@ import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
 import { canCreateOfficialEvent } from '@/lib/authz';
 import { str } from '@/lib/validation';
 import { dataDoEvento } from '@/lib/dataEvento';
+import {
+  VISIBILIDADE_PADRAO,
+  normalizarVisibilidade,
+} from '@/lib/downwindVisibilidade';
+import { normalizarUf } from '@/lib/uf';
+import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import type { KiteEvent } from '@/types';
 
 const EVENT_TYPES = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'] as const;
 
-export async function GET() {
+export async function GET(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+
+    /*
+     * Filtro por estado. Vem da query string e é normalizado por
+     * `normalizarUf` — `?uf=XX` digitado à mão vira null (sem filtro), nunca
+     * uma UF plausível. Ver lib/uf.ts para por que a agenda escala por aqui.
+     */
+    const ufFiltro = normalizarUf(new URL(request.url).searchParams.get('uf'));
+
+    /*
+     * Varredura preguiçosa de downwind abandonado, no momento exato em que o
+     * dado errado seria visto.
+     *
+     * Ela vivia em GET /api/downwind, que era o que alimentava a segunda
+     * lista da aba Eventos. Com a lista unificada aqui, aquela rota deixou de
+     * ser chamada a cada abertura do app — e a varredura teria voltado a
+     * depender só do cron, que entrega uma execução a cada ~4,3h (medido; ver
+     * docs/CRON-EXTERNO-SOS.md). Foi assim que um downwind ficou "Na água
+     * agora" por dois dias.
+     *
+     * Em try/catch e antes da listagem: ver um status velho é ruim, não ver
+     * evento nenhum é pior.
+     */
+    try {
+      await encerrarAbandonados();
+    } catch {
+      // Varredura é manutenção, não a resposta. Falhou, a agenda vai assim mesmo.
+    }
 
     const rows = await sql`
       SELECT
@@ -24,8 +57,11 @@ export async function GET() {
         e.organizer,
         e.image_url,
         e.created_at,
+        e.uf,
         d.id AS downwind_id,
         d.status AS downwind_status,
+        d.visibilidade AS downwind_visibilidade,
+        d.notificado_em AS downwind_notificado_em,
         (d.criado_por = ${user.id}) AS downwind_criado_por_mim,
         (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = e.id) AS participants_count,
         CASE WHEN EXISTS (
@@ -34,9 +70,14 @@ export async function GET() {
         ) THEN true ELSE false END AS is_registered
       FROM events e
       LEFT JOIN downwinds d ON d.event_id = e.id
-      WHERE d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = ${user.id} OR EXISTS (
-        SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
+      WHERE (
+        d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = ${user.id} OR EXISTS (
+          SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
+        )
       )
+      -- Filtro de estado. Sem filtro (${ufFiltro} IS NULL) tudo passa; com
+      -- filtro, evento de UF desconhecida fica de fora — ver eventoCasaComUf.
+      AND (${ufFiltro}::text IS NULL OR e.uf = ${ufFiltro})
       /*
        * event_at, não event_date: a segunda é TEXT com a data por extenso em
        * português, e ordenar texto é ordenar alfabeticamente — "01 de
@@ -63,9 +104,14 @@ export async function GET() {
         timestamp: String(r.created_at),
         participantsCount: Number(r.participants_count),
         isRegistered: Boolean(r.is_registered),
+        uf: r.uf ? String(r.uf) : null,
         downwindId: r.downwind_id ? String(r.downwind_id) : null,
         downwindStatus: r.downwind_status ? String(r.downwind_status) as KiteEvent['downwindStatus'] : null,
         downwindCriadoPorMim: Boolean(r.downwind_criado_por_mim),
+        downwindVisibilidade: r.downwind_visibilidade
+          ? (String(r.downwind_visibilidade) as 'privado' | 'comunidade')
+          : null,
+        downwindJaNotificado: r.downwind_notificado_em !== null && r.downwind_notificado_em !== undefined,
       };
     });
 
@@ -94,14 +140,36 @@ async function createDownwindEvent(body: unknown) {
   const spotChegadaId = str(body, 'spotChegadaId', { optional: true, max: 100 });
   const previstoParaRaw = str(body, 'previstoPara', { max: 40 });
 
+  /*
+   * A CAUSA RAIZ DO "CRIEI E NÃO APARECEU PARA NINGUÉM".
+   *
+   * Este INSERT não passava `visibilidade`, então todo downwind criado pela
+   * aba Eventos caía no DEFAULT 'privado' do schema — e o filtro de GET
+   * (logo acima) corretamente o escondia de todo mundo. O formulário nem
+   * perguntava: não existia jeito de criar um downwind visível por aqui.
+   *
+   * Valor inválido é 400, não silêncio: publicar ou esconder a localização de
+   * um grupo por interpretação de string é exatamente o erro que se está
+   * corrigindo. Ausência cai no padrão fechado — ver o comentário sobre isso
+   * em lib/downwindVisibilidade.ts.
+   */
+  const visibilidadeRaw = str(body, 'visibilidade', { optional: true, max: 20 });
+  const visibilidade = visibilidadeRaw
+    ? normalizarVisibilidade(visibilidadeRaw)
+    : VISIBILIDADE_PADRAO;
+  if (visibilidade === null) throw new HttpError(400, 'Visibilidade inválida.');
+
   const previstoPara = new Date(previstoParaRaw);
   if (Number.isNaN(previstoPara.getTime())) {
     throw new HttpError(400, 'Data/hora do downwind inválida.');
   }
 
-  const spotSaidaRows = await sql`SELECT name FROM spots WHERE id = ${spotSaidaId} LIMIT 1`;
+  const spotSaidaRows = await sql`SELECT name, state FROM spots WHERE id = ${spotSaidaId} LIMIT 1`;
   if (spotSaidaRows.length === 0) throw new HttpError(400, 'Spot de saída inválido.');
-  const spotSaidaName = String((spotSaidaRows[0] as Record<string, unknown>).name);
+  const spotSaidaRow = spotSaidaRows[0] as Record<string, unknown>;
+  const spotSaidaName = String(spotSaidaRow.name);
+  // UF herdada do spot de saída: ninguém digita estado. Ver lib/uf.ts.
+  const uf = normalizarUf(spotSaidaRow.state);
 
   if (spotChegadaId) {
     const spotChegadaRows = await sql`SELECT id FROM spots WHERE id = ${spotChegadaId} LIMIT 1`;
@@ -119,12 +187,12 @@ async function createDownwindEvent(body: unknown) {
 
   const insertedEvent = await sql`
     INSERT INTO events (
-      title, event_date, event_at, location, spot_name, type, description, organizer, image_url
+      title, event_date, event_at, location, spot_name, type, description, organizer, image_url, uf
     )
     VALUES (
       ${title}, ${eventDate}, ${previstoPara.toISOString()},
       ${location}, ${spotSaidaName}, 'Downwind',
-      ${description}, ${user.name}, ${imageUrl || null}
+      ${description}, ${user.name}, ${imageUrl || null}, ${uf}
     )
     RETURNING id
   `;
@@ -139,10 +207,12 @@ async function createDownwindEvent(body: unknown) {
   let downwindId: string | undefined;
   try {
     const insertedDownwind = await sql`
-      INSERT INTO downwinds (nome, spot_saida, spot_chegada, criado_por, previsto_para, event_id)
+      INSERT INTO downwinds (
+        nome, spot_saida, spot_chegada, criado_por, previsto_para, visibilidade, event_id
+      )
       VALUES (
         ${title}, ${spotSaidaId}, ${spotChegadaId || null}, ${user.id},
-        ${previstoPara.toISOString()}, ${eventId}
+        ${previstoPara.toISOString()}, ${visibilidade}, ${eventId}
       )
       RETURNING id
     `;
@@ -157,7 +227,7 @@ async function createDownwindEvent(body: unknown) {
       VALUES (${downwindId}, ${user.id}, 'velejador', TRUE)
     `;
 
-    return { id: eventId, downwindId };
+    return { id: eventId, downwindId, visibilidade };
   } catch (err) {
     if (downwindId) await sql`DELETE FROM downwinds WHERE id = ${downwindId}`;
     await sql`DELETE FROM events WHERE id = ${eventId}`;

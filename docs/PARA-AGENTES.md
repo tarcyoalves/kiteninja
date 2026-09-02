@@ -152,4 +152,5 @@ O estado antigo de `master` está preservado na branch
 | `ATUALIZACAO-DO-APP.md` | Como o Android se atualiza sozinho (e quando precisa de APK novo) |
 | `AUDITORIA-EXTERNA-2026-09-02.md` | Achados das auditorias 360°: o que era real, o que foi corrigido, o que depende do usuário |
 | `PROMPT-AUDITORIA-ANTIGRAVITY.md` | Prompt pronto para pedir auditoria externa, com as travas de evidência |
+| `BUG-DOWNWIND-DOIS-CARDS.md` | Por que o downwind nascia invisível e aparecia duas vezes; a agenda como superfície única |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |

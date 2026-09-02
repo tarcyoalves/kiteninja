@@ -4,6 +4,11 @@ import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
 import { rateLimiters } from '@/lib/rateLimit';
 import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import { str } from '@/lib/validation';
+import {
+  VISIBILIDADE_PADRAO,
+  normalizarVisibilidade,
+} from '@/lib/downwindVisibilidade';
+import { normalizarUf } from '@/lib/uf';
 
 export const dynamic = 'force-dynamic';
 
@@ -144,11 +149,11 @@ export async function POST(request: Request) {
     const spotSaida = str(body, 'spotSaida', { max: 100 });
     const spotChegada = str(body, 'spotChegada', { optional: true, max: 100 });
     const previstoParaRaw = str(body, 'previstoPara', { optional: true, max: 50 });
-    const visibilidade = str(body, 'visibilidade', { optional: true, max: 20 }) || 'privado';
-
-    if (visibilidade !== 'privado' && visibilidade !== 'comunidade') {
-      throw new HttpError(400, 'Visibilidade inválida.');
-    }
+    const visibilidadeRaw = str(body, 'visibilidade', { optional: true, max: 20 });
+    const visibilidade = visibilidadeRaw
+      ? normalizarVisibilidade(visibilidadeRaw)
+      : VISIBILIDADE_PADRAO;
+    if (visibilidade === null) throw new HttpError(400, 'Visibilidade inválida.');
 
     if (visibilidade === 'comunidade') {
       await requireDownwindOrganizer();
@@ -156,11 +161,12 @@ export async function POST(request: Request) {
       rateLimiters.downwindCriar(user.id);
     }
 
-    const spotSaidaRows = await sql`SELECT id, name, location FROM spots WHERE id = ${spotSaida} LIMIT 1`;
+    const spotSaidaRows = await sql`SELECT id, name, location, state FROM spots WHERE id = ${spotSaida} LIMIT 1`;
     if (spotSaidaRows.length === 0) throw new HttpError(400, 'Spot de saída inválido.');
     const spotSaidaObj = spotSaidaRows[0] as Record<string, unknown>;
     const spotSaidaName = String(spotSaidaObj.name);
     const spotSaidaLocation = String(spotSaidaObj.location || spotSaidaName);
+    const uf = normalizarUf(spotSaidaObj.state);
 
     if (spotChegada) {
       const spotChegadaRows = await sql`SELECT id FROM spots WHERE id = ${spotChegada} LIMIT 1`;
@@ -181,26 +187,40 @@ export async function POST(request: Request) {
     let downwindId: string | undefined;
 
     try {
-      if (visibilidade === 'comunidade') {
-        const eventDate = previstoPara.toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        });
+      /*
+       * O EVENTO É CRIADO SEMPRE — inclusive para downwind fechado.
+       *
+       * Antes só nascia quando `comunidade`, e a consequência apareceu na
+       * tela do dono: como um downwind privado não tinha evento, precisou
+       * existir uma SEGUNDA lista (`ListaDownwinds`) só para ele aparecer
+       * para quem o criou. Com as duas listas na mesma aba, todo downwind de
+       * comunidade passou a ser desenhado DUAS VEZES, um card em cada.
+       *
+       * Com evento sempre presente, a agenda vira a única superfície e a
+       * segunda lista deixa de existir. A privacidade continua inteira: quem
+       * filtra é o WHERE do GET (visibilidade = 'comunidade' OR criador OR
+       * participante), não a ausência da linha. E `events` não tem rota de
+       * leitura por id — só DELETE —, então a linha extra não abre porta
+       * nenhuma.
+       */
+      const eventDate = previstoPara.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
 
-        const insertedEvent = await sql`
-          INSERT INTO events (
-            title, event_date, event_at, location, spot_name, type, description, organizer
-          )
-          VALUES (
-            ${nome}, ${eventDate}, ${previstoPara.toISOString()},
-            ${spotSaidaLocation}, ${spotSaidaName}, 'Downwind',
-            ${`Downwind da comunidade organizado por ${user.name}`}, ${user.name}
-          )
-          RETURNING id
-        `;
-        eventId = String((insertedEvent[0] as Record<string, unknown>).id);
-      }
+      const insertedEvent = await sql`
+        INSERT INTO events (
+          title, event_date, event_at, location, spot_name, type, description, organizer, uf
+        )
+        VALUES (
+          ${nome}, ${eventDate}, ${previstoPara.toISOString()},
+          ${spotSaidaLocation}, ${spotSaidaName}, 'Downwind',
+          ${`Downwind organizado por ${user.name}`}, ${user.name}, ${uf}
+        )
+        RETURNING id
+      `;
+      eventId = String((insertedEvent[0] as Record<string, unknown>).id);
 
       const inserted = await sql`
         INSERT INTO downwinds (

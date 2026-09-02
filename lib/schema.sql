@@ -1201,3 +1201,44 @@ ALTER TABLE events
 
 CREATE INDEX IF NOT EXISTS idx_events_event_at
   ON events (event_at DESC NULLS LAST);
+
+-- ---------------------------------------------------------------------------
+-- events.uf — o eixo por onde a agenda escala.
+--
+-- A aba Eventos lista tudo, de todo mundo. Com cinco usuários no Rio Grande
+-- do Norte isso está certo. Com kitesurfistas de Cumbuco, Jericoacoara,
+-- Búzios e Barra Grande no mesmo app, é uma lista que ninguém lê.
+--
+-- A UF vem de `spots.state` (já é sigla de duas letras em todos os spots
+-- catalogados) e é COPIADA para cá na criação, em vez de derivada por JOIN a
+-- cada consulta. Duas razões: é o que permite indexar o filtro, e o spot pode
+-- ser removido (spot_saida é ON DELETE SET NULL) sem que o evento tenha que
+-- sumir do estado onde as pessoas vão procurá-lo.
+--
+-- NULL nas linhas antigas e nos eventos sem spot reconhecido. Ver
+-- `eventoCasaComUf` em lib/uf.ts: com filtro ativo, UF nula fica de fora — é
+-- o único jeito honesto de responder "eventos do Ceará".
+-- ---------------------------------------------------------------------------
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS uf TEXT;
+
+-- (uf, event_at) e não só (uf): a tela sempre pede um estado JÁ ordenado por
+-- data, então o índice composto entrega as duas coisas numa varredura só.
+CREATE INDEX IF NOT EXISTS idx_events_uf_data
+  ON events (uf, event_at DESC NULLS LAST);
+
+-- ---------------------------------------------------------------------------
+-- downwinds.notificado_em — trava de disparo único do aviso à comunidade.
+--
+-- Mora no banco, e não em estado de tela, porque a garantia precisa valer
+-- entre aparelhos e entre sessões: o organizador que toca "Avisar" no celular
+-- e depois abre o app no notebook não pode disparar um segundo push para
+-- todos os seguidores.
+--
+-- Push repetido é o caminho mais rápido para o usuário desligar TODAS as
+-- notificações do app — inclusive as de SOS. Por isso a regra é uma vez só, e
+-- não um intervalo: aqui o custo do excesso não é incômodo, é perder o canal
+-- de emergência. Ver `podeNotificarSeguidores` em lib/downwindVisibilidade.ts.
+-- ---------------------------------------------------------------------------
+ALTER TABLE downwinds
+  ADD COLUMN IF NOT EXISTS notificado_em TIMESTAMPTZ;

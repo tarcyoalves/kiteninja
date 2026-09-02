@@ -397,6 +397,16 @@ export interface KiteEvent {
    * além da moderação. Calculado no servidor (GET /api/events), nunca no
    * cliente — evita mostrar um botão que a rota de apagar recusaria. */
   downwindCriadoPorMim?: boolean;
+  /** Visibilidade do downwind vinculado. Mostrada no card de propósito: "criei
+   * e não apareceu para ninguém" foi um relato real, e a resposta estava
+   * escondida nesta escolha. Ver lib/downwindVisibilidade.ts. */
+  downwindVisibilidade?: 'privado' | 'comunidade' | null;
+  /** A comunidade já foi avisada deste downwind. O aviso é disparo único —
+   * ver `podeNotificarSeguidores` em lib/downwindVisibilidade.ts. */
+  downwindJaNotificado?: boolean;
+  /** Estado (UF) herdado do spot de saída. `null` em eventos antigos e em
+   * spots sem estado reconhecido. É o eixo do filtro da agenda — ver lib/uf.ts. */
+  uf?: string | null;
 }
 
 // ------------------------------------------------------------- marketplace

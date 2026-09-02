@@ -23,17 +23,22 @@ import {
   Loader2,
   Trash2,
   RefreshCw,
+  Lock,
+  Globe,
+  Link2,
+  Check,
+  Megaphone,
 } from 'lucide-react';
+import { eventoCasaComUf, ufsPresentes } from '../lib/uf';
+import type { DownwindVisibilidade } from '../lib/downwindVisibilidade';
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
-import { ListaDownwinds } from '../components/activity/ListaDownwinds';
 
 export const EventsAndAlertsView: React.FC = () => {
   const {
     safetyAlerts,
     addSafetyAlert,
     events,
-    downwinds,
     toggleEventRegistration,
     deleteEvent,
     spots,
@@ -73,6 +78,7 @@ export const EventsAndAlertsView: React.FC = () => {
       // não confirma. O caminho completo continua no ConvidarVelejadoresSheet.
     }
   }, []);
+
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
   const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
@@ -143,6 +149,60 @@ export const EventsAndAlertsView: React.FC = () => {
   const [dwLocation, setDwLocation] = useState('');
   const [dwDescription, setDwDescription] = useState('');
   const [dwSaving, setDwSaving] = useState(false);
+  /*
+   * Começa em 'comunidade' — o oposto do padrão do servidor, e de propósito.
+   *
+   * O servidor fecha por omissão porque um campo ausente nunca pode publicar
+   * a localização de um grupo (ver lib/downwindVisibilidade.ts). Aqui a
+   * situação é outra: a pessoa tocou "Criar Downwind" na aba de EVENTOS, que
+   * é a agenda pública do app — a intenção declarada é convidar gente. Foi
+   * exatamente essa intenção que o padrão fechado frustrou em silêncio.
+   *
+   * A escolha continua explícita e visível antes de salvar; só o pré-marcado
+   * mudou de lado.
+   */
+  const [dwVisibilidade, setDwVisibilidade] = useState<DownwindVisibilidade>('comunidade');
+  /** Filtro de estado da agenda. `null` = todos. Ver lib/uf.ts. */
+  const [ufFiltro, setUfFiltro] = useState<string | null>(null);
+  const [notificandoId, setNotificandoId] = useState<string | null>(null);
+  const [avisoEnviadoId, setAvisoEnviadoId] = useState<string | null>(null);
+
+  /*
+   * Derivado direto no render, sem useMemo: React 19 com o React Compiler
+   * memoriza isto sozinho — ver docs/REACT19-REGRAS-COMPILADOR.md. `?? null`
+   * porque `uf` é opcional no tipo (evento antigo, spot sem estado) e as
+   * funções de lib/uf.ts distinguem ausente de vazio de propósito.
+   */
+  const ufsDisponiveis = ufsPresentes(events.map(e => ({ uf: e.uf ?? null })));
+  const eventosVisiveis = events.filter(e => eventoCasaComUf(e.uf ?? null, ufFiltro));
+
+  /**
+   * Avisa os seguidores de que este downwind existe.
+   *
+   * Disparo ÚNICO — a trava real está no banco (`downwinds.notificado_em`,
+   * UPDATE condicional com RETURNING), não aqui: dois aparelhos tocando ao
+   * mesmo tempo precisam colidir no servidor, e estado de tela não atravessa
+   * aparelho. Este `notificandoId` só evita o toque duplo no mesmo botão.
+   */
+  const notificarComunidade = useCallback(
+    async (downwindId: string) => {
+      setNotificandoId(downwindId);
+      try {
+        const res = await fetch(`/api/downwind/${downwindId}/notificar`, { method: 'POST' });
+        if (res.ok) {
+          setAvisoEnviadoId(downwindId);
+          await refreshEventsAndAlerts();
+        }
+      } catch {
+        // Sem rede: o botão volta ao normal e a pessoa tenta de novo. Não
+        // marcamos como enviado — dizer "avisamos" sem ter avisado é pior
+        // que não ter botão.
+      } finally {
+        setNotificandoId(null);
+      }
+    },
+    [refreshEventsAndAlerts]
+  );
   const [dwError, setDwError] = useState<string | null>(null);
 
   // New alert form state
@@ -201,6 +261,7 @@ export const EventsAndAlertsView: React.FC = () => {
       spotSaidaId: dwSpotSaidaId,
       spotChegadaId: dwSpotChegadaId || undefined,
       previstoPara: previstoPara.toISOString(),
+      visibilidade: dwVisibilidade,
     });
     setDwSaving(false);
 
@@ -216,6 +277,7 @@ export const EventsAndAlertsView: React.FC = () => {
     setDwDataHora('');
     setDwLocation('');
     setDwDescription('');
+    setDwVisibilidade('comunidade');
     setActiveSubTab('eventos');
   };
 
@@ -565,6 +627,58 @@ export const EventsAndAlertsView: React.FC = () => {
                   />
                 </div>
 
+                {/*
+                  * O SELETOR QUE FALTAVA.
+                  *
+                  * Sem ele, todo downwind criado por aqui nascia fechado (o
+                  * DEFAULT da coluna) e não aparecia para mais ninguém — o
+                  * relato que originou esta correção. O texto de cada opção
+                  * diz a CONSEQUÊNCIA, não o nome interno do valor: "privado"
+                  * e "comunidade" só significam alguma coisa para quem leu o
+                  * schema.
+                  */}
+                <div>
+                  <label className="block text-slate-300 font-bold mb-1.5">Quem pode ver</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDwVisibilidade('comunidade')}
+                      aria-pressed={dwVisibilidade === 'comunidade'}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        dwVisibilidade === 'comunidade'
+                          ? 'bg-cyan-500/15 border-cyan-400 text-white'
+                          : 'bg-[#1E293B] border-slate-700 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 font-black">
+                        <Globe size={13} className="text-cyan-400" />
+                        Comunidade
+                      </span>
+                      <span className="block mt-0.5 text-[11px] leading-snug opacity-80">
+                        Aparece na agenda de todo mundo
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDwVisibilidade('privado')}
+                      aria-pressed={dwVisibilidade === 'privado'}
+                      className={`p-2.5 rounded-xl border text-left transition-all ${
+                        dwVisibilidade === 'privado'
+                          ? 'bg-amber-500/15 border-amber-400 text-white'
+                          : 'bg-[#1E293B] border-slate-700 text-slate-400 hover:border-slate-600'
+                      }`}
+                    >
+                      <span className="flex items-center gap-1.5 font-black">
+                        <Lock size={13} className="text-amber-400" />
+                        Fechado
+                      </span>
+                      <span className="block mt-0.5 text-[11px] leading-snug opacity-80">
+                        Só quem receber o link entra
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
@@ -586,22 +700,72 @@ export const EventsAndAlertsView: React.FC = () => {
             </div>
           )}
 
-          <ListaDownwinds
-            downwinds={downwinds}
-            onAbrir={abrirDownwindAoVivo}
-            onCopiarLink={copiarLinkConvite}
-            linkCopiadoId={linkCopiadoId}
-          />
+          {/*
+            * A <ListaDownwinds> ficava aqui e foi removida.
+            *
+            * Ela nasceu certa: downwind privado não gerava evento, então sem
+            * ela quem criasse um não via nada — nem o próprio criador. Só que
+            * a partir do momento em que todo downwind passou a ter evento
+            * (ver o comentário em POST /api/downwind), as duas listas
+            * desenhavam a MESMA travessia, uma em cada card, na mesma tela.
+            *
+            * Agora a agenda é a única superfície, e o card de evento carrega
+            * o que só a lista mostrava: visibilidade, convite e aviso.
+            */}
+          {/*
+            * FILTRO POR ESTADO — o eixo por onde esta tela escala.
+            *
+            * Só aparece quando há mais de um estado na agenda: com tudo no RN
+            * (a situação de hoje), uma barra de filtros com um botão só é
+            * ruído. Ela nasce sozinha quando o app chegar a Cumbuco e Búzios.
+            *
+            * As opções vêm do que EXISTE (`ufsPresentes`), não das 27 siglas:
+            * oferecer "Acre" numa agenda sem eventos no Acre é dar um botão
+            * que só sabe devolver lista vazia. Ver lib/uf.ts.
+            */}
+          {ufsDisponiveis.length > 1 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-1 px-1">
+              <button
+                type="button"
+                onClick={() => setUfFiltro(null)}
+                className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-black border transition-all ${
+                  ufFiltro === null
+                    ? 'bg-cyan-500 border-cyan-400 text-slate-950'
+                    : 'bg-[#1E293B] border-slate-700 text-slate-400'
+                }`}
+              >
+                Todos
+              </button>
+              {ufsDisponiveis.map(uf => (
+                <button
+                  key={uf}
+                  type="button"
+                  onClick={() => setUfFiltro(uf)}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-black border transition-all ${
+                    ufFiltro === uf
+                      ? 'bg-cyan-500 border-cyan-400 text-slate-950'
+                      : 'bg-[#1E293B] border-slate-700 text-slate-400'
+                  }`}
+                >
+                  {uf}
+                </button>
+              ))}
+            </div>
+          )}
 
-          {events.length === 0 && (
+          {eventosVisiveis.length === 0 && (
             <div className="p-6 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
-              <p className="font-black text-slate-100">Nenhum evento marcado</p>
+              <p className="font-black text-slate-100">
+                {ufFiltro ? `Nenhum evento em ${ufFiltro}` : 'Nenhum evento marcado'}
+              </p>
               <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
-                Downwinds e encontros aparecem aqui quando forem publicados.
+                {ufFiltro
+                  ? 'Toque em "Todos" para ver a agenda inteira.'
+                  : 'Downwinds e encontros aparecem aqui quando forem publicados.'}
               </p>
             </div>
           )}
-          {events.map(event => (
+          {eventosVisiveis.map(event => (
             <div
               key={event.id}
               className={`rounded-2xl border shadow-xl overflow-hidden transition-colors ${
@@ -648,6 +812,77 @@ export const EventsAndAlertsView: React.FC = () => {
                   )}
                 </div>
 
+                {/*
+                  * Ações do organizador — vinham da <ListaDownwinds> removida.
+                  *
+                  * Só aparecem para quem criou o downwind e enquanto ele ainda
+                  * está aberto: convidar para uma travessia encerrada ou
+                  * anunciar uma que já saiu é chamar gente para uma porta
+                  * fechada.
+                  */}
+                {event.downwindId && event.downwindCriadoPorMim && event.downwindStatus === 'aberto' && (
+                  <div className="flex gap-2 pt-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => copiarLinkConvite(event.downwindId as string)}
+                      className="flex-1 py-2 rounded-xl text-xs font-black bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                    >
+                      {linkCopiadoId === event.downwindId ? (
+                        <>
+                          <Check size={14} className="text-emerald-400" />
+                          <span>Link copiado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Link2 size={14} />
+                          <span>Convidar</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/*
+                      * "Avisar" existe porque criar o downwind não avisava
+                      * ninguém: ele ficava na agenda esperando alguém abrir a
+                      * aba por conta própria, e o organizador acabava
+                      * chamando o pessoal por WhatsApp.
+                      *
+                      * Só para downwind de comunidade, e UMA VEZ (a trava real
+                      * é `downwinds.notificado_em` no banco). Push repetido faz
+                      * o usuário desligar todas as notificações do app —
+                      * inclusive as de SOS.
+                      */}
+                    {event.downwindVisibilidade === 'comunidade' && (
+                      <button
+                        type="button"
+                        onClick={() => notificarComunidade(event.downwindId as string)}
+                        disabled={
+                          notificandoId === event.downwindId ||
+                          event.downwindJaNotificado ||
+                          avisoEnviadoId === event.downwindId
+                        }
+                        className="flex-1 py-2 rounded-xl text-xs font-black bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-default"
+                      >
+                        {notificandoId === event.downwindId ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Avisando...</span>
+                          </>
+                        ) : event.downwindJaNotificado || avisoEnviadoId === event.downwindId ? (
+                          <>
+                            <Check size={14} />
+                            <span>Comunidade avisada</span>
+                          </>
+                        ) : (
+                          <>
+                            <Megaphone size={14} />
+                            <span>Avisar amigos</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="space-y-1 text-xs text-slate-300">
                   <p className="flex items-center gap-1.5 font-bold text-white">
                     <Calendar size={14} className="text-rose-400" />
@@ -661,6 +896,29 @@ export const EventsAndAlertsView: React.FC = () => {
                     <Users size={14} className="text-amber-400" />
                     <span>Organizador: {event.organizer}</span>
                   </p>
+                  {/*
+                    * A visibilidade fica ESCRITA no card, não deduzida.
+                    *
+                    * "Criei e não apareceu para ninguém" foi um relato real, e
+                    * a resposta estava justamente aqui — invisível. Um
+                    * downwind fechado é fechado de propósito, mas quem o criou
+                    * precisa LER isso, não descobrir pelo silêncio.
+                    */}
+                  {event.downwindVisibilidade && (
+                    <p className="flex items-center gap-1.5">
+                      {event.downwindVisibilidade === 'comunidade' ? (
+                        <>
+                          <Globe size={14} className="text-cyan-400" />
+                          <span className="text-cyan-300 font-bold">Aberto à comunidade</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock size={14} className="text-amber-400" />
+                          <span className="text-amber-300 font-bold">Fechado — só por convite</span>
+                        </>
+                      )}
+                    </p>
+                  )}
                 </div>
 
                 <p className="text-xs text-slate-300 leading-relaxed">
@@ -723,6 +981,32 @@ export const EventsAndAlertsView: React.FC = () => {
                           ? 'Downwind AO VIVO — entrar'
                           : 'Entrar no Downwind'}
                       </span>
+                    </button>
+                  )}
+
+                {/*
+                  * ACOMPANHAR SEM ENTRAR — capacidade que a <ListaDownwinds>
+                  * removida oferecia e que se perderia sem isto.
+                  *
+                  * "Entrar no Downwind" acima faz de você PARTICIPANTE, o que
+                  * é outra coisa: quem está em terra querendo ver o grupo
+                  * atravessar não quer entrar na contagem de quem está na
+                  * água — nem no quórum de encerramento.
+                  *
+                  * Só em downwind de comunidade em andamento, que é
+                  * exatamente o que `podeVerReplayAoVivo` libera para não
+                  * participante (lib/downwindAcesso.ts). Oferecer o botão num
+                  * downwind fechado levaria a pessoa a um 404.
+                  */}
+                {event.downwindId &&
+                  event.downwindStatus === 'em_andamento' &&
+                  event.downwindVisibilidade === 'comunidade' && (
+                    <button
+                      onClick={() => abrirDownwindAoVivo(event.downwindId as string)}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all"
+                    >
+                      <Route size={14} className="text-cyan-400" />
+                      <span>Acompanhar de terra</span>
                     </button>
                   )}
 
