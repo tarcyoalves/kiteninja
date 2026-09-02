@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MAP_TILES } from '@/lib/mapTiles';
+import { opcoesDeTile } from '@/lib/mapTiles';
 
 /**
  * Mini-mapa do resumo pós-downwind: a trilha de UM participante selecionado
@@ -81,7 +81,7 @@ export const DownwindResumoMapa: React.FC<DownwindResumoMapaProps> = ({
           docs/PLANO-REDE-SOCIAL.md (Fase 0). `attributionControl` fica no
           padrão do Leaflet (ligado): Esri exige atribuição visível, e sem o
           controle o `attribution` abaixo não apareceria em lugar nenhum. */}
-      <TileLayer url={MAP_TILES.satelite.url} attribution={MAP_TILES.satelite.attribution} />
+      <TileLayer {...opcoesDeTile('satelite')} />
       <EnquadrarBounds pontos={todosPontos} />
 
       {saida && <Marker position={[saida.lat, saida.lng]} icon={criarIconePonto('#0ea5e9', 'A')} />}

@@ -17,7 +17,7 @@ import { escaparHtml } from '@/lib/htmlEscape';
 import { WindParticleLayer } from './WindParticleLayer';
 import { Wind, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
 import { useKiteData } from '@/context/KiteDataContext';
-import { MAP_TILES, type MapStyle } from '@/lib/mapTiles';
+import { MAP_TILES, opcoesDeTile, type MapStyle } from '@/lib/mapTiles';
 
 export type { MapStyle };
 
@@ -493,15 +493,15 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
               parte do que aparece ao arrastar já está em cache local
               quando o gesto termina — sem mudar o comportamento de só
               buscar ao soltar o dedo (que continua correto). */}
+          {/* `{...opcoesDeTile(...)}` e não campo a campo: era montando à mão
+              que cada mapa acabava com um conjunto de opções diferente — e um
+              deles com `subdomains: undefined`, que deixa o Leaflet estourar
+              em cada tile. Ver lib/mapTiles.ts. */}
           <TileLayer
             key={mapStyle}
-            attribution={MAP_TILES[mapStyle].attribution}
-            url={MAP_TILES[mapStyle].url}
+            {...opcoesDeTile(mapStyle)}
             noWrap={false}
             keepBuffer={6}
-            maxNativeZoom={MAP_TILES[mapStyle].maxNativeZoom ?? 19}
-            maxZoom={20}
-            subdomains={MAP_TILES[mapStyle].subdomains ?? 'abcd'}
           />
 
           <MapController center={mapCenter} zoom={mapZoom} />

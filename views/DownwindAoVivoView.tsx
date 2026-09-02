@@ -2,7 +2,7 @@
 
 import React, { useCallback, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
-import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, Settings, Radio } from 'lucide-react';
+import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, ChevronLeft, Settings, Radio } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -86,6 +86,7 @@ export const DownwindAoVivoView: React.FC = () => {
     encerrarDownwind,
     cancelarDownwind,
     definirApoio,
+    fecharTelaDoDownwind,
   } = useDownwind();
   const [participanteSelecionado, setParticipanteSelecionado] = useState<string | null>(null);
   const { myActiveSos, fetchActiveSos, abrirLoggerComResumo } = useKiteData();
@@ -272,6 +273,31 @@ export const DownwindAoVivoView: React.FC = () => {
       {/* Cabeçalho: nome do downwind + status, sempre visível — é o que
           lembra o velejador de que ele está preso nesta tela e por quê. */}
       <div className="shrink-0 px-4 py-3 bg-[#0F172A] border-b border-slate-800 flex items-center justify-between">
+        <div className="min-w-0 flex items-center gap-2">
+          {/*
+            * SAÍDA DO DOWNWIND AGENDADO.
+            *
+            * Só existe enquanto `aberto`. Antes não precisava: qualquer
+            * downwind sequestrava a aba Mapa e não havia de onde sair. Agora
+            * o agendado só entra a pedido, então precisa de porta de volta —
+            * abrir para conferir o ponto de encontro não pode custar o mapa.
+            *
+            * Em andamento o botão some de propósito: sair da travessia é
+            * outra coisa (o botão de segurar "Sair do downwind", que muda a
+            * participação de verdade), e oferecer uma saída fácil aqui faria
+            * o velejador achar que largou o downwind quando não largou.
+            */}
+          {downwindAtivo.status === 'aberto' && (
+            <button
+              type="button"
+              onClick={fecharTelaDoDownwind}
+              className="shrink-0 p-2 -ml-1 rounded-full text-slate-400 hover:text-white hover:bg-white/5 active:scale-95 transition-all"
+              aria-label="Voltar ao mapa"
+              title="Voltar ao mapa"
+            >
+              <ChevronLeft size={20} />
+            </button>
+          )}
         <div className="min-w-0">
           <h2 className="font-black text-sm text-white truncate">{downwindAtivo.nome}</h2>
           <p className="text-[11px] text-slate-400">
@@ -279,6 +305,7 @@ export const DownwindAoVivoView: React.FC = () => {
             {minhaParticipacao.papel === 'velejador' ? 'Velejador' : 'Apoio em terra'}
             {souOrganizador ? ' · Organizador' : ''}
           </p>
+        </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           <a

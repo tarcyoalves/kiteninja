@@ -79,11 +79,25 @@ const MainContent: React.FC = () => {
   } = useKiteData();
 
   const { user } = useAuth();
-  const { downwindAtivo, recarregar: recarregarDownwind } = useDownwind();
+  const {
+    downwindAtivo,
+    recarregar: recarregarDownwind,
+    mostrarTelaDoDownwind,
+    abrirTelaDoDownwind,
+  } = useDownwind();
   const [modalCriarDwGlobalAberto, setModalCriarDwGlobalAberto] = React.useState(false);
-  // Um downwind ativo troca apenas o conteúdo da aba Mapa pelo mapa ao vivo.
-  // O menu flutuante e as demais abas permanecem disponíveis.
-  const emDownwind = Boolean(downwindAtivo);
+  /*
+   * SÓ TRAVESSIA EM ANDAMENTO troca a aba Mapa pelo mapa ao vivo.
+   *
+   * Era `Boolean(downwindAtivo)`, e /api/downwind/ativo devolve também os
+   * downwinds `aberto` (agendados). Consequência relatada pelo dono: criar um
+   * downwind para 5 de setembro tomava a aba Mapa NA HORA, mostrando o ponto A
+   * como se fosse para começar. Um compromisso marcado não é uma travessia
+   * acontecendo — quem quer começar entra no downwind e inicia por lá.
+   *
+   * O menu flutuante e as demais abas seguem disponíveis, como antes.
+   */
+  const emDownwind = mostrarTelaDoDownwind;
   // Inicializa painel SOS aberto se há SOS ativo; caso contrário fecha
   const [isSosPanelOpen, setIsSosPanelOpen] = React.useState(() => Boolean(myActiveSos));
   // Marca o estado do teclado no shell para o CSS zerar a folga do menu
@@ -328,6 +342,11 @@ const MainContent: React.FC = () => {
             }
           }}
           onContinuarDownwindAtivo={() => {
+            // Pedido explícito de abrir o downwind. Necessário para o
+            // AGENDADO: ele não toma a aba Mapa sozinho (ver
+            // mapaMostraDownwind em lib/activity.ts), então sem isto o
+            // botão levaria ao mapa normal.
+            abrirTelaDoDownwind();
             setIsSheetIniciarOpen(false);
             setSelectedSpot(null);
             setActiveTab('mapa');

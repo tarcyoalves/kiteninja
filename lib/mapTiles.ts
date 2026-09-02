@@ -25,8 +25,23 @@ export interface MapTileConfig {
   rotulo: string;
   maxNativeZoom?: number;
   maxZoom?: number;
-  subdomains?: string;
+  /**
+   * OBRIGATÓRIO, e não opcional — foi por ser opcional que o mapa ao vivo
+   * ficou cinza. Ver `opcoesDeTile` logo abaixo.
+   */
+  subdomains: string;
 }
+
+/**
+ * Subdomínios quando a URL não usa `{s}`.
+ *
+ * O Leaflet chama `_getSubdomain()` em TODA montagem de URL de tile, mesmo
+ * quando o template não tem `{s}` — e essa função faz
+ * `this.options.subdomains.length`. Com `subdomains` valendo `undefined`, isso
+ * é um TypeError a cada tile, e o mapa fica cinza sem um único erro visível na
+ * interface. Por isso o valor existe mesmo onde não é usado.
+ */
+const SUBDOMINIOS_PADRAO = 'abc';
 
 const ATRIBUICAO_OSM =
   '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors';
@@ -41,6 +56,7 @@ export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
     rotulo: 'Oceânico Claro',
     maxNativeZoom: 19,
     maxZoom: 20,
+    subdomains: SUBDOMINIOS_PADRAO,
   },
   satelite: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
@@ -48,6 +64,7 @@ export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
     rotulo: 'Satélite',
     maxNativeZoom: 18,
     maxZoom: 20,
+    subdomains: SUBDOMINIOS_PADRAO,
   },
   escuro: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
@@ -55,5 +72,40 @@ export const MAP_TILES: Record<MapStyle, MapTileConfig> = {
     rotulo: 'Noturno',
     maxNativeZoom: 16,
     maxZoom: 20,
+    subdomains: SUBDOMINIOS_PADRAO,
   },
 };
+
+/**
+ * As opções prontas para entregar ao Leaflet, com todo campo preenchido.
+ *
+ * O BUG QUE ISTO CORRIGE: `components/downwind/DownwindLiveReplayViewer.tsx`
+ * fazia `subdomains: tileConfig.subdomains` e o campo era opcional, então
+ * chegava `undefined` ao `L.tileLayer`. O `setOptions` do Leaflet copia com
+ * `for (var i in options)`, e a chave EXISTE mesmo valendo `undefined` — ou
+ * seja, o `undefined` sobrescrevia o padrão `'abc'` da própria biblioteca. Aí
+ * `_getSubdomain` estourava em cada tile e o mapa de telemetria ficava cinza,
+ * com os marcadores por cima e nenhuma mensagem de erro.
+ *
+ * Dois dos cinco componentes já contornavam com `?? 'abcd'` e dois nem
+ * passavam o campo. Ou seja: o arquivo existia para ser a fonte única e mesmo
+ * assim cada tela tinha seu jeito. Devolver o objeto pronto tira essa decisão
+ * de quem chama — é a diferença entre uma fonte única de DADOS e uma fonte
+ * única de COMPORTAMENTO.
+ */
+export function opcoesDeTile(estilo: MapStyle): {
+  url: string;
+  attribution: string;
+  maxNativeZoom: number;
+  maxZoom: number;
+  subdomains: string;
+} {
+  const c = MAP_TILES[estilo];
+  return {
+    url: c.url,
+    attribution: c.attribution,
+    maxNativeZoom: c.maxNativeZoom ?? 19,
+    maxZoom: c.maxZoom ?? 20,
+    subdomains: c.subdomains,
+  };
+}

@@ -5,7 +5,7 @@ import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { MAP_TILES } from '@/lib/mapTiles';
+import { opcoesDeTile } from '@/lib/mapTiles';
 
 /**
  * A CAMADA DE CIMA da fluidez do feed (seção 3 do plano de rede social):
@@ -79,7 +79,7 @@ export const CardSessaoFeedMapa: React.FC<CardSessaoFeedMapaProps> = ({
       // Attribution continua ligado (padrão do Leaflet): Esri exige
       // atribuição visível nos termos de uso do World Imagery gratuito.
     >
-      <TileLayer url={MAP_TILES.satelite.url} attribution={MAP_TILES.satelite.attribution} />
+      <TileLayer {...opcoesDeTile('satelite')} />
       <EnquadrarNaTrilha pontos={pontos} />
 
       {pontos.length > 1 && (

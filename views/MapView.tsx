@@ -50,7 +50,11 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     setLastKnownPosition,
     abrirLoggerComResumo,
   } = useKiteData();
-  const { downwindAtivo, recarregar: recarregarDownwind } = useDownwind();
+  const {
+    downwindAtivo,
+    recarregar: recarregarDownwind,
+    abrirTelaDoDownwind,
+  } = useDownwind();
   /**
    * Só a escolha manual vira estado. O spot em foco é DERIVADO: enquanto
    * ninguém escolheu nada, é o primeiro da lista — que chega da API depois do
@@ -364,6 +368,10 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
             if (token) handleEntrarConvite(token.trim().replace(/^.*dw_invite=/, ''));
           }}
           onContinuarDownwindAtivo={() => {
+            // Mesmo motivo de app/page.tsx: o downwind agendado só vai para a
+            // tela quando alguém pede. Antes bastava fechar a folha, porque
+            // QUALQUER downwind já tinha tomado a aba — que era o defeito.
+            abrirTelaDoDownwind();
             setSheetIniciarAberto(false);
           }}
           onCompartilharSoloLink={async () => {

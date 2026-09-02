@@ -10,7 +10,7 @@ import { estadoSinal } from '@/lib/downwind';
 import { corDoUsuario, COR_SINAL } from '@/lib/downwindCores';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
 import { dividirCauda, type PontoTrilha } from '@/lib/trilhaDownwind';
-import { MAP_TILES } from '@/lib/mapTiles';
+import { opcoesDeTile } from '@/lib/mapTiles';
 import type { DownwindParticipanteMapa } from '@/lib/useDownwindPosicoes';
 import type { DownwindPonto } from '@/context/DownwindContext';
 
@@ -276,13 +276,7 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
           rastro e os pinos de participantes por cima.
           `attributionControl` sem `false`: CartoDB exige atribuição visível,
           e o controle padrão do Leaflet a desenha discretamente no canto. */}
-      <TileLayer
-        url={MAP_TILES.oceanico.url}
-        attribution={MAP_TILES.oceanico.attribution}
-        maxNativeZoom={MAP_TILES.oceanico.maxNativeZoom ?? 19}
-        maxZoom={20}
-        subdomains={MAP_TILES.oceanico.subdomains ?? 'abcd'}
-      />
+      <TileLayer {...opcoesDeTile('oceanico')} />
       <MapaController centro={centroInicial} ehPosicaoPropria={minhaPosicaoPropria !== null} />
 
       {saida && (

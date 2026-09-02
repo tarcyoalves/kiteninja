@@ -24,7 +24,7 @@ import type { Map as LeafletMap, LayerGroup } from 'leaflet';
 import { useRouter } from 'next/navigation';
 import { mesclarPontos } from '@/lib/trilhaDownwind';
 import { useAoMudar } from '@/lib/useAoMudar';
-import { MAP_TILES } from '@/lib/mapTiles';
+import { opcoesDeTile } from '@/lib/mapTiles';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
 import { metricasDaTrilhaReplay } from '@/lib/metricasReplay';
 
@@ -273,13 +273,18 @@ export const DownwindLiveReplayViewer: React.FC<{
         map.removeLayer(tileLayerRef.current as L.Layer);
       }
 
-      const tileConfig = MAP_TILES[mapLayer];
-      const tile = L.tileLayer(tileConfig.url, {
-        attribution: tileConfig.attribution,
-        maxNativeZoom: tileConfig.maxNativeZoom ?? 19,
-        maxZoom: tileConfig.maxZoom ?? 20,
-        subdomains: tileConfig.subdomains,
-      }).addTo(map);
+      /*
+       * ESTE ERA O MAPA CINZA.
+       *
+       * A montagem à mão passava `subdomains: tileConfig.subdomains` com o
+       * campo opcional — ou seja, `undefined`. O `setOptions` do Leaflet copia
+       * a chave mesmo assim (`for (var i in options)`), sobrescrevendo o
+       * padrão 'abc' da biblioteca; aí `_getSubdomain` faz `.length` de
+       * undefined e estoura em CADA tile. Resultado: fundo cinza, marcadores
+       * por cima, nenhuma mensagem de erro na tela.
+       */
+      const { url, ...opcoes } = opcoesDeTile(mapLayer);
+      const tile = L.tileLayer(url, opcoes).addTo(map);
       tileLayerRef.current = tile;
     });
   }, [mapLayer, mapPronto]);

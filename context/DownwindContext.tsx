@@ -14,6 +14,7 @@ import {
   type TrackingStatus,
 } from '../lib/downwindTracker';
 import { useAoMudar } from '../lib/useAoMudar';
+import { mapaMostraDownwind } from '../lib/activity';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -63,6 +64,19 @@ export interface DownwindAtivo {
 
 interface DownwindContextType {
   downwindAtivo: DownwindAtivo | null;
+  /**
+   * A aba Mapa deve mostrar a tela do downwind em vez do mapa normal.
+   *
+   * Composto por `mapaMostraDownwind` (lib/activity.ts): travessia em
+   * andamento entra sozinha; downwind agendado só entra a pedido. Vive no
+   * contexto porque três telas dependem dele — app/page.tsx decide o que
+   * renderizar, e MapView e EventsAndAlertsView é que pedem a abertura.
+   */
+  mostrarTelaDoDownwind: boolean;
+  /** "Abrir downwind" / "Entrar no Downwind": leva o agendado para a tela. */
+  abrirTelaDoDownwind: () => void;
+  /** Sair da tela do downwind agendado e voltar ao mapa normal. */
+  fecharTelaDoDownwind: () => void;
   /** Primeira resolução (GET /api/downwind/ativo) ainda em voo. */
   carregando: boolean;
   /** Último POST de posição confirmado; continua atualizando fora da aba Mapa. */
@@ -171,6 +185,31 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const { isAuthenticated, user } = useAuth();
   const [downwindAtivo, setDownwindAtivo] = useState<DownwindAtivo | null>(null);
   const [carregando, setCarregando] = useState(true);
+  /*
+   * Abertura DELIBERADA do downwind agendado.
+   *
+   * Antes não existia: qualquer downwind devolvido por /api/downwind/ativo
+   * tomava a aba Mapa, inclusive um marcado para daqui a três dias. Agora
+   * `aberto` só toma a tela quando alguém pediu — e o pedido é este booleano.
+   */
+  const [abertoDeliberadamente, setAbertoDeliberadamente] = useState(false);
+  const mostrarTelaDoDownwind = mapaMostraDownwind({
+    downwind: downwindAtivo,
+    abertoDeliberadamente,
+  });
+  const abrirTelaDoDownwind = useCallback(() => setAbertoDeliberadamente(true), []);
+  const fecharTelaDoDownwind = useCallback(() => setAbertoDeliberadamente(false), []);
+
+  /*
+   * Trocar de downwind (ou ficar sem nenhum) zera o pedido de abertura: o
+   * "sim, quero ver" foi dado para AQUELE downwind, e herdá-lo traria de volta
+   * o sequestro da aba que esta correção elimina. Chave primitiva (o id), como
+   * exige lib/useAoMudar.ts — objeto ali entra em laço infinito.
+   */
+  useAoMudar(downwindAtivo?.id ?? null, () => {
+    setAbertoDeliberadamente(false);
+  });
+
   const emAndamento = downwindAtivo?.status === 'em_andamento';
   const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
 
@@ -500,6 +539,10 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // um objeto parcial aqui — evita duas fontes de verdade para o mesmo
         // formato de resposta.
         await recarregar();
+        // Entrar é um pedido explícito de ver o downwind — sem isto, entrar
+        // num downwind AGENDADO levaria a pessoa para a aba Mapa normal, já
+        // que agendado não toma a tela sozinho.
+        setAbertoDeliberadamente(true);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Falha ao entrar no downwind.' };
@@ -602,6 +645,9 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         trackingTelemetry,
         abrirConfiguracoesBateria,
         diagnosticoTracking: diagnosticoTracking ?? motivoNaoLigar,
+        mostrarTelaDoDownwind,
+        abrirTelaDoDownwind,
+        fecharTelaDoDownwind,
         entrarNoDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,

@@ -60,6 +60,38 @@ export const IniciarAtividadeSheet: React.FC<IniciarAtividadeSheetProps> = ({
           </button>
         </div>
 
+        {/*
+          * DOWNWIND AGENDADO: atalho, não bloqueio.
+          *
+          * Antes ele caía no alerta âmbar abaixo e desabilitava o Velejo Solo,
+          * porque `aberto` era tratado como travessia em curso. Agora ele
+          * aparece como o que é — um compromisso marcado — com o caminho para
+          * entrar e iniciar de dentro do downwind, que é onde a travessia
+          * começa (ver lib/activity.ts).
+          */}
+        {atividade.downwindAgendado && (
+          <div className="p-3.5 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-100 text-xs space-y-2">
+            <div className="flex items-start gap-2">
+              <Users size={16} className="shrink-0 text-cyan-400 mt-0.5" />
+              <p>
+                <span className="font-bold">Você tem um downwind marcado: </span>
+                {atividade.downwindAgendado.nome}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onContinuarDownwindAtivo();
+              }}
+              className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
+            >
+              <Compass size={16} />
+              <span>Abrir downwind</span>
+            </button>
+          </div>
+        )}
+
         {/* Alerta de Atividade já em andamento */}
         {temBloqueio && (
           <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-2">
@@ -77,7 +109,7 @@ export const IniciarAtividadeSheet: React.FC<IniciarAtividadeSheetProps> = ({
                 className="w-full py-2.5 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all active:scale-98"
               >
                 <Compass size={16} />
-                <span>Continuar Downwind Ativo</span>
+                <span>Voltar ao downwind</span>
               </button>
             )}
           </div>
