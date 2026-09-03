@@ -190,4 +190,5 @@ O estado antigo de `master` está preservado na branch
 | `BUG-PARTICIPANTES-INVISIVEIS.md` | `event_registrations` só era contada, nunca listada; e a regra de acesso que virou função |
 | `FEED-CARROSSEL-E-ESCOPO.md` | Trilha+foto no carrossel, por que a foto não vem na listagem, e os dois escopos do feed |
 | `FOTOS-DO-VELEJO.md` | Fotos saíram do Postgres para o Blob; várias por velejo, e por que a migração copia sem converter |
+| `VARREDURA-CHAT.md` | Cinco defeitos do chat, quatro deles "código de mouse rodando num dedo" |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |

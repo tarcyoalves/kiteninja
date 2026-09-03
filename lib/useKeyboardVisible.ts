@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ATRASO_PARA_FECHAR_MS, ehCampoEditavel } from './tecladoVirtual';
 
 /**
  * Diz se o teclado virtual está (provavelmente) aberto.
@@ -20,12 +21,6 @@ import { useEffect, useState } from 'react';
 
 const DIFF_LIMIAR_PX = 140;
 
-function ehCampoEditavel(el: EventTarget | null): boolean {
-  if (!(el instanceof HTMLElement)) return false;
-  const tag = el.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable;
-}
-
 export function useKeyboardVisible(): boolean {
   const [visivel, setVisivel] = useState(false);
 
@@ -37,6 +32,18 @@ export function useKeyboardVisible(): boolean {
       window.matchMedia('(pointer: coarse)').matches;
 
     let focado = false;
+    /*
+     * Timer do fechamento adiado. Ver lib/tecladoVirtual.ts para o porquê: sem
+     * ele, tocar num botão vizinho do campo movia o layout inteiro ANTES de o
+     * clique acontecer, e o toque se perdia.
+     */
+    let fecharEm: ReturnType<typeof setTimeout> | null = null;
+    const cancelarFechamento = () => {
+      if (fecharEm !== null) {
+        clearTimeout(fecharEm);
+        fecharEm = null;
+      }
+    };
 
     const zerarScroll = () => {
       if (typeof window === 'undefined') return;
@@ -58,15 +65,36 @@ export function useKeyboardVisible(): boolean {
     };
 
     const onFocusIn = (e: FocusEvent) => {
-      if (pointerCoarse && ehCampoEditavel(e.target)) {
+      if (pointerCoarse && ehCampoEditavel(e.target as HTMLElement | null)) {
+        // Voltou para um campo: o fechamento agendado não vale mais. É o caso
+        // de sair de um input e cair em outro, e o de o foco voltar sozinho.
+        cancelarFechamento();
         focado = true;
         recalcular();
       }
     };
 
     const onFocusOut = () => {
-      focado = false;
-      recalcular();
+      /*
+       * O foco saiu — mas ainda NÃO se conclui que o teclado fechou.
+       *
+       * Entre o dedo encostar num botão vizinho e o `click` nascer, o foco já
+       * saiu do campo. Concluir aqui fazia o menu inferior reaparecer e as
+       * folgas crescerem no mesmo quadro, empurrando o botão para longe do
+       * dedo — o clique caía no vazio e o usuário tocava de novo. Era o bug
+       * do botão de enviar do chat.
+       *
+       * A correção de scroll continua imediata: ela é sobre a deriva do iOS,
+       * não sobre a altura da tela, e adiá-la só deixaria a página torta por
+       * mais tempo.
+       */
+      cancelarFechamento();
+      fecharEm = setTimeout(() => {
+        fecharEm = null;
+        focado = false;
+        recalcular();
+      }, ATRASO_PARA_FECHAR_MS);
+
       zerarScroll();
 
       requestAnimationFrame(() => {
@@ -88,6 +116,7 @@ export function useKeyboardVisible(): boolean {
     window.visualViewport?.addEventListener('scroll', recalcular);
 
     return () => {
+      cancelarFechamento();
       document.removeEventListener('focusin', onFocusIn);
       document.removeEventListener('focusout', onFocusOut);
       window.visualViewport?.removeEventListener('resize', recalcular);

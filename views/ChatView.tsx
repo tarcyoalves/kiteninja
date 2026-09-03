@@ -203,6 +203,25 @@ export const ChatView: React.FC = () => {
         cache: 'no-store',
       });
       const body = await res.json().catch(() => null);
+
+      /*
+       * CORRIDA DE TROCA DE SALA.
+       *
+       * `pollMessages` já tinha esta guarda; a carga inicial não. Trocar de
+       * conversa duas vezes seguidas — dois toques na lista de DMs, coisa de
+       * um segundo — deixava a resposta da PRIMEIRA sala chegar depois da
+       * segunda e sobrescrever a tela: o velejador via a conversa errada, com
+       * o nome certo no cabeçalho.
+       *
+       * Pior que o visual: `sinceRef` também ficava com o cursor da sala
+       * errada, então o poll seguinte pedia mensagens novas usando a marca de
+       * outra conversa.
+       *
+       * A checagem tem que vir depois do `await`, e não antes: o ponto é
+       * justamente o que mudou ENQUANTO a resposta vinha.
+       */
+      if (roomRef.current !== target) return;
+
       if (!res.ok) throw new Error(body?.error ?? 'Não foi possível carregar a conversa.');
 
       const lista = (body.messages ?? []) as ChatMessage[];
@@ -211,9 +230,11 @@ export const ChatView: React.FC = () => {
       setUnread(0);
       atBottomRef.current = true;
     } catch (err) {
+      // Erro de uma sala que já não está aberta não vira aviso na tela.
+      if (roomRef.current !== target) return;
       setError(err instanceof Error ? err.message : 'Falha de conexão.');
     } finally {
-      setLoading(false);
+      if (roomRef.current === target) setLoading(false);
     }
   }, []);
 
@@ -447,6 +468,20 @@ export const ChatView: React.FC = () => {
    * próximo render). Passando a sala explicitamente, o POST vai para o lugar
    * certo mesmo antes do re-render acontecer.
    */
+  /**
+   * Impede que o botão roube o foco do campo de texto.
+   *
+   * `preventDefault` no `mousedown` é o que cancela a mudança de foco — o
+   * `click` ainda acontece normalmente. Duas consequências, as duas boas:
+   *
+   *  - o teclado NÃO fecha, então o layout não se mexe entre o toque e o
+   *    clique (era o bug do "precisa clicar duas vezes" — ver
+   *    lib/tecladoVirtual.ts);
+   *  - dá para mandar três mensagens seguidas sem o teclado piscar e sem ter
+   *    de tocar no campo de novo a cada envio.
+   */
+  const manterFocoNoCampo = (e: React.MouseEvent) => e.preventDefault();
+
   const handleSend = async (customText?: string, targetRoom?: string) => {
     const textToSend = customText ?? draft;
     const target = targetRoom ?? room;
@@ -513,13 +548,19 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  const handleCopy = (text: string, id: string) => {
+  const handleCopy = async (text: string, id: string) => {
+    /*
+     * O `try/catch` antigo não pegava nada: `writeText` devolve uma Promise, e
+     * sem `await` a rejeição escapa do bloco. O "Copiado" aparecia mesmo
+     * quando a cópia falhava — e ela falha de verdade em contexto inseguro
+     * (http) e quando o usuário nega a permissão.
+     */
     try {
-      navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(text);
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 2000);
     } catch {
-      // Fallback silencioso
+      setSendError('Não foi possível copiar. Segure na mensagem para selecionar.');
     }
   };
 
@@ -529,6 +570,15 @@ export const ChatView: React.FC = () => {
     const id = room.startsWith('spot:') ? room.slice(5) : room;
     return spots.find((s) => s.id === id)?.name ?? id;
   }, [room, spots, dmPartnerName]);
+
+  /**
+   * Já estamos numa conversa direta?
+   *
+   * Numa DM, tocar no avatar do outro para "abrir o privado" levaria à mesma
+   * sala em que já se está — então lá ele volta a ser enfeite, e o gesto só
+   * existe na sala geral e nas de spot, onde tem para onde ir.
+   */
+  const ehDm = room.startsWith('dm:');
 
   /** Abre (ou reabre) uma conversa direta com `otherUserId`, sem enviar nada. */
   const openDmConversation = useCallback(
@@ -759,22 +809,55 @@ export const ChatView: React.FC = () => {
                         mine ? 'justify-end' : 'justify-start'
                       } ${grouped ? 'mt-0.5' : 'mt-2.5'}`}
                     >
-                      {/* Avatar do Autor (apenas em mensagens de outros) */}
+                      {/*
+                        * Avatar do autor — agora ABRE A CONVERSA PRIVADA.
+                        *
+                        * Era um `div`. A pessoa via quem falou na sala geral e
+                        * não tinha como chamar no privado dali: precisava sair,
+                        * ir na aba Online, achar o nome e tocar. Se o velejador
+                        * não estivesse online naquele instante, não tinha
+                        * caminho nenhum.
+                        *
+                        * `openDmConversation` já existia — só não estava ligado
+                        * aqui. Numa DM o avatar continua sendo enfeite: já se
+                        * está na conversa com aquela pessoa.
+                        */}
                       {!mine && (
                         <div className="w-8 h-8 shrink-0 mb-0.5">
                           {!grouped ? (
-                            <div className="w-8 h-8 rounded-full bg-slate-800 ring-2 ring-cyan-400/60 overflow-hidden flex items-center justify-center shadow-xs">
-                              {m.userAvatar ? (
-                                <img
-                                  src={m.userAvatar}
-                                  alt={m.userName}
-                                  className="w-full h-full object-cover"
-                                  loading="lazy"
-                                />
-                              ) : (
-                                <User size={14} className="text-slate-300" />
-                              )}
-                            </div>
+                            ehDm ? (
+                              <div className="w-8 h-8 rounded-full bg-slate-800 ring-2 ring-cyan-400/60 overflow-hidden flex items-center justify-center shadow-xs">
+                                {m.userAvatar ? (
+                                  <img
+                                    src={m.userAvatar}
+                                    alt={m.userName}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <User size={14} className="text-slate-300" />
+                                )}
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openDmConversation(m.userId, m.userName)}
+                                aria-label={`Conversar no privado com ${m.userName}`}
+                                title={`Conversar no privado com ${m.userName}`}
+                                className="w-8 h-8 rounded-full bg-slate-800 ring-2 ring-cyan-400/60 overflow-hidden flex items-center justify-center shadow-xs active:scale-90 hover:ring-cyan-300 transition-all"
+                              >
+                                {m.userAvatar ? (
+                                  <img
+                                    src={m.userAvatar}
+                                    alt={m.userName}
+                                    className="w-full h-full object-cover"
+                                    loading="lazy"
+                                  />
+                                ) : (
+                                  <User size={14} className="text-slate-300" />
+                                )}
+                              </button>
+                            )
                           ) : (
                             <div className="w-8" />
                           )}
@@ -789,9 +872,22 @@ export const ChatView: React.FC = () => {
                       >
                         {!grouped && !mine && (
                           <div className="flex items-center gap-1.5 mb-0.5 px-1">
-                            <span className="text-[11px] font-black text-emerald-300">
-                              {m.userName}
-                            </span>
+                            {/* O nome é o alvo maior — 32px de avatar é pouco
+                                para um dedo. Os dois levam ao mesmo lugar. */}
+                            {ehDm ? (
+                              <span className="text-[11px] font-black text-emerald-300">
+                                {m.userName}
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => openDmConversation(m.userId, m.userName)}
+                                aria-label={`Conversar no privado com ${m.userName}`}
+                                className="text-[11px] font-black text-emerald-300 hover:text-emerald-200 hover:underline underline-offset-2 active:scale-95 transition-all"
+                              >
+                                {m.userName}
+                              </button>
+                            )}
                             {m.userRiderId && (
                               <span className="text-[9px] font-mono font-bold text-slate-400 bg-slate-800/80 px-1.5 py-0.2 rounded-md">
                                 #{m.userRiderId}
@@ -819,13 +915,25 @@ export const ChatView: React.FC = () => {
                                 <Check size={11} /> Copiado
                               </span>
                             ) : (
+                              /*
+                               * `opacity-0 group-hover:opacity-100` saiu daqui.
+                               *
+                               * Isto é um app de celular. Não existe hover num
+                               * dedo: o botão ficava com opacidade zero para
+                               * SEMPRE — invisível, e mesmo assim clicável. Um
+                               * alvo transparente de 11px ao lado do horário.
+                               *
+                               * Agora ele aparece sempre, discreto. Em telas
+                               * com ponteiro fino o hover ainda o destaca.
+                               */
                               <button
                                 type="button"
                                 onClick={() => handleCopy(m.text, m.id)}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-slate-200 transition-opacity"
+                                className="p-1 -m-0.5 text-slate-500 hover:text-slate-200 transition-colors"
+                                aria-label="Copiar texto da mensagem"
                                 title="Copiar texto"
                               >
-                                <Copy size={11} />
+                                <Copy size={12} />
                               </button>
                             )}
 
@@ -843,10 +951,17 @@ export const ChatView: React.FC = () => {
                             )}
 
                             {mine && (
+                              /*
+                               * Mesmo caso do copiar, com um agravante: apagar
+                               * é destrutivo. Um botão invisível e clicável ao
+                               * lado do horário é um toque errado esperando
+                               * acontecer — só o `confirm()` segurava.
+                               */
                               <button
                                 type="button"
                                 onClick={() => handleDelete(m.id)}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-400 transition-opacity ml-0.5"
+                                className="p-1 -m-0.5 ml-0.5 text-slate-500 hover:text-rose-400 transition-colors"
+                                aria-label="Apagar esta mensagem"
                                 title="Apagar mensagem"
                               >
                                 <Trash2 size={12} />
@@ -879,7 +994,10 @@ export const ChatView: React.FC = () => {
             </div>
           )}
 
-          {/* 3. Barra de Atalhos Rápidos (Kiter Bar) */}
+          {/* INICIO-COMPOSITOR-CHAT
+              3. Barra de Atalhos Rápidos (Kiter Bar). Entra no compositor
+              porque mandar um atalho É compor: o campo pode estar focado, e o
+              atalho sofre exatamente o mesmo deslocamento do enviar. */}
           <div className="shrink-0 bg-[#0A0F1D] border-t border-slate-800/80 px-2.5 py-1.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             <span className="text-[10px] font-black text-cyan-400/80 uppercase tracking-wider shrink-0 flex items-center gap-1 pl-1">
               <Sparkles size={11} /> Rápido:
@@ -888,6 +1006,7 @@ export const ChatView: React.FC = () => {
               <button
                 key={idx}
                 type="button"
+                onMouseDown={manterFocoNoCampo}
                 onClick={() => handleSend(sc.text)}
                 className="shrink-0 px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700/60 text-slate-300 hover:text-white text-[11px] font-semibold transition-all active:scale-95"
               >
@@ -900,6 +1019,12 @@ export const ChatView: React.FC = () => {
               via interactiveWidget=resizes-content, então o composer só precisa
               alternar a folga de baixo: colado quando o teclado está aberto
               (menu some), acima do menu quando fechado. */}
+          {/* TODO botão daqui para baixo precisa de `onMouseDown={manterFocoNoCampo}`.
+              Sem isso ele tira o foco do campo, o teclado fecha, a folga desta
+              barra troca de `pb-2` para `pb-above-nav`, o menu inferior volta a
+              existir — e o botão sai de baixo do dedo antes de o clique nascer.
+              Era o bug do "precisa clicar duas vezes" no enviar.
+              Há um teste que reprova botão sem isto: lib/tecladoVirtual.test.ts. */}
           <div
             className={`shrink-0 bg-[#0F172A] border-t border-slate-800 px-3 pt-2.5 shadow-lg transition-[padding] duration-150 ${
               keyboardVisivel ? 'pb-2' : 'pb-above-nav'
@@ -913,6 +1038,7 @@ export const ChatView: React.FC = () => {
                 <span>{sendError}</span>
                 <button
                   type="button"
+                  onMouseDown={manterFocoNoCampo}
                   onClick={() => setSendError(null)}
                   className="text-rose-300 font-bold hover:text-rose-100"
                 >
@@ -949,8 +1075,11 @@ export const ChatView: React.FC = () => {
                 {draft.length > 0 && (
                   <button
                     type="button"
+                    onMouseDown={manterFocoNoCampo}
                     onClick={() => {
                       setDraft('');
+                      // `focus()` continua como rede de segurança para o
+                      // teclado físico, onde não há mousedown a prevenir.
                       inputRef.current?.focus();
                     }}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 text-xs p-1"
@@ -963,6 +1092,7 @@ export const ChatView: React.FC = () => {
 
               <button
                 type="button"
+                onMouseDown={manterFocoNoCampo}
                 onClick={() => handleSend()}
                 disabled={sending || draft.trim().length === 0}
                 className="w-11 h-11 shrink-0 rounded-xl bg-cyan-500 text-slate-950 font-black flex items-center justify-center hover:bg-cyan-400 active:scale-95 transition-all shadow-md shadow-cyan-500/25 disabled:opacity-40 disabled:active:scale-100"
@@ -972,6 +1102,7 @@ export const ChatView: React.FC = () => {
               </button>
             </div>
 
+            {/* FIM-COMPOSITOR-CHAT (o contador abaixo não tem botão) */}
             {/* Contador de Caracteres Discreto */}
             {draft.length > CHAT_TEXT_MAX - 80 && (
               <div className="mt-1 flex justify-end">
