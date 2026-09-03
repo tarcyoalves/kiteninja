@@ -61,7 +61,7 @@ function LinhaChamado({
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold text-slate-300 truncate">{chamado.autorNome}</span>
+            <span className="text-xs font-bold text-slate-300 truncate max-w-[45%]">{chamado.autorNome}</span>
             <span
               className={`px-2 py-0.5 rounded-lg text-[10px] font-black border uppercase flex items-center gap-1 ${
                 chamado.tipo === 'bug'
@@ -74,9 +74,25 @@ function LinhaChamado({
             </span>
             <span className="text-[11px] text-slate-500 ml-auto">{formatRelativeTime(chamado.createdAt)}</span>
           </div>
-          <p className="font-black text-sm text-white">{chamado.titulo}</p>
-          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{chamado.descricao}</p>
-          {chamado.tela && <p className="text-[11px] text-slate-500">Tela: {chamado.tela}</p>}
+          {/*
+            * `break-words` em TODO texto que veio do usuário.
+            *
+            * Um chamado é escrito por quem está reportando um bug — vem com URL
+            * colada, caminho de rota, trecho de log. Nada disso tem espaço para
+            * quebrar, e sem `break-words` uma única linha dessas estica o cartão
+            * além da tela e faz o painel inteiro deslizar de lado.
+            *
+            * `whitespace-pre-wrap` sozinho não resolve: ele preserva as quebras
+            * que a pessoa digitou, mas não cria quebra dentro de uma palavra que
+            * nunca teve espaço nenhum.
+            */}
+          <p className="font-black text-sm text-white break-words">{chamado.titulo}</p>
+          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap break-words">
+            {chamado.descricao}
+          </p>
+          {chamado.tela && (
+            <p className="text-[11px] text-slate-500 break-words">Tela: {chamado.tela}</p>
+          )}
         </div>
       </div>
 
@@ -195,7 +211,7 @@ export function ChamadosManager() {
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-5">
+    <div className="w-full space-y-5">
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
         {STATUS_OPCOES.map((o) => (
           <button

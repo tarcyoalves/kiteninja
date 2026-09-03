@@ -213,9 +213,11 @@ export function UserManager() {
 
           {/* Card: Ativos Hoje */}
           <div className="p-3.5 rounded-2xl bg-[#1E293B] border border-slate-700/80 shadow-md">
-            <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-              <span className="font-bold">Ativos Hoje (24h)</span>
-              <Radio size={16} className="text-cyan-400" />
+            <div className="flex items-center justify-between gap-1 text-slate-400 text-xs mb-1">
+              {/* Rótulo mais comprido dos quatro cartões; em grade de 2 colunas
+                  num celular ele é o que estoura primeiro. */}
+              <span className="font-bold truncate">Ativos Hoje (24h)</span>
+              <Radio size={16} className="text-cyan-400 shrink-0" />
             </div>
             <p className="text-2xl font-black text-cyan-300">{stats.activeToday}</p>
             <p className="text-[10px] text-slate-400 mt-0.5">
@@ -397,7 +399,7 @@ export function UserManager() {
                     {/* Dados e Badges */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <strong className="text-sm font-black text-white truncate">{u.name}</strong>
+                        <strong className="text-sm font-black text-white break-words">{u.name}</strong>
                         <span>{u.countryFlag}</span>
                         <span
                           className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${roleBadge.class}`}
@@ -414,8 +416,12 @@ export function UserManager() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 flex-wrap font-mono">
-                        <span>{u.email}</span>
+                      <div className="flex items-center gap-3 text-xs text-slate-400 mt-1 flex-wrap font-mono min-w-0">
+                        {/* `break-all`: e-mail é uma palavra só, sem espaço para
+                            quebrar. `flex-wrap` quebra ENTRE itens, nunca dentro
+                            de um — sem isto, um endereço comprido empurra o
+                            cartão para fora da tela. */}
+                        <span className="break-all">{u.email}</span>
                         <span>&bull;</span>
                         <span className="text-cyan-400 font-bold">#{u.riderId}</span>
                         {u.homeSpot && (

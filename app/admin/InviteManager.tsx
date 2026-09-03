@@ -95,7 +95,19 @@ export function InviteManager() {
     }
   }
 
-  async function revoke(id: string) {
+  async function revoke(id: string, identificacao: string) {
+    /*
+     * Confirmação antes de revogar — mesmo padrão de handleApagarEvento em
+     * views/EventsAndAlertsView.tsx.
+     *
+     * O botão é um ícone de lixeira de 36px ao lado do texto, no celular. Um
+     * toque errado invalidava para sempre o link que o admin acabou de mandar
+     * para alguém, sem aviso e sem desfazer — a pessoa convidada só descobria
+     * ao tentar entrar.
+     */
+    if (!confirm(`Revogar o convite de ${identificacao}? O link para de funcionar na hora e não dá para desfazer.`)) {
+      return;
+    }
     setError(null);
     try {
       const res = await fetch(`/api/admin/invites/${id}`, { method: 'DELETE' });
@@ -124,8 +136,14 @@ export function InviteManager() {
     // próprio <main> rolável (.app-scroll) e cabeçalho com "Voltar ao app" + nome
     // do admin. Um <main>/<header> próprios aqui duplicavam os dois na tela toda
     // vez que a aba "Convites" ficava ativa — por isso saíram.
-    <div className="w-full max-w-md mx-auto space-y-5">
-        <form onSubmit={generate} className="space-y-3 p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
+    <div className="w-full space-y-5">
+        {/* O CARD é que tem largura máxima, não a aba inteira.
+            Antes o container da aba era `max-w-md`, enquanto Chamados era
+            `max-w-2xl` e Monitoramento ia até o fim: trocar de aba fazia o
+            conteúdo pular de largura dentro do mesmo painel. Agora as três
+            abas ocupam a mesma coluna e só este formulário — dois campos —
+            se limita, para os inputs não esticarem 900px no desktop. */}
+        <form onSubmit={generate} className="w-full max-w-md space-y-3 p-4 rounded-2xl bg-[#0B132B] border border-slate-800">
           <h2 className="font-bold text-sm">Gerar novo link</h2>
 
           <div>
@@ -234,7 +252,7 @@ export function InviteManager() {
               {inv.status === 'aberto' && (
                 <button
                   type="button"
-                  onClick={() => revoke(inv.id)}
+                  onClick={() => revoke(inv.id, inv.email || inv.note || 'sem identificação')}
                   aria-label="Revogar convite"
                   className="p-2 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 shrink-0"
                 >

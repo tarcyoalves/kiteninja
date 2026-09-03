@@ -408,10 +408,10 @@ export const IntroVideoManager: React.FC = () => {
         </div>
 
         {/* Seletor de Modo de Exibição */}
-        <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 rounded-xl border border-slate-700">
+        <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 rounded-xl border border-slate-700 w-full sm:w-auto">
           <button
             onClick={() => alterarModo('rodizio')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`flex-1 sm:flex-none justify-center px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
               config.modo === 'rodizio'
                 ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
                 : 'text-slate-400 hover:text-white'
@@ -423,7 +423,7 @@ export const IntroVideoManager: React.FC = () => {
           </button>
           <button
             onClick={() => alterarModo('aleatorio')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+            className={`flex-1 sm:flex-none justify-center px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
               config.modo === 'aleatorio'
                 ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20'
                 : 'text-slate-400 hover:text-white'
@@ -521,7 +521,7 @@ export const IntroVideoManager: React.FC = () => {
 
                   {/* Informações */}
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-xs font-bold text-white truncate">
+                    <h4 className="text-xs font-bold text-white break-words">
                       {v.titulo || v.nomeArquivo || `Vídeo #${index + 1}`}
                     </h4>
                     <p className="text-[11px] font-mono text-cyan-300 mt-0.5">
@@ -625,16 +625,20 @@ export const IntroVideoManager: React.FC = () => {
 
       {/* Seção Adicionar Novo Vídeo */}
       <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <h3 className="text-sm font-bold text-white flex items-center gap-2">
-            <Plus size={16} className="text-cyan-400" />
+        {/* `flex-wrap` + `w-full sm:w-auto`: o título e os dois botões
+            ("Upload (até 50MB)" e "Link / URL Direta") somam bem mais que a
+            largura de um celular. Num `justify-between` sem quebra isso
+            empurrava a página inteira para o lado. */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2 min-w-0">
+            <Plus size={16} className="text-cyan-400 shrink-0" />
             <span>Adicionar Novo Vídeo à Playlist</span>
           </h3>
 
-          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl">
+          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl w-full sm:w-auto">
             <button
               onClick={() => setAbaInclusao('arquivo')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                 abaInclusao === 'arquivo' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -642,7 +646,7 @@ export const IntroVideoManager: React.FC = () => {
             </button>
             <button
               onClick={() => setAbaInclusao('url')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold transition-colors ${
+              className={`flex-1 sm:flex-none px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                 abaInclusao === 'url' ? 'bg-cyan-500 text-slate-950' : 'text-slate-400 hover:text-white'
               }`}
             >
