@@ -44,7 +44,7 @@ interface FeedRow {
   eu_curti: unknown;
   comentarios: unknown;
   eu_sigo_o_autor: unknown;
-  tem_foto: unknown;
+  total_fotos: unknown;
 }
 
 /** Cursor precisa ser uma data válida ou ausente — qualquer outra coisa (um
@@ -79,14 +79,16 @@ export async function GET(request: Request) {
           SELECT 1 FROM user_follows f2
           WHERE f2.follower_id = ${user.id} AND f2.following_id = s.user_id
         ) AS eu_sigo_o_autor,
-        -- Só SE a foto existe, nunca o conteúdo dela: photo_url guarda a
-        -- imagem inteira como data URL (ate 1,5 MB por sessao). Vinte linhas
-        -- por pagina dariam dezenas de MB, no 4G da praia. O card busca a
-        -- imagem sozinho ao entrar na tela, pelo mesmo portao de
-        -- IntersectionObserver que ja monta o Leaflet.
+        -- QUANTAS fotos, nunca as imagens. As novas sao URLs curtas do Blob
+        -- e caberiam; as antigas sao data URL de ate 1,5 MB cada (ver a tabela
+        -- session_photos em lib/schema.sql). Um caminho so para os dois
+        -- formatos: o card busca as imagens ao entrar na tela, pelo mesmo
+        -- portao de IntersectionObserver que ja monta o Leaflet.
         -- (Sem crase e sem interpolacao aqui dentro — ver a regra no fim de
         --  docs/BUG-DOWNWIND-DOIS-CARDS.md: as duas coisas sao codigo.)
-        (s.photo_url IS NOT NULL) AS tem_foto,
+        COALESCE((
+          SELECT COUNT(*)::int FROM session_photos sp WHERE sp.session_id = s.id
+        ), 0) AS total_fotos,
         COALESCE((
           SELECT COUNT(*)::int FROM session_likes sl WHERE sl.session_id = s.id
         ), 0) AS curtidas,
@@ -166,7 +168,7 @@ export async function GET(request: Request) {
         curtidas: Number(r.curtidas),
         euCurti: Boolean(r.eu_curti),
         comentarios: Number(r.comentarios),
-        temFoto: Boolean(r.tem_foto),
+        totalFotos: Number(r.total_fotos ?? 0),
       }));
 
     // Próximo cursor é o created_at do ÚLTIMO item desta página (não do

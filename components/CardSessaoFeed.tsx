@@ -163,7 +163,7 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({
       <CarrosselDoVelejo
         sessaoId={sessao.id}
         trilha={sessao.trilhaReduzida}
-        temFoto={Boolean(sessao.temFoto)}
+        totalFotos={sessao.totalFotos ?? 0}
         emViewport={emViewport}
       />
 

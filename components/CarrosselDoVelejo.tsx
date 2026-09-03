@@ -18,8 +18,8 @@ const CardSessaoFeedMapa = dynamic(
 interface Props {
   sessaoId: string;
   trilha?: Array<[number, number, number]>;
-  /** A sessão tem foto (a listagem manda só isto, nunca a imagem). */
-  temFoto: boolean;
+  /** Quantas fotos (a listagem manda só o número, nunca as imagens). */
+  totalFotos: number;
   /** O card está na tela, ou perto: libera montar o mapa e buscar a foto. */
   emViewport: boolean;
 }
@@ -39,10 +39,13 @@ interface Props {
  * qualquer — é o registro do que aconteceu, e é o que a pessoa não consegue
  * postar em outro app. A foto é o complemento.
  *
- * A FOTO É BUSCADA AQUI, não recebida por prop: ela é um data URL de até
- * 1,5 MB, e vinte deles numa página de feed seriam dezenas de MB no 4G da
- * praia. A busca acontece só quando `emViewport` — o mesmo portão que monta o
- * mapa, reaproveitado em vez de um segundo observer.
+ * AS FOTOS SÃO BUSCADAS AQUI, não recebidas por prop. As novas são URLs
+ * curtas do Vercel Blob e caberiam na listagem; as antigas são data URL de até
+ * 1,5 MB cada (ver `session_photos` em lib/schema.sql), e vinte delas numa
+ * página seriam dezenas de MB no 4G da praia. Um caminho só para os dois
+ * formatos é melhor que dois caminhos condicionais. A busca acontece quando
+ * `emViewport` — o mesmo portão que monta o mapa, reaproveitado em vez de um
+ * segundo observer.
  *
  * Rolagem nativa com `scroll-snap`, sem biblioteca: é um punhado de slides
  * numa direção só, e o gesto de arrastar do próprio navegador já é melhor que
@@ -52,26 +55,26 @@ interface Props {
 export const CarrosselDoVelejo: React.FC<Props> = ({
   sessaoId,
   trilha,
-  temFoto,
+  totalFotos,
   emViewport,
 }) => {
-  const [fotoUrl, setFotoUrl] = useState<string | null>(null);
+  const [fotos, setFotos] = useState<string[] | null>(null);
   const [indice, setIndice] = useState(0);
   const trilhoRef = useRef<HTMLDivElement>(null);
 
   const temTrilha = Array.isArray(trilha) && trilha.length > 1;
 
   useEffect(() => {
-    // Uma vez só: `fotoUrl` preenchido é o próprio sinal de "já busquei".
-    if (!emViewport || !temFoto || fotoUrl) return;
+    // Uma vez só: `fotos` deixar de ser null é o próprio sinal de "já busquei".
+    if (!emViewport || totalFotos === 0 || fotos !== null) return;
     let cancelado = false;
     (async () => {
       try {
-        const res = await fetch(`/api/sessions/${sessaoId}/foto`);
+        const res = await fetch(`/api/sessions/${sessaoId}/fotos`);
         if (!res.ok) return;
         const body = await res.json().catch(() => null);
-        if (cancelado || !body?.fotoUrl) return;
-        setFotoUrl(String(body.fotoUrl));
+        if (cancelado || !Array.isArray(body?.fotos)) return;
+        setFotos(body.fotos.map(String));
       } catch {
         // Sem rede: o card fica só com a trilha. Uma foto que não carregou não
         // pode derrubar o registro do velejo, que é o conteúdo principal.
@@ -80,7 +83,7 @@ export const CarrosselDoVelejo: React.FC<Props> = ({
     return () => {
       cancelado = true;
     };
-  }, [emViewport, temFoto, fotoUrl, sessaoId]);
+  }, [emViewport, totalFotos, fotos, sessaoId]);
 
   const slides: Array<{ chave: string; tipo: 'mapa' | 'foto'; conteudo: React.ReactNode }> = [];
 
@@ -101,19 +104,27 @@ export const CarrosselDoVelejo: React.FC<Props> = ({
     });
   }
 
-  if (temFoto) {
+  /*
+   * Os slides de foto nascem do NÚMERO, não da lista carregada.
+   *
+   * Assim o carrossel já tem o tamanho final antes de qualquer imagem chegar:
+   * as bolinhas não mudam de quantidade no meio da leitura, e o card não pula
+   * quando a resposta volta. A lista só preenche o conteúdo de cada slide que
+   * já estava lá.
+   */
+  for (let i = 0; i < totalFotos; i++) {
+    const url = fotos?.[i];
     slides.push({
-      chave: 'foto',
+      chave: `foto-${i}`,
       tipo: 'foto',
-      conteudo: fotoUrl ? (
+      conteudo: url ? (
         <img
-          src={fotoUrl}
-          alt="Foto do velejo"
+          src={url}
+          alt={totalFotos > 1 ? `Foto ${i + 1} de ${totalFotos} do velejo` : 'Foto do velejo'}
           className="absolute inset-0 w-full h-full object-cover"
+          loading="lazy"
         />
       ) : (
-        /* Reserva do espaço enquanto a imagem não chega: sem isto o slide
-           nasce com altura zero e o carrossel "pula" quando a foto carrega. */
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900">
           <ImageIcon size={22} className="text-slate-700 animate-pulse" />
         </div>
@@ -176,7 +187,13 @@ export const CarrosselDoVelejo: React.FC<Props> = ({
                 key={s.chave}
                 type="button"
                 onClick={() => irPara(i)}
-                aria-label={s.tipo === 'mapa' ? 'Ver a trilha' : 'Ver a foto'}
+                aria-label={
+                  s.tipo === 'mapa'
+                    ? 'Ver a trilha'
+                    : totalFotos > 1
+                      ? `Ver a foto ${slides.slice(0, i + 1).filter((x) => x.tipo === 'foto').length}`
+                      : 'Ver a foto'
+                }
                 aria-current={indice === i}
                 className="pointer-events-auto w-6 h-6 flex items-center justify-center"
               >
@@ -195,7 +212,11 @@ export const CarrosselDoVelejo: React.FC<Props> = ({
             {slides[indice]?.tipo === 'foto' ? (
               <>
                 <ImageIcon size={11} />
-                <span>Foto</span>
+                <span>
+                  {totalFotos > 1
+                    ? `Foto ${slides.slice(0, indice + 1).filter((x) => x.tipo === 'foto').length}/${totalFotos}`
+                    : 'Foto'}
+                </span>
               </>
             ) : (
               <>

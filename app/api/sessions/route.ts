@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { requireUser, HttpError } from '@/lib/auth';
 import { bool, isIsoDate, isTime24, num, oneOf, str } from '@/lib/validation';
+import { normalizarFotos } from '@/lib/fotosDoVelejo';
 import { validarTrilhaReduzida } from '@/lib/trilhaSessao';
 import type { Discipline } from '@/types';
 
@@ -157,9 +158,27 @@ export async function POST(request: Request) {
     const maxSpeedKnots = num(body, 'maxSpeedKnots', { optional: true, min: 0, max: 100 });
     const highestJumpM = num(body, 'highestJumpM', { optional: true, min: 0, max: 30 });
     const notes = str(body, 'notes', { optional: true, max: 2000 });
-    // Foto agora pode ser uma data URL base64 (upload comprimido no cliente),
-    // que passa de 500 caracteres facilmente — 2MB de string cobre isso com folga.
+    /*
+     * FOTOS. `fotoUrls` é o caminho novo: o cliente sobe cada imagem direto
+     * para o Vercel Blob (POST /api/sessions/fotos emite o token) e manda só
+     * as URLs, na ordem que montou na tela.
+     *
+     * `photoUrl` continua aceito para não quebrar um app que ainda não
+     * atualizou — o Android é uma casca que carrega a web, mas uma aba aberta
+     * há dias tem o bundle antigo em memória. Quando vem, entra como a
+     * primeira foto.
+     *
+     * O teto de 1,5 MB só existe por causa desse caminho legado (data URL). As
+     * URLs do Blob têm algumas dezenas de caracteres.
+     */
     const photoUrl = str(body, 'photoUrl', { optional: true, max: 1_500_000 });
+    const fotos = normalizarFotos(
+      Array.isArray((body as Record<string, unknown>)?.fotoUrls)
+        ? (body as Record<string, unknown>).fotoUrls
+        : photoUrl
+          ? [photoUrl]
+          : []
+    );
     const isPublic = bool(body, 'isPublic', true);
 
     // Trilha é dado medido pelo GPS, não digitado — nunca confiamos na forma
@@ -217,6 +236,30 @@ export async function POST(request: Request) {
     const sessionRow = inserted[0] as Record<string, unknown>;
     const sessionId = String(sessionRow.id);
 
+    /*
+     * As fotos entram DEPOIS, e a falha aqui não derruba a resposta.
+     *
+     * A sessão é o dado que importa: distância, trilha, vento. Uma foto que
+     * não gravou é uma pena; um velejo que sumiu porque a foto falhou é o
+     * defeito recorrente desta base — medir certo e perder na hora de salvar.
+     *
+     * `ordem` vem do índice na lista, que é a ordem que o velejador montou;
+     * ver lib/fotosDoVelejo.ts sobre por que não é a ordem de chegada.
+     */
+    if (fotos.length > 0) {
+      try {
+        for (let i = 0; i < fotos.length; i++) {
+          await sql`
+            INSERT INTO session_photos (session_id, url, ordem)
+            VALUES (${sessionId}, ${fotos[i]}, ${i})
+            ON CONFLICT (session_id, ordem) DO NOTHING
+          `;
+        }
+      } catch {
+        // Silencioso de propósito — ver o comentário acima.
+      }
+    }
+
     return {
       id: sessionId,
       userId: user.id,
@@ -239,7 +282,8 @@ export async function POST(request: Request) {
       maxSpeedKnots: maxSpeedKnots ?? undefined,
       highestJumpM: highestJumpM ?? undefined,
       notes: notes ?? undefined,
-      photoUrl: photoUrl ?? undefined,
+      photoUrl: fotos[0] ?? undefined,
+      fotoUrls: fotos,
       isPublic,
       createdAt: new Date().toISOString(),
       trilhaReduzida: trilhaReduzida ?? undefined,

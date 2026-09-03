@@ -5,7 +5,9 @@ import { X, Calendar, Clock, Wind, Star, Compass, Camera, Sparkles, Gauge, Image
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
+import { upload } from '@vercel/blob/client';
 import { compressImage } from '../lib/imageCompress';
+import { MAX_FOTOS_POR_VELEJO, PREFIXO_BLOB_VELEJO } from '../lib/fotosDoVelejo';
 import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
 
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar, para não travar o navegador com arquivos gigantes
@@ -40,7 +42,15 @@ export const SessionLoggerModal: React.FC = () => {
   const [maxSpeedKnots, setMaxSpeedKnots] = useState<number | ''>(26.8);
   const [highestJumpM, setHighestJumpM] = useState<number | ''>(9.2);
   const [notes, setNotes] = useState('');
-  const [photoUrl, setPhotoUrl] = useState('');
+  /*
+   * Lista, não uma foto só. Cada item já é a URL final no Vercel Blob — o
+   * upload sai do celular direto para o storage (ver POST /api/sessions/fotos),
+   * então a imagem nunca passa pelo servidor nem pelo banco.
+   *
+   * A ORDEM DESTA LISTA é a ordem do carrossel: quem manda é o que o velejador
+   * montou aqui, não quem terminou de subir primeiro (ver lib/fotosDoVelejo.ts).
+   */
+  const [fotoUrls, setFotoUrls] = useState<string[]>([]);
   const [isCompressingPhoto, setIsCompressingPhoto] = useState(false);
   const [photoError, setPhotoError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -139,7 +149,7 @@ export const SessionLoggerModal: React.FC = () => {
       maxSpeedKnots: maxSpeedKnots === '' ? undefined : Number(maxSpeedKnots),
       highestJumpM: highestJumpM === '' ? undefined : Number(highestJumpM),
       notes: notes || undefined,
-      photoUrl: photoUrl || undefined,
+      fotoUrls,
       isPublic,
       trilhaReduzida: trilhaReduzida.length > 0 ? trilhaReduzida : undefined,
     });
@@ -170,7 +180,7 @@ export const SessionLoggerModal: React.FC = () => {
     setMaxSpeedKnots(26.8);
     setHighestJumpM(9.2);
     setNotes('');
-    setPhotoUrl('');
+    setFotoUrls([]);
     setPhotoError('');
     setSaveError('');
     setIsPublic(true);
@@ -180,27 +190,58 @@ export const SessionLoggerModal: React.FC = () => {
   };
 
   const handlePhotoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = ''; // permite selecionar o mesmo arquivo de novo depois de remover
-    if (!file) return;
+    const escolhidos = Array.from(e.target.files ?? []);
+    e.target.value = ''; // permite escolher o mesmo arquivo de novo depois de remover
+    if (escolhidos.length === 0) return;
 
     setPhotoError('');
 
-    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
-      setPhotoError('Formato inválido. Envie uma foto em JPEG, PNG, WEBP ou HEIC.');
+    const vagas = MAX_FOTOS_POR_VELEJO - fotoUrls.length;
+    if (vagas <= 0) {
+      setPhotoError(`Máximo de ${MAX_FOTOS_POR_VELEJO} fotos por velejo.`);
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
-      setPhotoError('Foto muito grande (máx. 12MB). Escolha outra ou tire uma nova foto.');
-      return;
+    // Corta em vez de recusar o lote: quem escolheu seis de uma vez fica com
+    // as quatro primeiras e um aviso, não com zero e um erro.
+    const arquivos = escolhidos.slice(0, vagas);
+    if (escolhidos.length > vagas) {
+      setPhotoError(`Só cabem ${MAX_FOTOS_POR_VELEJO} fotos — as primeiras foram usadas.`);
     }
 
     setIsCompressingPhoto(true);
     try {
-      const dataUrl = await compressImage(file, 1280, 0.75);
-      setPhotoUrl(dataUrl);
+      for (const file of arquivos) {
+        if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+          setPhotoError('Formato inválido. Envie fotos em JPEG, PNG, WEBP ou HEIC.');
+          continue;
+        }
+        if (file.size > MAX_PHOTO_BYTES) {
+          setPhotoError('Foto muito grande (máx. 12MB). Escolha outra ou tire uma nova.');
+          continue;
+        }
+
+        /*
+         * Comprime ANTES de subir. O arquivo original de um celular passa
+         * fácil de 5 MB; o que vai para o Blob fica em algumas centenas de KB,
+         * e quem paga a diferença é o 4G do velejador na praia.
+         *
+         * `compressImage` devolve data URL; `fetch` + `blob()` converte para
+         * binário sem escrever um decodificador de base64 à mão.
+         */
+        const dataUrl = await compressImage(file, 1600, 0.8);
+        const binario = await (await fetch(dataUrl)).blob();
+        const nome = `${PREFIXO_BLOB_VELEJO}${Date.now()}-${Math.random().toString(36).slice(2, 8)}.jpg`;
+        const enviado = await upload(nome, binario, {
+          access: 'public',
+          handleUploadUrl: '/api/sessions/fotos',
+          contentType: 'image/jpeg',
+        });
+        // Uma a uma, e não tudo no fim: cada foto que sobe aparece na hora, e
+        // uma falha no meio não descarta as que já subiram.
+        setFotoUrls((atual) => [...atual, enviado.url].slice(0, MAX_FOTOS_POR_VELEJO));
+      }
     } catch {
-      setPhotoError('Não foi possível processar essa foto. Tente outra.');
+      setPhotoError('Não foi possível enviar essa foto. Tente de novo.');
     } finally {
       setIsCompressingPhoto(false);
     }
@@ -223,7 +264,7 @@ export const SessionLoggerModal: React.FC = () => {
               // lib/descarteFormulario.ts. Confirmação que aparece sempre é
               // confirmação que ninguém lê.
               if (
-                temTrabalhoNaoSalvo({ textos: [notes, boardModel], temFoto: Boolean(photoUrl) }) &&
+                temTrabalhoNaoSalvo({ textos: [notes, boardModel], temFoto: fotoUrls.length > 0 }) &&
                 !window.confirm(MSG_DESCARTAR_FORMULARIO)
               ) {
                 return;
@@ -564,25 +605,39 @@ export const SessionLoggerModal: React.FC = () => {
           <div>
             <label htmlFor="session-photo-input" className="block font-bold text-slate-300 mb-1 flex items-center gap-1.5">
               <Camera size={13} className="text-cyan-400" />
-              <span>Foto da Sessão (opcional)</span>
+              <span>Fotos da Sessão (opcional)</span>
             </label>
 
-            {photoUrl ? (
-              <div className="relative w-full max-w-[220px] aspect-video rounded-xl overflow-hidden border-2 border-cyan-400/60 shadow-md shadow-cyan-500/20">
-                <img src={photoUrl} alt="Pré-visualização da foto do velejo" className="w-full h-full object-cover" />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPhotoUrl('');
-                    setPhotoError('');
-                  }}
-                  aria-label="Remover foto selecionada"
-                  className="absolute top-1 right-1 p-1 rounded-full bg-black/70 hover:bg-black/90 text-white transition-colors"
-                >
-                  <X size={14} />
-                </button>
+            {fotoUrls.length > 0 && (
+              <div className="grid grid-cols-4 gap-2 mb-2">
+                {fotoUrls.map((url, i) => (
+                  <div
+                    key={url}
+                    className="relative aspect-square rounded-xl overflow-hidden border border-cyan-400/50"
+                  >
+                    <img src={url} alt={`Foto ${i + 1} do velejo`} className="w-full h-full object-cover" />
+                    {/* O número não é enfeite: é a ordem em que as fotos vão
+                        aparecer no carrossel do feed. */}
+                    <span className="absolute bottom-0.5 left-0.5 px-1 rounded bg-black/70 text-white text-[9px] font-black">
+                      {i + 1}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFotoUrls((atual) => atual.filter((u) => u !== url));
+                        setPhotoError('');
+                      }}
+                      aria-label={`Remover foto ${i + 1}`}
+                      className="absolute top-0.5 right-0.5 p-1 rounded-full bg-black/70 hover:bg-black/90 text-white transition-colors"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
+            )}
+
+            {fotoUrls.length < MAX_FOTOS_POR_VELEJO && (
               <label
                 htmlFor="session-photo-input"
                 className="flex items-center justify-center gap-2 w-full p-3 rounded-xl border border-dashed border-slate-600 bg-[#1E293B] text-slate-300 font-semibold cursor-pointer hover:bg-slate-800/80 hover:border-cyan-400/60 transition-colors"
@@ -590,12 +645,16 @@ export const SessionLoggerModal: React.FC = () => {
                 {isCompressingPhoto ? (
                   <>
                     <Loader2 size={16} className="text-cyan-400 animate-spin" />
-                    <span>Processando foto...</span>
+                    <span>Enviando foto...</span>
                   </>
                 ) : (
                   <>
                     <ImagePlus size={16} className="text-cyan-400" />
-                    <span>Anexar foto (câmera ou galeria)</span>
+                    <span>
+                      {fotoUrls.length === 0
+                        ? 'Anexar fotos (câmera ou galeria)'
+                        : `Adicionar mais (${fotoUrls.length}/${MAX_FOTOS_POR_VELEJO})`}
+                    </span>
                   </>
                 )}
               </label>
@@ -608,6 +667,7 @@ export const SessionLoggerModal: React.FC = () => {
                  velejador não consegue escolher a foto do velejo que já tirou.
                  heic/heif explícitos porque é o formato padrão do iPhone. */
               accept="image/jpeg,image/png,image/webp,image/heic,image/heif,image/*"
+              multiple
               onChange={handlePhotoChange}
               disabled={isCompressingPhoto}
               className="sr-only"

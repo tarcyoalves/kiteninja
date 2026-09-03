@@ -3348,6 +3348,124 @@ async function main() {
     fotoDoFeed.rows[0].tem_foto === false && fotoDoFeed.rows[0].photo_url === null
   );
 
+  console.log('\nFotos do velejo: migração do legado e várias por sessão:');
+
+  /*
+   * O risco desta mudança é perder foto antiga. Elas viviam em
+   * sessions_log.photo_url como data URL e foram COPIADAS para session_photos
+   * pela migração, sem conversão. Estes checks provam que a cópia aconteceu,
+   * que ela é idempotente (o schema roda a cada deploy) e que o data URL
+   * sobreviveu inteiro.
+   */
+  const donoFoto = await novoUsuario('dono-foto', '9301');
+  const DATA_URL_LEGADO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ==';
+
+  const sessaoLegado = await db.query<{ id: string }>(
+    `INSERT INTO sessions_log
+       (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+        discipline, kite_size_m2, avg_wind_knots, photo_url, notes)
+     VALUES ($1, 'legado', 'x', '2026-09-03', '10:00', 60, 'Freeride', 9, 18, $2, 'check-fotos')
+     RETURNING id`,
+    [donoFoto, DATA_URL_LEGADO]
+  );
+  const idLegado = sessaoLegado.rows[0].id;
+
+  // A migração do schema.sql, aplicada de novo — é exatamente o que roda no build.
+  const MIGRACAO = `INSERT INTO session_photos (session_id, url, ordem)
+     SELECT s.id, s.photo_url, 0 FROM sessions_log s
+      WHERE s.photo_url IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM session_photos p WHERE p.session_id = s.id AND p.ordem = 0
+        )`;
+  await db.query(MIGRACAO);
+
+  const migradas = await db.query<{ url: string }>(
+    `SELECT url FROM session_photos WHERE session_id = $1 ORDER BY ordem`,
+    [idLegado]
+  );
+  check(
+    'a foto antiga foi migrada para session_photos',
+    migradas.rows.length === 1,
+    `linhas=${migradas.rows.length}`
+  );
+  check(
+    'o data URL sobreviveu inteiro — a migração copia, não converte',
+    migradas.rows[0]?.url === DATA_URL_LEGADO
+  );
+
+  // Roda de novo: o schema é aplicado a cada deploy.
+  await db.query(MIGRACAO);
+  const depoisDeRepetir = await db.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM session_photos WHERE session_id = $1`,
+    [idLegado]
+  );
+  check(
+    'rodar a migração de novo não duplica nem estoura o UNIQUE',
+    depoisDeRepetir.rows[0].n === 1,
+    `linhas=${depoisDeRepetir.rows[0].n}`
+  );
+
+  // Várias fotos, com a ordem que o velejador escolheu.
+  const sessaoNova = await db.query<{ id: string }>(
+    `INSERT INTO sessions_log
+       (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+        discipline, kite_size_m2, avg_wind_knots, notes)
+     VALUES ($1, 'nova', 'x', '2026-09-03', '11:00', 60, 'Freeride', 9, 18, 'check-fotos')
+     RETURNING id`,
+    [donoFoto]
+  );
+  const idNova = sessaoNova.rows[0].id;
+  for (const [i, nome] of ['c.jpg', 'a.jpg', 'b.jpg'].entries()) {
+    await db.query(
+      `INSERT INTO session_photos (session_id, url, ordem) VALUES ($1, $2, $3)`,
+      [idNova, `https://blob.example/velejos/${nome}`, i]
+    );
+  }
+  const ordenadas = await db.query<{ url: string }>(
+    `SELECT url FROM session_photos WHERE session_id = $1 ORDER BY ordem ASC, created_at ASC`,
+    [idNova]
+  );
+  check(
+    'a ordem vem de `ordem`, não do nome nem da hora de chegada',
+    ordenadas.rows.map((r) => r.url.split('/').pop()).join(',') === 'c.jpg,a.jpg,b.jpg',
+    ordenadas.rows.map((r) => r.url).join(',')
+  );
+
+  let batouUnique = false;
+  try {
+    await db.query(
+      `INSERT INTO session_photos (session_id, url, ordem) VALUES ($1, 'https://x/y.jpg', 0)`,
+      [idNova]
+    );
+  } catch {
+    batouUnique = true;
+  }
+  check('duas fotos não disputam a mesma posição no carrossel', batouUnique);
+
+  const contagem = await db.query<{ total: number }>(
+    `SELECT COALESCE((
+       SELECT COUNT(*)::int FROM session_photos sp WHERE sp.session_id = s.id
+     ), 0) AS total
+     FROM sessions_log s WHERE s.id = $1`,
+    [idNova]
+  );
+  check(
+    'a listagem conta as fotos sem carregar nenhuma imagem',
+    contagem.rows[0].total === 3,
+    `total=${contagem.rows[0].total}`
+  );
+
+  await db.query(`DELETE FROM sessions_log WHERE id = $1`, [idNova]);
+  const orfas = await db.query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM session_photos WHERE session_id = $1`,
+    [idNova]
+  );
+  check(
+    'apagar o velejo leva as fotos junto (ON DELETE CASCADE)',
+    orfas.rows[0].n === 0,
+    `sobraram=${orfas.rows[0].n}`
+  );
+
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
   await varrerSelectsDasRotas(db);
   await varrerParametrosDasRotas(db);

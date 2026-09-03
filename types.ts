@@ -170,6 +170,12 @@ export interface SessionLog {
   highestJumpM?: number;
   notes?: string;
   photoUrl?: string;
+  /**
+   * Todas as fotos do velejo, na ordem escolhida. `photoUrl` é a primeira
+   * delas, mantida para quem já lia esse campo. Ver `session_photos` em
+   * lib/schema.sql e lib/fotosDoVelejo.ts.
+   */
+  fotoUrls?: string[];
   isPublic: boolean;
   likesCount: number;
   commentsCount: number;
@@ -228,14 +234,14 @@ export interface SessionFeedItem {
    * detalhe da sessão), de propósito (ver docs/PLANO-REDE-SOCIAL.md). */
   comentarios: number;
   /**
-   * A sessão TEM foto — não a foto em si.
+   * QUANTAS fotos a sessão tem — não as imagens.
    *
-   * `photo_url` guarda a imagem inteira como data URL (até 1,5 MB). Mandá-la
-   * na listagem daria dezenas de MB por página, no 4G da praia. O card busca
-   * a imagem sozinho quando entra na tela, por
-   * `GET /api/sessions/[id]/foto`. Ver o comentário em app/api/feed/route.ts.
+   * As novas são URLs curtas do Blob e caberiam na listagem; as antigas são
+   * data URL de até 1,5 MB cada (ver `session_photos` em lib/schema.sql).
+   * Um caminho só para os dois: o card busca as imagens em
+   * `GET /api/sessions/[id]/fotos` quando elas vão ser vistas.
    */
-  temFoto?: boolean;
+  totalFotos?: number;
 }
 
 /** Sessão completa para a tela de detalhe (Fase 5): tudo que SessionFeedItem

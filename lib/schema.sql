@@ -1321,3 +1321,50 @@ CREATE TABLE IF NOT EXISTS erros_registrados (
 -- O painel lista "o que quebrou por último, ainda não resolvido".
 CREATE INDEX IF NOT EXISTS idx_erros_recentes
   ON erros_registrados (ultima_em DESC) WHERE resolvido_em IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- session_photos — várias fotos por velejo.
+--
+-- Antes era UMA foto, na coluna `sessions_log.photo_url`, guardada como data
+-- URL (a imagem inteira em base64 dentro do Postgres). Duas consequências:
+-- o banco virou depósito de imagem, e o feed não podia mandar a foto na
+-- listagem — 20 linhas de até 1,5 MB dariam dezenas de MB por página.
+--
+-- Agora a foto vai para o Vercel Blob (o mesmo storage dos vídeos de abertura,
+-- já configurado) e aqui fica só a URL. Curta, cacheável pelo CDN, e sem peso
+-- nenhum no banco.
+--
+-- MIGRAÇÃO SEM PERDER NADA: o INSERT ... SELECT abaixo copia toda `photo_url`
+-- existente para cá como a foto de ordem 0, PRESERVANDO o data URL. Fotos
+-- antigas continuam funcionando exatamente como funcionavam; só as novas
+-- nascem no Blob. Por isso `url` aceita os dois formatos, e é por isso que a
+-- coluna antiga não é apagada: enquanto houver uma linha dependendo dela para
+-- reconstruir histórico, apagá-la é perda de dado sem ganho nenhum.
+--
+-- `ordem` é o que o velejador escolheu, não o acaso do upload: várias fotos
+-- sobem em paralelo e chegam fora de sequência.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS session_photos (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id UUID NOT NULL REFERENCES sessions_log(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  ordem      SMALLINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  -- Duas fotos não podem disputar a mesma posição no carrossel.
+  UNIQUE (session_id, ordem)
+);
+
+-- (session_id, ordem) e não só session_id: a leitura SEMPRE pede as fotos de
+-- um velejo já ordenadas, então o índice entrega as duas coisas de uma vez.
+CREATE INDEX IF NOT EXISTS idx_session_photos_sessao
+  ON session_photos (session_id, ordem);
+
+-- Idempotente pelo NOT EXISTS: o schema roda inteiro a cada deploy, e sem
+-- isto cada build tentaria recopiar as mesmas fotos e bateria no UNIQUE.
+INSERT INTO session_photos (session_id, url, ordem)
+SELECT s.id, s.photo_url, 0
+  FROM sessions_log s
+ WHERE s.photo_url IS NOT NULL
+   AND NOT EXISTS (
+     SELECT 1 FROM session_photos p WHERE p.session_id = s.id AND p.ordem = 0
+   );

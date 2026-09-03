@@ -914,7 +914,10 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           maxSpeedKnots: sessionData.maxSpeedKnots,
           highestJumpM: sessionData.highestJumpM,
           notes: sessionData.notes,
+          // `photoUrl` continua indo junto para quem ainda manda uma foto só
+          // (ver o comentário em POST /api/sessions sobre bundle antigo).
           photoUrl: sessionData.photoUrl,
+          fotoUrls: sessionData.fotoUrls,
           isPublic: sessionData.isPublic,
           trilhaReduzida: sessionData.trilhaReduzida,
         }),
