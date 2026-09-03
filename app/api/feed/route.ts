@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { podeVerSessao } from '@/lib/social';
+import { normalizarEscopo, podeVerNoFeed } from '@/lib/feedEscopo';
 import type { SessionFeedItem } from '@/types';
 
 /**
@@ -42,6 +43,8 @@ interface FeedRow {
   curtidas: unknown;
   eu_curti: unknown;
   comentarios: unknown;
+  eu_sigo_o_autor: unknown;
+  tem_foto: unknown;
 }
 
 /** Cursor precisa ser uma data válida ou ausente — qualquer outra coisa (um
@@ -58,6 +61,7 @@ export async function GET(request: Request) {
     const user = await requireUser();
     const url = new URL(request.url);
     const cursor = parseCursor(url.searchParams.get('cursor'));
+    const escopo = normalizarEscopo(url.searchParams.get('escopo'));
 
     // Paginação KEYSET (created_at < cursor), nunca OFFSET — ver seção 3
     // (Fluidez) do plano: OFFSET fica mais lento a cada página que o
@@ -71,6 +75,18 @@ export async function GET(request: Request) {
         s.highest_jump_m, s.is_public, s.trilha_reduzida,
         u.name AS author_name, u.avatar_url AS author_avatar_url,
         u.rider_id AS author_rider_id, u.country_flag AS author_country_flag,
+        EXISTS (
+          SELECT 1 FROM user_follows f2
+          WHERE f2.follower_id = ${user.id} AND f2.following_id = s.user_id
+        ) AS eu_sigo_o_autor,
+        -- Só SE a foto existe, nunca o conteúdo dela: photo_url guarda a
+        -- imagem inteira como data URL (ate 1,5 MB por sessao). Vinte linhas
+        -- por pagina dariam dezenas de MB, no 4G da praia. O card busca a
+        -- imagem sozinho ao entrar na tela, pelo mesmo portao de
+        -- IntersectionObserver que ja monta o Leaflet.
+        -- (Sem crase e sem interpolacao aqui dentro — ver a regra no fim de
+        --  docs/BUG-DOWNWIND-DOIS-CARDS.md: as duas coisas sao codigo.)
+        (s.photo_url IS NOT NULL) AS tem_foto,
         COALESCE((
           SELECT COUNT(*)::int FROM session_likes sl WHERE sl.session_id = s.id
         ), 0) AS curtidas,
@@ -83,13 +99,24 @@ export async function GET(request: Request) {
         ), 0) AS comentarios
       FROM sessions_log s
       JOIN users u ON u.id = s.user_id
+      /*
+       * Dois escopos (ver lib/feedEscopo.ts). O de dentro é o mesmo de sempre;
+       * o que mudou é que ele deixou de ser o ÚNICO — antes, quem ainda não
+       * seguia ninguém abria o feed e não via nada.
+       *
+       * A privacidade é idêntica nos dois: sessão não pública só aparece para
+       * o próprio autor. O escopo amplia QUEM aparece, jamais O QUE é visível.
+       */
       WHERE (
         s.user_id = ${user.id}
         OR (
           s.is_public = TRUE
-          AND EXISTS (
-            SELECT 1 FROM user_follows f
-            WHERE f.follower_id = ${user.id} AND f.following_id = s.user_id
+          AND (
+            ${escopo} = 'comunidade'
+            OR EXISTS (
+              SELECT 1 FROM user_follows f
+              WHERE f.follower_id = ${user.id} AND f.following_id = s.user_id
+            )
           )
         )
       )
@@ -101,8 +128,22 @@ export async function GET(request: Request) {
     const temProximaPagina = rows.length > PAGE_SIZE;
     const pagina = rows.slice(0, PAGE_SIZE);
 
+    /*
+     * O filtro em TypeScript continua, redundante com o WHERE de propósito:
+     * são duas barreiras para a mesma regra, e `podeVerNoFeed` é testada sem
+     * banco. Se um dia o WHERE for editado errado, isto ainda segura.
+     */
     const sessoes: SessionFeedItem[] = pagina
-      .filter((r) => podeVerSessao({ autorId: String(r.user_id), isPublic: Boolean(r.is_public) }, user.id))
+      .filter((r) =>
+        podeVerSessao({ autorId: String(r.user_id), isPublic: Boolean(r.is_public) }, user.id) &&
+        podeVerNoFeed({
+          escopo,
+          autorId: String(r.user_id),
+          souEu: user.id,
+          isPublic: Boolean(r.is_public),
+          euSigoOAutor: Boolean(r.eu_sigo_o_autor),
+        })
+      )
       .map((r) => ({
         id: String(r.id),
         spotName: String(r.spot_name),
@@ -125,6 +166,7 @@ export async function GET(request: Request) {
         curtidas: Number(r.curtidas),
         euCurti: Boolean(r.eu_curti),
         comentarios: Number(r.comentarios),
+        temFoto: Boolean(r.tem_foto),
       }));
 
     // Próximo cursor é o created_at do ÚLTIMO item desta página (não do

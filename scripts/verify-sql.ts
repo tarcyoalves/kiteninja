@@ -3254,6 +3254,100 @@ async function main() {
     fechadoAnunciado.rows[0].notificado_em === null
   );
 
+  console.log('\nFeed: escopo Comunidade x Seguindo (e o que NÃO muda entre eles):');
+
+  /*
+   * O risco desta funcionalidade é um só: a aba Comunidade virar um vazamento.
+   * Ela amplia QUEM aparece; não pode ampliar O QUE é visível. Estes checks
+   * rodam o WHERE real da rota nos dois escopos.
+   */
+  const euFeed = await novoUsuario('eu-feed', '9201');
+  const seguidoFeed = await novoUsuario('seguido-feed', '9202');
+  const estranhoFeed = await novoUsuario('estranho-feed', '9203');
+  await db.query(
+    `INSERT INTO user_follows (follower_id, following_id) VALUES ($1, $2)`,
+    [euFeed, seguidoFeed]
+  );
+
+  async function velejo(autor: string, nome: string, publico: boolean): Promise<void> {
+    await db.query(
+      `INSERT INTO sessions_log
+         (user_id, spot_name, spot_location, date, start_time, duration_minutes,
+          discipline, kite_size_m2, avg_wind_knots, is_public, notes)
+       VALUES ($1, $2, 'x', '2026-09-03', '10:00', 60, 'Freeride', 9, 18, $3, 'check-escopo')`,
+      [autor, nome, publico]
+    );
+  }
+  await velejo(seguidoFeed, 'de-quem-sigo-publico', true);
+  await velejo(seguidoFeed, 'de-quem-sigo-privado', false);
+  await velejo(estranhoFeed, 'de-estranho-publico', true);
+  await velejo(estranhoFeed, 'de-estranho-privado', false);
+  await velejo(euFeed, 'meu-privado', false);
+
+  /** O MESMO WHERE de GET /api/feed, para um escopo. */
+  async function feedDe(userId: string, escopo: string): Promise<string[]> {
+    const r = await db.query<{ spot_name: string }>(
+      `SELECT s.spot_name
+         FROM sessions_log s
+         JOIN users u ON u.id = s.user_id
+        WHERE (
+          s.user_id = $1
+          OR (
+            s.is_public = TRUE
+            AND (
+              $2 = 'comunidade'
+              OR EXISTS (
+                SELECT 1 FROM user_follows f
+                 WHERE f.follower_id = $1 AND f.following_id = s.user_id
+              )
+            )
+          )
+        )
+        AND s.notes = 'check-escopo'
+        ORDER BY s.spot_name`,
+      [userId, escopo]
+    );
+    return r.rows.map((x) => x.spot_name);
+  }
+
+  const seguindo = await feedDe(euFeed, 'seguindo');
+  const comunidade = await feedDe(euFeed, 'comunidade');
+
+  check(
+    'seguindo: só quem eu sigo (público) mais o meu',
+    seguindo.join(',') === 'de-quem-sigo-publico,meu-privado',
+    seguindo.join(',')
+  );
+  check(
+    'comunidade: entra também o público de quem eu NÃO sigo',
+    comunidade.includes('de-estranho-publico'),
+    comunidade.join(',')
+  );
+  check(
+    'comunidade NÃO revela o privado de terceiro — a trava que importa',
+    !comunidade.includes('de-estranho-privado') && !comunidade.includes('de-quem-sigo-privado'),
+    comunidade.join(',')
+  );
+  check(
+    'o meu privado aparece para mim nos dois escopos',
+    seguindo.includes('meu-privado') && comunidade.includes('meu-privado'),
+    `seguindo=${seguindo.join(',')} | comunidade=${comunidade.join(',')}`
+  );
+  check(
+    'trocar de escopo só ACRESCENTA — nada some da comunidade que estava em seguindo',
+    seguindo.every((n) => comunidade.includes(n)),
+    `seguindo=${seguindo.join(',')} | comunidade=${comunidade.join(',')}`
+  );
+
+  const fotoDoFeed = await db.query<{ tem_foto: boolean; photo_url: string | null }>(
+    `SELECT (photo_url IS NOT NULL) AS tem_foto, photo_url
+       FROM sessions_log WHERE spot_name = 'meu-privado'`
+  );
+  check(
+    'a listagem sabe se há foto sem carregar a imagem (tem_foto, não photo_url)',
+    fotoDoFeed.rows[0].tem_foto === false && fotoDoFeed.rows[0].photo_url === null
+  );
+
   console.log('\nVarredura de esquema — todo SELECT das rotas contra o Postgres real:');
   await varrerSelectsDasRotas(db);
   await varrerParametrosDasRotas(db);

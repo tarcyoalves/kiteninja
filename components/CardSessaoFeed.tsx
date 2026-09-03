@@ -1,24 +1,11 @@
 'use client';
 
 import React, { memo, useEffect, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
 import { Heart, MessageCircle, Wind, Route, Gauge, Clock, User } from 'lucide-react';
-import { TrilhaMiniatura } from './TrilhaMiniatura';
+import { CarrosselDoVelejo } from './CarrosselDoVelejo';
 import { formatRelativeTime } from '@/lib/chat';
 import { useCurtidaOtimista } from '@/lib/useCurtidaOtimista';
 import type { SessionFeedItem } from '@/types';
-
-/**
- * O mapa de satélite de verdade — só existe no bundle quando alguém rola até
- * perto dele (`next/dynamic`, `ssr: false`, mesmo padrão de
- * `DownwindResumoModal`/`MapView`). O componente em si (`CardSessaoFeedMapa`)
- * só é MONTADO quando `emViewport` vira `true` logo abaixo — o `dynamic()`
- * aqui cuida do bundle, o `IntersectionObserver` cuida do ciclo de vida.
- */
-const CardSessaoFeedMapa = dynamic(
-  () => import('./CardSessaoFeedMapa').then((m) => m.CardSessaoFeedMapa),
-  { ssr: false }
-);
 
 /**
  * Margem generosa (~2 alturas de card) antes/depois do viewport real para
@@ -95,7 +82,6 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({
     return () => observer.disconnect();
   }, []);
 
-  const temTrilha = Boolean(sessao.trilhaReduzida && sessao.trilhaReduzida.length > 0);
 
   // Curtida otimista (seção 3 do plano) — lógica extraída para
   // lib/useCurtidaOtimista.ts, reaproveitada também por SessionDetailModal.
@@ -169,20 +155,17 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({
         </div>
       </div>
 
-      {/* Meio: a trilha. TrilhaMiniatura (SVG) SEMPRE renderizada por baixo;
-          o Leaflet real só monta quando o card está na tela (ou perto dela)
-          — ver `MARGEM_VIEWPORT` acima. Sessão sem trilha (digitada à mão)
-          não mostra mapa nenhum aqui, nunca inventa uma. */}
-      {temTrilha && (
-        <div className="relative aspect-4/3 sm:aspect-16/10 bg-black overflow-hidden">
-          <TrilhaMiniatura trilha={sessao.trilhaReduzida!} className="absolute inset-0 w-full h-full" />
-          {emViewport && (
-            <div className="absolute inset-0 animate-[fadeInMapa_0.4s_ease-out]">
-              <CardSessaoFeedMapa trilha={sessao.trilhaReduzida!} />
-            </div>
-          )}
-        </div>
-      )}
+      {/* Meio: trilha e foto lado a lado, deslizando na horizontal.
+          A trilha vem primeiro — é o registro do que aconteceu, e é o que
+          diferencia um velejo de uma foto qualquer. Sessão digitada à mão, sem
+          trilha nem foto, não mostra nada aqui: nunca inventa um mapa.
+          Ver components/CarrosselDoVelejo.tsx. */}
+      <CarrosselDoVelejo
+        sessaoId={sessao.id}
+        trilha={sessao.trilhaReduzida}
+        temFoto={Boolean(sessao.temFoto)}
+        emViewport={emViewport}
+      />
 
       {/* Faixa de 4 números: Distância, Vel. máx, Duração, Vento (seção 3.5 /
           5 do plano). `highestJumpM` NUNCA aparece aqui — é manual do

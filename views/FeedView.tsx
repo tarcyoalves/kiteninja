@@ -17,10 +17,13 @@ import {
   Users,
   Loader2,
   RefreshCw,
+  Globe2,
+  UserCheck,
 } from 'lucide-react';
 import { CommunityPost, SessionFeedItem } from '../types';
 import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
 import { CardSessaoFeed } from '../components/CardSessaoFeed';
+import { ESCOPO_PADRAO, type EscopoFeed } from '../lib/feedEscopo';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
 import { formatRelativeTime } from '../lib/chat';
 
@@ -40,8 +43,10 @@ interface RespostaFeed {
   proximoCursor: string | null;
 }
 
-async function buscarPaginaFeed(cursor: string | null): Promise<RespostaFeed> {
-  const url = cursor ? `/api/feed?cursor=${encodeURIComponent(cursor)}` : '/api/feed';
+async function buscarPaginaFeed(cursor: string | null, escopo: EscopoFeed): Promise<RespostaFeed> {
+  const params = new URLSearchParams({ escopo });
+  if (cursor) params.set('cursor', cursor);
+  const url = `/api/feed?${params.toString()}`;
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error('Falha ao carregar o feed.');
   return res.json();
@@ -77,6 +82,13 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
   const [carregouUmaVez, setCarregouUmaVez] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [puxando, setPuxando] = useState(false);
+  /*
+   * Comunidade x Seguindo. Padrão `comunidade` — ver lib/feedEscopo.ts: com o
+   * escopo antigo (só quem eu sigo), um velejador recém-convidado abria o feed
+   * e não via absolutamente nada, justamente na tela onde procuraria alguém
+   * para seguir.
+   */
+  const [escopo, setEscopo] = useState<EscopoFeed>(ESCOPO_PADRAO);
 
   // Refs (não state) para os três usos que NÃO devem re-renderizar sozinhos:
   // 1) trava contra requisição duplicada (scroll rápido chamando a sentinela
@@ -98,7 +110,7 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
     if (carregandoRef.current) return;
     carregandoRef.current = true;
     try {
-      const body = await buscarPaginaFeed(cursor);
+      const body = await buscarPaginaFeed(cursor, escopo);
       setSessoes((prev) => (substituir ? body.sessoes : [...prev, ...body.sessoes]));
       setProximoCursor(body.proximoCursor);
     } catch {
@@ -108,7 +120,7 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
       setCarregando(false);
       setCarregouUmaVez(true);
     }
-  }, []);
+  }, [escopo]);
 
   /** Busca com o "começou a carregar" junto — para handlers de evento. */
   const carregar = useCallback(
@@ -123,14 +135,19 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
 
   const atualizarDoZero = useCallback(() => carregar(null, true), [carregar]);
 
-  // 1) Ao montar. Chama a versão sem setState síncrono de propósito — o
-  // estado inicial já é "carregando", não há nada a ajustar.
+  // 1) Ao montar E ao trocar de escopo. Chama a versão sem setState síncrono
+  // de propósito — o estado inicial já é "carregando", não há nada a ajustar.
+  //
+  // `substituir: true` é o que faz a troca de aba recomeçar do zero em vez de
+  // emendar velejos da comunidade no fim da lista de quem eu sigo, que é o
+  // erro fácil aqui: as duas listas não são a mesma coisa em ordens
+  // diferentes, são conjuntos diferentes.
   useEffect(() => {
     // `buscarPagina` não tem setState nenhum antes do primeiro `await` — o
     // lint não consegue ver isso e acusa a chamada inteira.
     // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
     void buscarPagina(null, true);
-  }, []);
+  }, [escopo]);
 
   // 3) Voltar de background/troca de aba do navegador.
   useEffect(() => {
@@ -217,6 +234,41 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
         </div>
       )}
 
+      {/*
+        * COMUNIDADE x SEGUINDO.
+        *
+        * O feed tinha um escopo só, e era o mais estreito: quem eu sigo, mais
+        * eu mesmo. Um velejador recém-convidado abria o feed e não via nada —
+        * na tela onde ele justamente procuraria alguém para seguir.
+        *
+        * Ver lib/feedEscopo.ts. A privacidade é a mesma nos dois: trocar de
+        * aba amplia QUEM aparece, nunca O QUE é visível.
+        */}
+      <div className="px-3 pt-2" role="tablist" aria-label="Escopo do feed de velejos">
+        <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#1E293B] border border-slate-700/80 max-w-lg mx-auto">
+          {([
+            { valor: 'comunidade' as const, rotulo: 'Comunidade', icone: <Globe2 size={13} className="shrink-0" /> },
+            { valor: 'seguindo' as const, rotulo: 'Seguindo', icone: <UserCheck size={13} className="shrink-0" /> },
+          ]).map((op) => (
+            <button
+              key={op.valor}
+              type="button"
+              role="tab"
+              aria-selected={escopo === op.valor}
+              onClick={() => setEscopo(op.valor)}
+              className={`flex-1 h-8 px-3 rounded-xl text-[11px] font-black flex items-center justify-center gap-1.5 transition-all min-w-0 ${
+                escopo === op.valor
+                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              {op.icone}
+              <span className="truncate">{op.rotulo}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {!carregouUmaVez && carregando && (
         <div className="flex justify-center py-10 text-cyan-400">
           <Loader2 size={28} className="animate-spin" />
@@ -226,10 +278,16 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
       {carregouUmaVez && sessoes.length === 0 && !erro && (
         <div className="mx-2 mt-6 p-7 rounded-2xl border border-slate-800 bg-[#1E293B]/50 text-center">
           <Sailboat size={30} className="mx-auto text-cyan-400" />
-          <p className="mt-3 font-black text-slate-100">Nenhum velejo por aqui ainda</p>
+          <p className="mt-3 font-black text-slate-100">
+            {escopo === 'seguindo' ? 'Você ainda não segue ninguém' : 'Nenhum velejo por aqui ainda'}
+          </p>
+          {/* O texto muda com o escopo: mandar "siga alguém" para quem está na
+              aba Comunidade seria instrução errada — ali o feed vazio significa
+              que ninguém publicou ainda, não que falta seguir gente. */}
           <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
-            Siga outros velejadores para ver os velejos deles aqui, ou registre a sua
-            própria sessão no mapa — ela aparece pra quem te segue.
+            {escopo === 'seguindo'
+              ? 'Toque em Comunidade para ver o que todo mundo está velejando, e siga quem você quiser acompanhar de perto.'
+              : 'Registre a sua sessão no mapa — ela aparece aqui para a comunidade e para quem te segue.'}
           </p>
           {/* Sem isto a instrução acima era impossível de cumprir (seção 7 do
               plano: "reordenação decidida depois da Fase 3") — não existia

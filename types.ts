@@ -227,6 +227,15 @@ export interface SessionFeedItem {
   /** Só a contagem nesta fase — ler/escrever comentário é a Fase 4 (tela de
    * detalhe da sessão), de propósito (ver docs/PLANO-REDE-SOCIAL.md). */
   comentarios: number;
+  /**
+   * A sessão TEM foto — não a foto em si.
+   *
+   * `photo_url` guarda a imagem inteira como data URL (até 1,5 MB). Mandá-la
+   * na listagem daria dezenas de MB por página, no 4G da praia. O card busca
+   * a imagem sozinho quando entra na tela, por
+   * `GET /api/sessions/[id]/foto`. Ver o comentário em app/api/feed/route.ts.
+   */
+  temFoto?: boolean;
 }
 
 /** Sessão completa para a tela de detalhe (Fase 5): tudo que SessionFeedItem
