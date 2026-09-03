@@ -25,6 +25,38 @@ E ainda assim: **três bugs graves passaram por todos eles, verdes.**
 | Downwind privado invisível — não havia `GET /api/downwind` | quem criava não via o que criou | idem |
 | Agenda ordenada por texto em português | eventos fora de ordem | idem |
 
+### O quarto caso: três auditorias externas também não pegaram
+
+Em setembro de 2026 o projeto passou por três auditorias 360º. Nenhuma delas
+encontrou o pior bug ativo na época — a maré de Praia Seca (Lagoa de
+Araruama, RJ) sendo calculada com a estação do **Porto do Recife, a 1.833
+km**, exibindo 1,48 m para uma laguna hipersalina que quase não tem maré.
+
+Cada uma falhou de um jeito diferente, e vale conhecer os três:
+
+| Auditoria | Como errou |
+|---|---|
+| 1ª | Leu bem o código, mas não abriu `lib/tideHarmonics.ts`. Deu 7,0 em meteorologia por outros motivos. |
+| 2ª | Confiou no NOME do arquivo. Deu 9,5 e chamou de "física real" um cálculo que é `msl * fator + offset`, sem constituinte harmônica nenhuma. |
+| 3ª | Foi a mais rigorosa em método — e auditou um checkout de dois dias antes. Declarou inexistentes três arquivos que existiam, e seus dois P1 já estavam corrigidos. |
+
+**A lição prática, em duas regras:**
+
+1. **Rode a função contra os dados reais, não contra fixtures.** O bug da
+   maré só apareceu quando alguém executou `encontrarEstacao...` contra os
+   spots do banco. Os 5 testes que existiam usavam três spots do Nordeste
+   escolhidos à mão, todos a menos de 90 km de uma estação: eram
+   estruturalmente incapazes de pegar o caso do Rio, e ficariam verdes para
+   sempre. Os testes de hoje varrem `INITIAL_SPOTS`.
+
+2. **`git pull` antes de auditar, e reporte o hash auditado.** Um comando
+   teria poupado à terceira auditoria dois P1 fantasmas e três alegações
+   falsas sob a etiqueta "verifiquei rodando".
+
+E uma terceira, sobre nome: `tideHarmonics.ts` não faz análise harmônica.
+Nome que promete mais do que o código entrega engana leitor humano e
+auditoria automática do mesmo jeito.
+
 O que os três têm em comum: **nenhum era código errado que falha.** Eram
 código que nunca foi exercido, funcionalidade que nunca existiu, e ordenação
 que ninguém conferiu. Verificação estática não faz essas perguntas.
