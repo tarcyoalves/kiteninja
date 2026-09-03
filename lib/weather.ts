@@ -18,7 +18,7 @@ import type {
   WindSafety,
 } from '@/types';
 import { calcularSailingScore } from './sailingScore';
-import { calibrarNivelMareHarmonica, encontrarEstacaoMaregraficaMaisProxima } from './tideHarmonics';
+import { calibrarNivelMareHarmonica, encontrarEstacaoMareParaSpot } from './tideHarmonics';
 
 /**
  * Radar de vento único: GFS (NOAA Seamless - Estados Unidos). Excelente
@@ -476,7 +476,9 @@ export async function getSpotWeather(
   const h = fc.hourly;
   const m = mar?.hourly ?? null;
 
-  const estacaoMare = encontrarEstacaoMaregraficaMaisProxima(lat, lng);
+  // `null` quando nenhuma estacao do CHM esta perto o bastante deste spot:
+  // nesse caso o app nao mostra mare, em vez de mostrar a de outra regiao.
+  const estacaoMare = encontrarEstacaoMareParaSpot(lat, lng);
   const marineLevels = (m?.sea_level_height_msl ?? []).map(
     (lvl) => calibrarNivelMareHarmonica(lvl, lat, lng).nivelNauticoM
   );
@@ -629,7 +631,7 @@ export async function getSpotWeather(
     nextTideInfo: tideDetail?.text ?? 'Sem dado de maré',
     nextTideHeightM: tideDetail?.peakHeightM ?? null,
     nextTideTime: tideDetail?.peakTime ?? null,
-    tideStationName: estacaoMare.nome,
+    tideStationName: estacaoMare?.nome,
     waveHeightM: opt(m?.wave_height?.[marineNow ?? -1], 1),
     wavePeriodS: opt(m?.wave_period?.[marineNow ?? -1], 1),
     waveDirDeg: opt(m?.wave_direction?.[marineNow ?? -1], 0),

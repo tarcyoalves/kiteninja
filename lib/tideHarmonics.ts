@@ -120,7 +120,37 @@ function distanciaKm(lat1: number, lng1: number, lat2: number, lng2: number): nu
 }
 
 /**
+ * Distância máxima entre um spot e a estação que pode calibrá-lo.
+ *
+ * POR QUE ISTO EXISTE
+ *
+ * A busca abaixo era "a estação mais próxima", sem teto. Como as estações
+ * cadastradas cobrem só o Nordeste, o spot Praia Seca (Lagoa de Araruama, RJ)
+ * era calibrado com o Porto do Recife — a **1.833 km** de distância — e o app
+ * exibia 1,48 m de nível náutico para uma laguna hipersalina que, na prática,
+ * quase não tem maré. Nenhum teste pegou: os três casos do arquivo de teste
+ * usam spots do Nordeste, todos a menos de 90 km de uma estação.
+ *
+ * O valor de 250 km sai da medição, não do chute. Os 16 spots do Nordeste em
+ * produção ficam entre 1 km e 181 km da estação mais próxima; o único fora da
+ * faixa é o do Rio, a 1.833 km. 250 km cobre todos os legítimos com folga e
+ * ainda rejeita o caso errado por quase uma ordem de grandeza.
+ *
+ * Fora do teto o app passa a não mostrar maré nenhuma. Num app de segurança
+ * náutica, **ausência de dado é melhor que dado errado**: quem não vê maré vai
+ * conferir na tábua da Marinha; quem vê 1,48 m confia no número.
+ *
+ * Para atender uma região nova, some uma estação real do CHM/DHN a
+ * `ESTACOES_MAREGRAFICAS_CHM` — não aumente este teto.
+ */
+export const DISTANCIA_MAX_ESTACAO_KM = 250;
+
+/**
  * Localiza a estação maregráfica oficial do CHM mais próxima da coordenada informada.
+ *
+ * Devolve sempre a mais próxima, por mais longe que ela esteja: esta é a
+ * primitiva de "quem é a vizinha". Quem decide se essa vizinha está perto o
+ * bastante para valer alguma coisa é `encontrarEstacaoMareParaSpot`.
  */
 export function encontrarEstacaoMaregraficaMaisProxima(
   lat: number,
@@ -141,14 +171,34 @@ export function encontrarEstacaoMaregraficaMaisProxima(
 }
 
 /**
+ * A estação que pode legitimamente calibrar este spot, ou `null` se a mais
+ * próxima estiver longe demais para dizer qualquer coisa sobre ele.
+ */
+export function encontrarEstacaoMareParaSpot(
+  lat: number,
+  lng: number
+): EstacaoMaregrafica | null {
+  const estacao = encontrarEstacaoMaregraficaMaisProxima(lat, lng);
+  const km = distanciaKm(lat, lng, estacao.lat, estacao.lng);
+  return km <= DISTANCIA_MAX_ESTACAO_KM ? estacao : null;
+}
+
+/**
  * Converte e calibra o nível de maré com base na estação do CHM mais próxima.
+ *
+ * `estacao: null` significa que nenhuma estação cadastrada está perto o
+ * bastante — e nesse caso `nivelNauticoM` também é `null`, de propósito.
  */
 export function calibrarNivelMareHarmonica(
   rawMsl: number | null | undefined,
   lat: number,
   lng: number
-): { nivelNauticoM: number | null; estacao: EstacaoMaregrafica } {
-  const estacao = encontrarEstacaoMaregraficaMaisProxima(lat, lng);
+): { nivelNauticoM: number | null; estacao: EstacaoMaregrafica | null } {
+  const estacao = encontrarEstacaoMareParaSpot(lat, lng);
+
+  if (estacao === null) {
+    return { nivelNauticoM: null, estacao: null };
+  }
 
   if (typeof rawMsl !== 'number' || !Number.isFinite(rawMsl)) {
     return { nivelNauticoM: null, estacao };

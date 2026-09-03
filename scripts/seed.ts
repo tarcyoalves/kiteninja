@@ -65,7 +65,7 @@ async function seedSpots() {
   }
 }
 
-async function seedAdmin(email: string, requestedPassword?: string) {
+async function seedAdmin(email: string, requestedPassword?: string, nome?: string) {
   const existing = await sql`SELECT id, role FROM users WHERE LOWER(email) = ${email} LIMIT 1`;
 
   if (existing.length > 0) {
@@ -85,15 +85,21 @@ async function seedAdmin(email: string, requestedPassword?: string) {
   const password = requestedPassword ?? generatePassword();
   const hash = await bcrypt.hash(password, 12);
 
+  // O nome do admin aparece assinando comentários, posts e avisos no app. Sem
+  // `--admin-name` ele nascia como o literal 'Administrador', e a pessoa dona
+  // da conta via um cargo no lugar do próprio nome em tudo que escrevia. O
+  // padrão continua existindo só para não quebrar um seed sem argumento.
+  const nomeAdmin = nome?.trim() || 'Administrador';
+
   await sql`
     INSERT INTO users (
       email, password_hash, name, role, must_change_password,
       rider_id, avatar_url, weight_kg, rider_level, home_spot, disciplines, bio
     ) VALUES (
-      ${email}, ${hash}, 'Administrador', 'admin', TRUE,
+      ${email}, ${hash}, ${nomeAdmin}, 'admin', TRUE,
       '0001', ${`https://api.dicebear.com/7.x/bottts/svg?seed=admin`},
       78, 'Avançado', 'Praia Ponta do Mel',
-      ${['Kitesurf Twintip']}, 'Administrador do KiteNinja'
+      ${['Kitesurf Twintip']}, ${`Perfil de ${nomeAdmin}`}
     )
   `;
 
@@ -128,7 +134,7 @@ async function main() {
 
   await seedSpots();
   await seedEvents();
-  const password = await seedAdmin(email, requestedPassword);
+  const password = await seedAdmin(email, requestedPassword, arg('admin-name'));
 
   console.log('\n' + '='.repeat(62));
   if (password) {

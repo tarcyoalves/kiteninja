@@ -9,7 +9,7 @@ import { rateLimiters } from '@/lib/rateLimit';
 export async function GET(request: Request) {
   return handle(async () => {
     const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
-    rateLimiters.invite(ip);
+    await rateLimiters.invite(ip);
 
     const token = new URL(request.url).searchParams.get('token') ?? '';
     const invite = await findUsableInvite(token);

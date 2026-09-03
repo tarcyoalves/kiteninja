@@ -18,6 +18,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { Discipline, RiderLevel } from '../types';
+import { ExcluirContaSecao } from '../components/ExcluirContaSecao';
 import { useAoMudar } from '@/lib/useAoMudar';
 
 const LEVELS: RiderLevel[] = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'];
@@ -505,6 +506,8 @@ export const PerfilView: React.FC = () => {
         {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
         <span>{saving ? 'Salvando...' : 'Salvar Perfil'}</span>
       </button>
+
+      <ExcluirContaSecao />
     </div>
   );
 };

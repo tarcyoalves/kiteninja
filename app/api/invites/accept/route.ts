@@ -29,7 +29,7 @@ const DISCIPLINES = [
 export async function POST(request: Request) {
   return handle(async () => {
     const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
-    rateLimiters.invite(ip);
+    await rateLimiters.invite(ip);
 
     const body = await readJson(request);
     const token = str(body, 'token', { max: 200 });

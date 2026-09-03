@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import "./landing.css";
+import { CapturaDeErros } from '@/components/CapturaDeErros';
 
 const plusJakarta = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -136,6 +137,7 @@ export default function RootLayout({
         o body continuava num tom diferente do shell — que é exatamente a tarja.
       */}
       <body className="min-h-full flex flex-col text-slate-100">
+        <CapturaDeErros />
         {children}
       </body>
     </html>

@@ -1242,3 +1242,82 @@ CREATE INDEX IF NOT EXISTS idx_events_uf_data
 -- ---------------------------------------------------------------------------
 ALTER TABLE downwinds
   ADD COLUMN IF NOT EXISTS notificado_em TIMESTAMPTZ;
+
+-- ---------------------------------------------------------------------------
+-- rate_limit_tentativas — teto de tentativas que sobrevive ao serverless.
+--
+-- O rate limit do app era um `Map` na memória do processo (lib/rateLimit.ts).
+-- Na Vercel cada requisição pode cair numa instância diferente, e instâncias
+-- sobem e descem sob carga — então o teto de 5 tentativas de login valia
+-- POR INSTÂNCIA, não por conta. Quem tentasse força bruta em paralelo era
+-- espalhado entre instâncias e nunca via um 429. Três auditorias descreveram
+-- esse comportamento; a terceira chegou a usá-lo para justificar não colocar
+-- rate limit no admin, sem notar que o limite JÁ EXISTENTE do login sofria do
+-- mesmo problema.
+--
+-- Só os limites de porta aberta moram aqui: login, recuperação de senha e
+-- convite. Os limites por usuário autenticado (posição de downwind, SOS,
+-- início de velejo) continuam em memória de propósito — lá o alvo é cliente
+-- em laço de erro, não força bruta, e um ida-e-volta ao banco a cada posição
+-- de GPS custaria mais do que protege.
+--
+-- Uma linha por tentativa, expurgada preguiçosamente. Volume é irrisório:
+-- mesmo sob ataque, o teto da janela limita o que entra.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS rate_limit_tentativas (
+  id         BIGSERIAL PRIMARY KEY,
+  chave      TEXT NOT NULL,
+  expira_em  TIMESTAMPTZ NOT NULL
+);
+
+-- A consulta é sempre "quantas tentativas vivas existem para esta chave".
+CREATE INDEX IF NOT EXISTS idx_rate_limit_chave
+  ON rate_limit_tentativas (chave, expira_em);
+
+-- Suporte ao expurgo das expiradas, que varre por data e ignora a chave.
+CREATE INDEX IF NOT EXISTS idx_rate_limit_expira
+  ON rate_limit_tentativas (expira_em);
+
+-- ---------------------------------------------------------------------------
+-- erros_registrados — o fim da cegueira em produção.
+--
+-- Até aqui o app não tinha rastreamento de erro nenhum: `handle()` fazia
+-- `console.error` e pronto. Na Vercel isso vai para o log da função, que no
+-- plano Hobby tem retenção curta e que ninguém abre — na prática, quando um
+-- velejador tinha erro no mar, ninguém ficava sabendo. As três auditorias
+-- apontaram a mesma coisa, e o histórico do projeto mostra o custo: três bugs
+-- graves (mapa ao vivo em 500, downwind invisível, agenda embaralhada)
+-- passaram por toda a bateria de testes verde e só apareceram quando alguém
+-- sondou produção na mão.
+--
+-- DEDUPLICAÇÃO POR IMPRESSÃO DIGITAL, e por que ela é o coração da tabela:
+-- um cliente em laço de erro geraria milhares de linhas iguais e encheria o
+-- banco do plano gratuito em uma tarde. Aqui a chave única é
+-- `origem|rota|mensagem`; a segunda ocorrência do mesmo erro só incrementa
+-- `ocorrencias` e move `ultima_em`. O tamanho da tabela passa a ser o número
+-- de erros DISTINTOS, não o de falhas — e o contador ainda diz o que é raro e
+-- o que está sangrando.
+--
+-- O que NÃO entra aqui: corpo de requisição, cookie, token ou senha. Só a
+-- mensagem, o stack e a rota. Ver `registrarErro` em lib/observabilidade.ts.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS erros_registrados (
+  id           BIGSERIAL PRIMARY KEY,
+  -- origem|rota|mensagem, truncado. UNIQUE: é a chave da deduplicação.
+  impressao    TEXT NOT NULL UNIQUE,
+  origem       TEXT NOT NULL CHECK (origem IN ('servidor', 'cliente')),
+  rota         TEXT,
+  mensagem     TEXT NOT NULL,
+  stack        TEXT,
+  user_agent   TEXT,
+  -- SET NULL para o erro sobreviver à exclusão da conta de quem o encontrou.
+  user_id      UUID REFERENCES users(id) ON DELETE SET NULL,
+  ocorrencias  INT NOT NULL DEFAULT 1,
+  primeira_em  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ultima_em    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolvido_em TIMESTAMPTZ
+);
+
+-- O painel lista "o que quebrou por último, ainda não resolvido".
+CREATE INDEX IF NOT EXISTS idx_erros_recentes
+  ON erros_registrados (ultima_em DESC) WHERE resolvido_em IS NULL;

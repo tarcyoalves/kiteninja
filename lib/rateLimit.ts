@@ -1,8 +1,11 @@
 /**
- * Rate limiting em memória com janela deslizante (sliding window).
+ * Rate limiting com janela deslizante (sliding window), em dois sabores.
  *
- * Protege rotas críticas (login, aceite de convite, recuperação de senha)
- * contra ataques de força bruta, enumeração e DDoS.
+ * `enforceRateLimit` guarda o estado num Map do processo — barato, e correto
+ * só quando o alvo é um cliente em laço de erro. `enforceRateLimitCompartilhado`
+ * guarda no Postgres, e é o que de fato barra força bruta na Vercel, onde cada
+ * instância teria o seu próprio Map. Qual usar em cada rota está em
+ * `rateLimiters`, no fim do arquivo, com o porquê de cada escolha.
  */
 import { HttpError } from './errors';
 
@@ -85,10 +88,101 @@ export function enforceRateLimit(
   }
 }
 
+/**
+ * Rate limit que vale para o app inteiro, não para uma instância serverless.
+ *
+ * POR QUE ESTA FUNÇÃO EXISTE, ALÉM DA DE CIMA
+ *
+ * `checkRateLimit` guarda as tentativas num `Map` do processo. Na Vercel isso
+ * significa um contador por instância: requisições paralelas caem em
+ * instâncias diferentes, cada uma começa do zero, e o teto de 5 tentativas de
+ * login nunca é atingido por quem ataca em paralelo. O limite existia e não
+ * protegia.
+ *
+ * Aqui o estado mora no Postgres, então o teto é do app. O custo é um
+ * ida-e-volta ao banco — aceitável nas rotas de porta aberta, que são
+ * esporádicas, e caro demais nas rotas por-usuário de alta frequência (uma
+ * posição de GPS a cada 45s). Por isso as duas funções convivem: veja o
+ * comentário de `rate_limit_tentativas` em lib/schema.sql para a divisão.
+ *
+ * TUDO EM UMA IDA SÓ: a CTE conta as tentativas vivas e só insere a nova se a
+ * contagem ainda estiver abaixo do teto. Sem transação (o driver HTTP do Neon
+ * não compõe), mas atômico dentro do statement. Duas requisições exatamente
+ * simultâneas podem passar uma a mais que o teto; para barrar força bruta isso
+ * é irrelevante — o que importa é que a 200ª tentativa não passe, e ela não
+ * passa.
+ *
+ * FALHA ABERTA, DE PROPÓSITO: se a consulta der erro, cai no limitador em
+ * memória em vez de estourar. Um erro transitório no banco não pode impedir
+ * todo mundo de entrar no app — e a proteção degradada ainda é melhor que
+ * nenhuma. Note que, se o banco estiver mesmo fora, o login falharia adiante
+ * de qualquer jeito: ele precisa consultar `users`.
+ */
+export async function enforceRateLimitCompartilhado(
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+  customMessage?: string
+): Promise<void> {
+  const expiraEm = new Date(Date.now() + windowMs);
+
+  let permitido: boolean;
+  try {
+    // Import sob demanda: `lib/db.ts` estoura na carga do modulo quando
+    // DATABASE_URL nao existe, e este arquivo tambem e usado por testes de
+    // unidade do limitador em memoria, que rodam sem banco nenhum.
+    const { sql } = await import('./db');
+    const linhas = await sql`
+      WITH atuais AS (
+        SELECT COUNT(*)::int AS n
+        FROM rate_limit_tentativas
+        WHERE chave = ${key} AND expira_em > NOW()
+      ),
+      inserida AS (
+        INSERT INTO rate_limit_tentativas (chave, expira_em)
+        SELECT ${key}, ${expiraEm.toISOString()}
+        FROM atuais
+        WHERE atuais.n < ${maxRequests}
+        RETURNING 1
+      )
+      SELECT EXISTS (SELECT 1 FROM inserida) AS permitido
+    `;
+    permitido = Boolean((linhas[0] as Record<string, unknown> | undefined)?.permitido);
+  } catch {
+    // Banco indisponível: degrada para o teto por instância em vez de barrar
+    // todo mundo. Ver o parágrafo "FALHA ABERTA" acima.
+    enforceRateLimit(key, maxRequests, windowMs, customMessage);
+    return;
+  }
+
+  // Expurgo preguiçoso: a Vercel no plano Hobby não tem cron sub-diário, então
+  // a limpeza pega carona numa requisição que já pagou a viagem ao banco. Roda
+  // no máximo a cada CLEANUP_INTERVAL_MS e nunca bloqueia a resposta.
+  if (Date.now() - ultimoExpurgoCompartilhado > CLEANUP_INTERVAL_MS) {
+    ultimoExpurgoCompartilhado = Date.now();
+    void import('./db')
+      .then(({ sql }) => sql`DELETE FROM rate_limit_tentativas WHERE expira_em <= NOW()`)
+      .catch(() => {});
+  }
+
+  if (!permitido) {
+    const minutos = Math.ceil(windowMs / 60000);
+    throw new HttpError(
+      429,
+      customMessage ||
+        `Muitas tentativas. Aguarde ${minutos} minuto(s) antes de tentar novamente.`
+    );
+  }
+}
+
+let ultimoExpurgoCompartilhado = 0;
+
 /** Helpers semânticos para as rotas sensíveis do KiteNinja */
 export const rateLimiters = {
+  // Os três primeiros são de porta aberta (sem sessão) e por isso usam o teto
+  // compartilhado no banco: é neles que força bruta acontece.
   login: (identifier: string) =>
-    enforceRateLimit(
+    enforceRateLimitCompartilhado(
       `login:${identifier.toLowerCase()}`,
       5,
       15 * 60 * 1000,
@@ -96,7 +190,7 @@ export const rateLimiters = {
     ),
 
   invite: (ipOrToken: string) =>
-    enforceRateLimit(
+    enforceRateLimitCompartilhado(
       `invite:${ipOrToken}`,
       10,
       60 * 60 * 1000,
@@ -104,13 +198,15 @@ export const rateLimiters = {
     ),
 
   passwordReset: (identifier: string) =>
-    enforceRateLimit(
+    enforceRateLimitCompartilhado(
       `pwd_reset:${identifier.toLowerCase()}`,
       3,
       60 * 60 * 1000,
       'Limite de solicitações de recuperação de senha excedido. Aguarde 1 hora.'
     ),
 
+  // Daqui para baixo, tudo exige sessão e o alvo é cliente em laço de erro,
+  // não força bruta. Continuam em memória: barato e suficiente.
   sos: (userId: string) =>
     enforceRateLimit(
       `sos:${userId}`,

@@ -43,7 +43,7 @@ export async function POST(request: Request, ctx: Params) {
     // invites/validate: IP com fallback, porque é a única coisa disponível
     // antes do login existir.
     const ip = request.headers.get('x-forwarded-for') || 'unknown-ip';
-    rateLimiters.invite(ip);
+    await rateLimiters.invite(ip);
 
     const body = await readJson(request);
     // str() já trima e recusa vazio (min:1 é o default) — ver lib/validation.ts.

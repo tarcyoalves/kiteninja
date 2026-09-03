@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { HttpError, requireUser } from '@/lib/auth';
+import { cookies } from 'next/headers';
+import { HttpError, SESSION_COOKIE, requireUser, verifyPassword } from '@/lib/auth';
 import { clampQuiverBoards, clampQuiverKites, num, oneOf, str } from '@/lib/validation';
 import type { Discipline, RiderLevel } from '@/types';
 
@@ -100,6 +101,93 @@ export async function PATCH(request: Request) {
         updated_at          = NOW()
       WHERE id = ${user.id}
     `;
+
+    return { ok: true };
+  });
+}
+
+/**
+ * Exclusão definitiva da própria conta.
+ *
+ * POR QUE ESTA ROTA EXISTE
+ *
+ * O Google Play exige, desde 2024, que todo app que cria contas ofereça um
+ * caminho de exclusão dentro do app E uma URL pública explicando o processo
+ * (ver `app/excluir-conta/page.tsx`). Sem isso o app é reprovado na submissão,
+ * não importa o resto. A LGPD (art. 18, direito de eliminação) pede o mesmo.
+ *
+ * `DELETE FROM users` basta porque o schema já foi desenhado para isto: todas
+ * as 35 chaves estrangeiras que apontam para `users` são ON DELETE CASCADE
+ * (dado do próprio velejador: velejos, posições, mensagens, curtidas) ou
+ * ON DELETE SET NULL (trilha de auditoria que precisa sobreviver sem a pessoa:
+ * `audit_logs.actor_id`, `downwinds.criado_por`, `invites.used_by`).
+ *
+ * AS TRÊS TRAVAS, e por que cada uma:
+ *
+ *  - SENHA ATUAL: exclusão é irreversível e a sessão pode ter sido roubada.
+ *    Pedir a senha faz a conta sobreviver a um celular desbloqueado na praia.
+ *
+ *  - SOS ATIVO: apagar a conta durante um chamado de socorro cascatearia
+ *    `sos_alerts` e `sos_responders` — quem está indo ajudar perderia a
+ *    posição da pessoa no meio do resgate. É a única trava aqui que não é
+ *    sobre dados, é sobre alguém na água.
+ *
+ *  - ÚLTIMO ADMIN: se o único administrador ativo se apaga, ninguém mais
+ *    emite convite nem promove alguém, e o app fica sem dono sem aviso.
+ */
+export async function DELETE(request: Request) {
+  return handle(async () => {
+    const user = await requireUser();
+    const body = await readJson(request);
+
+    const senha = (body as Record<string, unknown>)?.currentPassword;
+    if (typeof senha !== 'string' || senha.length === 0) {
+      throw new HttpError(400, 'Informe sua senha para confirmar a exclusão.');
+    }
+
+    const linhas = await sql`SELECT password_hash, role FROM users WHERE id = ${user.id} LIMIT 1`;
+    const linha = linhas[0] as Record<string, unknown> | undefined;
+    if (!linha) throw new HttpError(404, 'Usuário não encontrado.');
+
+    if (!(await verifyPassword(senha, String(linha.password_hash)))) {
+      throw new HttpError(401, 'Senha incorreta.');
+    }
+
+    const sos = await sql`
+      SELECT 1 FROM sos_alerts
+      WHERE user_id = ${user.id} AND status IN ('ativo', 'em_atendimento')
+      LIMIT 1
+    `;
+    if (sos.length > 0) {
+      throw new HttpError(
+        409,
+        'Você tem um chamado de SOS em aberto. Encerre o chamado antes de excluir a conta.'
+      );
+    }
+
+    if (String(linha.role) === 'admin') {
+      const outros = await sql`
+        SELECT 1 FROM users
+        WHERE role = 'admin' AND is_active = TRUE AND id <> ${user.id}
+        LIMIT 1
+      `;
+      if (outros.length === 0) {
+        throw new HttpError(
+          409,
+          'Você é o único administrador ativo. Promova outro administrador antes de excluir a conta.'
+        );
+      }
+    }
+
+    // O filtro é o próprio id da sessão: ninguém apaga a conta de outra pessoa
+    // por aqui. Moderação de terceiros passa pelo painel admin, com outra rota.
+    const apagado = await sql`DELETE FROM users WHERE id = ${user.id} RETURNING id`;
+    if (apagado.length === 0) throw new HttpError(404, 'Usuário não encontrado.');
+
+    // As sessões já caíram por CASCADE em auth_sessions; o cookie no navegador
+    // é que precisa ir embora, senão a próxima tela tenta usar um token morto.
+    const jar = await cookies();
+    jar.delete(SESSION_COOKIE);
 
     return { ok: true };
   });

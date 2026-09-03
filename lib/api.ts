@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { HttpError } from './auth';
+import { headers } from 'next/headers';
+import { registrarErro } from './observabilidade';
 
 /**
  * Toda resposta de API sai como `no-store`.
@@ -36,6 +38,9 @@ export async function handle<T>(fn: () => Promise<T>): Promise<NextResponse> {
       return NextResponse.json({ error: err.message }, { status: err.status, headers: SEM_CACHE });
     }
     console.error('[api] erro não tratado:', err);
+    // Persiste para o painel de erros. Sem await: a resposta do velejador
+    // não espera o log, e `registrarErro` engole a própria falha.
+    void capturarErroDeApi(err);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500, headers: SEM_CACHE });
   }
 }
@@ -64,4 +69,26 @@ export async function readOptionalJson(request: Request): Promise<unknown> {
   } catch {
     throw new HttpError(400, 'Corpo da requisição deve ser JSON válido.');
   }
+}
+
+/**
+ * Descobre a rota do jeito possível e registra o erro.
+ *
+ * `handle()` não recebe a `Request`, e mudar a assinatura custaria tocar nas
+ * 77 rotas do app para ganhar um campo. Então a rota sai do cabeçalho
+ * `x-matched-path`, que a Vercel injeta, com o `referer` como segunda opção.
+ * Quando nenhum dos dois vem, o erro entra como rota desconhecida — a
+ * mensagem, que é o sinal principal, continua lá de qualquer jeito.
+ */
+async function capturarErroDeApi(err: unknown): Promise<void> {
+  let rota: string | null = null;
+  let userAgent: string | null = null;
+  try {
+    const h = await headers();
+    rota = h.get('x-matched-path') ?? h.get('referer');
+    userAgent = h.get('user-agent');
+  } catch {
+    // Fora de contexto de requisição: segue sem rota.
+  }
+  await registrarErro({ origem: 'servidor', erro: err, rota, userAgent });
 }

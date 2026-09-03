@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const body = await readJson(request);
     const email = parseEmail(body);
 
-    rateLimiters.passwordReset(email);
+    await rateLimiters.passwordReset(email);
 
     const token = await createPasswordResetToken(email);
 

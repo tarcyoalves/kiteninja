@@ -2,14 +2,15 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning } from 'lucide-react';
+import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning, AlertOctagon } from 'lucide-react';
 import { InviteManager } from './InviteManager';
 import { UserManager } from './UserManager';
 import { IntroVideoManager } from './IntroVideoManager';
 import { ChamadosManager } from './ChamadosManager';
+import { ErrosManager } from './ErrosManager';
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
-  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados'>('convites');
+  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados' | 'erros'>('convites');
 
   return (
     // O app inteiro herda `body { overflow: hidden }` (globals.css) pensado para o
@@ -101,6 +102,18 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
               </button>
 
               <button
+                onClick={() => setTab('erros')}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all min-w-0 ${
+                  tab === 'erros'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <AlertOctagon size={14} className="shrink-0" />
+                <span className="truncate">Erros</span>
+              </button>
+
+              <button
                 onClick={() => setTab('abertura')}
                 className={`px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all min-w-0 ${
                   tab === 'abertura'
@@ -132,6 +145,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         {tab === 'usuarios' && <UserManager />}
         {tab === 'abertura' && <IntroVideoManager />}
         {tab === 'chamados' && <ChamadosManager />}
+        {tab === 'erros' && <ErrosManager />}
       </div>
       </main>
     </div>

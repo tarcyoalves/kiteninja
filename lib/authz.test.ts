@@ -213,6 +213,8 @@ describe('autorização das rotas de API', () => {
       'filtra por id = user.id, que é a própria conta autenticada',
     'invites/accept/route.ts::DELETE FROM users':
       'remove a conta órfã que a própria requisição criou ao perder a corrida do convite',
+    'profile/route.ts::DELETE FROM users':
+      'exclusão da própria conta exigida pela Play Store e pela LGPD; filtra por id = user.id, confere a senha atual e barra último admin e SOS em aberto',
     'alerts/[id]/route.ts::UPDATE safety_alerts':
       'resolver alerta é ação de moderação; a rota exige requireAdmin',
     'chat/messages/[id]/route.ts::DELETE FROM chat_messages':
@@ -333,7 +335,8 @@ describe('autorização das rotas de API', () => {
       /*
        * Casos que não dependem de papel, mas ainda precisam de alvo único: a
        * mutação atinge uma linha identificada por id, e esse id é a própria
-       * conta autenticada (`${user.id}` no change-password), a conta órfã que
+       * conta autenticada (`${user.id}` no change-password e na exclusão da
+       * própria conta em profile/route.ts), a conta órfã que
        * a própria requisição criou (`${userId}` no accept), ou o evento/
        * downwind que a própria requisição acabou de criar e está desfazendo
        * (`${eventId}`/`${downwindId}` no rollback manual de events/route.ts).
@@ -358,6 +361,7 @@ describe('autorização das rotas de API', () => {
        */
       if (
         rel === 'auth/change-password/route.ts' ||
+        rel === 'profile/route.ts' ||
         rel === 'invites/accept/route.ts' ||
         rel === 'events/route.ts' ||
         rel === 'downwind/route.ts' ||

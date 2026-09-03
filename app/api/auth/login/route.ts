@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     const body = await readJson(request);
     const email = parseEmail(body);
 
-    rateLimiters.login(email);
+    await rateLimiters.login(email);
 
     const rawPassword = (body as Record<string, unknown>)?.password;
 
