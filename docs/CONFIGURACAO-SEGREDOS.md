@@ -9,11 +9,12 @@ operacional de onde clicar.
 ## Estado conferido em 25/08/2026
 
 > **Situação conferida em 03/09/2026**, na captura do painel
-> (Vercel → kiteninja → Environment Variables) enviada pelo dono. Os nomes
-> aparecem truncados na tela, então o que está marcado ✅ é "existe uma
-> variável com esse prefixo e esse escopo" — não a conferência caractere a
-> caractere. A API da Vercel não expõe variáveis de ambiente para agentes,
-> então esta tabela só se atualiza com uma captura ou com o dono confirmando.
+> (Vercel → kiteninja → Environment Variables) enviada pelo dono, com os nomes
+> completos visíveis. A API da Vercel NÃO expõe variáveis de ambiente para
+> agentes — `get_project` devolve nome do projeto, domínios e deploys, nada de
+> `env`. Então esta tabela só se atualiza com uma captura ou com o dono
+> confirmando; um agente não consegue verificá-la sozinho, e não deve afirmar
+> que uma variável falta sem essa prova.
 
 | Segredo | Onde | Situação |
 |---|---|---|
