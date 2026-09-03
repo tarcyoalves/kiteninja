@@ -8,18 +8,32 @@ operacional de onde clicar.
 
 ## Estado conferido em 25/08/2026
 
+> **Situação conferida em 03/09/2026**, na captura do painel
+> (Vercel → kiteninja → Environment Variables) enviada pelo dono. Os nomes
+> aparecem truncados na tela, então o que está marcado ✅ é "existe uma
+> variável com esse prefixo e esse escopo" — não a conferência caractere a
+> caractere. A API da Vercel não expõe variáveis de ambiente para agentes,
+> então esta tabela só se atualiza com uma captura ou com o dono confirmando.
+
 | Segredo | Onde | Situação |
 |---|---|---|
-| `DATABASE_URL` | Vercel | ✅ configurado (o app está de pé) |
-| `CRON_SECRET` | Vercel | ❌ **AUSENTE — confirmado por sondagem** |
-| `CRON_SECRET` | GitHub Actions | ❓ verificar |
-| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Vercel | ❓ verificar |
-| `VAPID_PRIVATE_KEY` | Vercel | ❓ verificar |
-| `VAPID_SUBJECT` | Vercel | ❓ verificar |
-| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Vercel | ❓ verificar (necessário para FCM) |
-| `BLOB_READ_WRITE_TOKEN` | Vercel | ❓ verificar (upload de fotos) |
+| `DATABASE_URL` | Vercel | ✅ Production + Preview |
+| `CRON_SECRET` | Vercel | ✅ Production (adicionado 25/ago) |
+| `CRON_SECRET` | GitHub Actions | ✅ o workflow de varredura roda verde desde 31/ago |
+| `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | Vercel | ✅ Production + Preview |
+| `VAPID_PRIVATE_KEY` | Vercel | ✅ Production + Preview |
+| `VAPID_SUBJECT` | Vercel | ✅ Production + Preview |
+| `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Vercel | ✅ Production |
+| `BLOB_READ_WRITE_TOKEN` | Vercel | ✅ All Environments (upload de fotos e vídeos) |
+| `APP_URL` | Vercel | ✅ Production |
 | `google-services.json` | Android local | ❓ só o dono tem |
 | `keystore.properties` + keystore | Android local | ❓ só o dono tem |
+
+**Nenhuma variável falta hoje.** A linha do `CRON_SECRET` dizia
+"AUSENTE — confirmado por sondagem" até esta revisão: era verdade quando foi
+escrita, e deixou de ser em 25/ago. Um agente lendo a versão antiga iria caçar
+um problema que não existe mais — por isso a tabela agora diz de onde veio a
+informação e quando.
 
 Como o `CRON_SECRET` ausente foi confirmado (qualquer um pode repetir):
 
