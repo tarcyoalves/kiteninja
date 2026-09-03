@@ -5,6 +5,7 @@ import {
   apareceNaAgendaPublica,
   normalizarVisibilidade,
   podeNotificarSeguidores,
+  podeVerEvento,
   textoDoAviso,
 } from './downwindVisibilidade';
 
@@ -170,4 +171,35 @@ describe('as rotas de criação preenchem a visibilidade', () => {
       expect(src).toContain('normalizarVisibilidade');
     });
   }
+});
+
+describe('podeVerEvento', () => {
+  const base = {
+    visibilidadeDoDownwind: null as 'privado' | 'comunidade' | null,
+    souCriadorDoDownwind: false,
+    souParticipanteDoDownwind: false,
+  };
+
+  it('evento comum (sem downwind) é de todo mundo', () => {
+    expect(podeVerEvento(base)).toBe(true);
+  });
+
+  it('downwind de comunidade é de todo mundo', () => {
+    expect(podeVerEvento({ ...base, visibilidadeDoDownwind: 'comunidade' })).toBe(true);
+  });
+
+  it('downwind fechado: estranho não vê', () => {
+    // É o caso que importa: sem isto, quem tivesse o id do evento veria quem
+    // vai estar naquele downwind, onde e quando.
+    expect(podeVerEvento({ ...base, visibilidadeDoDownwind: 'privado' })).toBe(false);
+  });
+
+  it('downwind fechado: criador e participante veem', () => {
+    expect(
+      podeVerEvento({ ...base, visibilidadeDoDownwind: 'privado', souCriadorDoDownwind: true })
+    ).toBe(true);
+    expect(
+      podeVerEvento({ ...base, visibilidadeDoDownwind: 'privado', souParticipanteDoDownwind: true })
+    ).toBe(true);
+  });
 });

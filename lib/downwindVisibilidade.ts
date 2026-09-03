@@ -143,3 +143,43 @@ export function textoDoAviso(args: {
       : `Organizado por ${args.organizador}`,
   };
 }
+
+/**
+ * Mensagem única para "evento não existe" e "existe, mas não é para você".
+ *
+ * Mesmo princípio de `MSG_DOWNWIND_NAO_ENCONTRADO` (lib/downwindAcesso.ts):
+ * qualquer diferença entre as duas respostas confirmaria a existência de um
+ * downwind fechado para quem não participa — e o nome de um downwind já diz
+ * onde um grupo vai estar e quando.
+ */
+export const MSG_EVENTO_NAO_ENCONTRADO = 'Evento não encontrado.';
+
+/**
+ * Quem pode ver UM evento — e, por consequência, quem confirmou presença nele.
+ *
+ * POR QUE ISTO VIROU FUNÇÃO
+ *
+ * A regra existia apenas como `WHERE` inline em `GET /api/events`. Enquanto só
+ * a listagem precisava dela, tudo bem. Ao surgir uma segunda rota que recebe um
+ * id de evento arbitrário (a lista de participantes), a regra passou a existir
+ * em dois lugares — e regra de privacidade duplicada é regra que diverge.
+ *
+ * A rota de listagem continua com o `WHERE` (filtrar no banco é o certo lá), e
+ * a rota de item pergunta a esta função. As duas têm que dizer o mesmo, e o
+ * teste em scripts/verify-sql.ts confere isso contra o Postgres de verdade.
+ *
+ * REGRA: evento sem downwind é da agenda comum, todo mundo vê. Com downwind,
+ * vale a visibilidade dele — `comunidade` é público; `privado` fica com quem
+ * criou e com quem participa.
+ */
+export function podeVerEvento(args: {
+  /** `null` quando o evento não tem downwind vinculado (evento comum). */
+  visibilidadeDoDownwind: DownwindVisibilidade | null;
+  souCriadorDoDownwind: boolean;
+  souParticipanteDoDownwind: boolean;
+}): boolean {
+  const { visibilidadeDoDownwind, souCriadorDoDownwind, souParticipanteDoDownwind } = args;
+  if (visibilidadeDoDownwind === null) return true;
+  if (visibilidadeDoDownwind === 'comunidade') return true;
+  return souCriadorDoDownwind || souParticipanteDoDownwind;
+}

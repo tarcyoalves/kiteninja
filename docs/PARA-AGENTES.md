@@ -187,4 +187,5 @@ O estado antigo de `master` está preservado na branch
 | `BUG-DOWNWIND-DOIS-CARDS.md` | Por que o downwind nascia invisível e aparecia duas vezes; a agenda como superfície única |
 | `BUG-MAPA-CINZA-E-DW-AGENDADO.md` | Tile com `subdomains: undefined` derruba o Leaflet; e por que `aberto` não é `em_andamento` |
 | `ADMIN-MOBILE.md` | Painel admin no celular: overflow medido com Chromium, não deduzido |
+| `BUG-PARTICIPANTES-INVISIVEIS.md` | `event_registrations` só era contada, nunca listada; e a regra de acesso que virou função |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |

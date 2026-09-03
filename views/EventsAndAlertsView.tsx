@@ -32,6 +32,7 @@ import {
 import { eventoCasaComUf, ufsPresentes } from '../lib/uf';
 import type { DownwindVisibilidade } from '../lib/downwindVisibilidade';
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
+import { ParticipantesEventoSheet } from '../components/activity/ParticipantesEventoSheet';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
 
 export const EventsAndAlertsView: React.FC = () => {
@@ -82,6 +83,8 @@ export const EventsAndAlertsView: React.FC = () => {
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
   const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
+  /** Evento cuja lista de confirmados está aberta ({id, titulo}), ou null. */
+  const [participantesDe, setParticipantesDe] = useState<{ id: string; titulo: string } | null>(null);
 
   /**
    * Pull-to-refresh (ANT-003): eventos/downwind e alertas mudam por ação de
@@ -927,9 +930,24 @@ export const EventsAndAlertsView: React.FC = () => {
 
                 {/* Footer Action */}
                 <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                  <span className="text-xs font-bold text-emerald-400">
-                    {event.participantsCount} riders confirmados
-                  </span>
+                  {/*
+                    * O contador virou BOTÃO.
+                    *
+                    * Era texto morto: `event_registrations` sempre foi gravada
+                    * certo e só era CONTADA — as duas únicas consultas à tabela
+                    * em todo o app eram COUNT(*). Dava para ver que cinco
+                    * pessoas confirmaram e não existia lugar nenhum que
+                    * dissesse quem. Confirmar presença serve para o grupo se
+                    * organizar; sem os nomes, o número é enfeite.
+                    */}
+                  <button
+                    type="button"
+                    onClick={() => setParticipantesDe({ id: event.id, titulo: event.title })}
+                    className="text-xs font-bold text-emerald-400 underline decoration-emerald-400/40 underline-offset-2 hover:text-emerald-300 active:scale-95 transition-all text-left"
+                  >
+                    {event.participantsCount}{' '}
+                    {event.participantsCount === 1 ? 'rider confirmado' : 'riders confirmados'}
+                  </button>
 
                   {event.type === 'Downwind' && (event.downwindStatus === 'encerrado' || event.downwindStatus === 'cancelado') ? (
                     <span className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">
@@ -1049,6 +1067,14 @@ export const EventsAndAlertsView: React.FC = () => {
             <span>Criar Downwind</span>
           </button>
         </div>
+      )}
+
+      {participantesDe && (
+        <ParticipantesEventoSheet
+          eventoId={participantesDe.id}
+          titulo={participantesDe.titulo}
+          onFechar={() => setParticipantesDe(null)}
+        />
       )}
 
       {resumoDownwindId && user && (

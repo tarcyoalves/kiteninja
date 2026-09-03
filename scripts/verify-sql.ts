@@ -3140,6 +3140,90 @@ async function main() {
     agendaRn.join(',')
   );
 
+  console.log('\nLista de participantes do evento — quem pode ver:');
+
+  /*
+   * A MESMA regra de acesso existe em dois lugares: o WHERE de GET /api/events
+   * (listagem) e `podeVerEvento` (rota de participantes, que recebe um id
+   * arbitrário). Regra de privacidade duplicada é regra que diverge, então o
+   * check aqui é justamente que as duas CONCORDAM, para os três atores.
+   */
+  await db.query(
+    `INSERT INTO event_registrations (event_id, user_id)
+     SELECT event_id, $1 FROM downwinds WHERE id = $2`,
+    [outro, dwAberto]
+  );
+  await db.query(
+    `INSERT INTO event_registrations (event_id, user_id)
+     SELECT event_id, $1 FROM downwinds WHERE id = $2`,
+    [dono, dwFechado]
+  );
+
+  /** O SELECT de cabeçalho da rota de participantes, para um dado usuário. */
+  async function vistoPelaRotaDeItem(userId: string, nomeDw: string): Promise<boolean> {
+    const r = await db.query<{
+      downwind_visibilidade: string | null;
+      sou_criador: boolean | null;
+      sou_participante: boolean;
+    }>(
+      `SELECT d.visibilidade AS downwind_visibilidade,
+              (d.criado_por = $1) AS sou_criador,
+              EXISTS (
+                SELECT 1 FROM downwind_participantes dp
+                 WHERE dp.downwind_id = d.id AND dp.user_id = $1
+              ) AS sou_participante
+         FROM events e
+         LEFT JOIN downwinds d ON d.event_id = e.id
+        WHERE e.title = $2
+        LIMIT 1`,
+      [userId, nomeDw]
+    );
+    if (r.rows.length === 0) return false;
+    const row = r.rows[0];
+    // Espelha podeVerEvento (lib/downwindVisibilidade.ts).
+    if (row.downwind_visibilidade === null) return true;
+    if (row.downwind_visibilidade === 'comunidade') return true;
+    return Boolean(row.sou_criador) || row.sou_participante;
+  }
+
+  for (const [nome, quem, userId, esperado] of [
+    ['aberto-check', 'terceiro', outro, true],
+    ['fechado-check', 'terceiro', outro, false],
+    ['fechado-check', 'criador', dono, true],
+  ] as const) {
+    const naAgenda = (await agendaDe(userId, null)).includes(nome);
+    const naRotaDeItem = await vistoPelaRotaDeItem(userId, nome);
+    check(
+      `${nome} / ${quem}: listagem e rota de participantes concordam (${esperado ? 'vê' : 'não vê'})`,
+      naAgenda === esperado && naRotaDeItem === esperado,
+      `agenda=${naAgenda} rotaDeItem=${naRotaDeItem} esperado=${esperado}`
+    );
+  }
+
+  const confirmados = await db.query<{ name: string }>(
+    `SELECT u.name
+       FROM event_registrations er
+       JOIN users u ON u.id = er.user_id
+       JOIN events e ON e.id = er.event_id
+      WHERE e.title = 'aberto-check'
+      ORDER BY er.created_at ASC`
+  );
+  check(
+    'a lista de confirmados devolve gente, não só um número',
+    confirmados.rows.length === 1,
+    `linhas=${confirmados.rows.length}`
+  );
+
+  const vazamento = await db.query(
+    `SELECT column_name FROM information_schema.columns
+      WHERE table_name = 'users' AND column_name IN ('email','password_hash','last_ip')`
+  );
+  check(
+    'as colunas sensíveis de users existem — logo o teste de não vazá-las tem sentido',
+    vazamento.rows.length === 3,
+    `achadas=${vazamento.rows.length}`
+  );
+
   console.log('\nAviso à comunidade — disparo único:');
 
   const primeiroAviso = await db.query(
