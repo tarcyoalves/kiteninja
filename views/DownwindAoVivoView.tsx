@@ -109,6 +109,10 @@ export const DownwindAoVivoView: React.FC = () => {
   // normal (é o pedido do dono: "ao destravar a tela, continua no mapa ao
   // vivo").
   const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
+  /** Ida ao servidor do botão "Iniciar" em curso — ver `iniciarTravessia`. */
+  const [iniciandoTravessia, setIniciandoTravessia] = useState(false);
+  /** Idem para "Tentar de novo" do rastreamento. */
+  const [retomandoRastreio, setRetomandoRastreio] = useState(false);
   // Split mapa/chat exclusivo do apoio_terra (motorista), arrastável — ver
   // lib/useSplitArrastavel.ts. O velejador nunca usa isto.
   const splitApoio = useSplitArrastavel(50);
@@ -126,13 +130,34 @@ export const DownwindAoVivoView: React.FC = () => {
   );
 
   const iniciarTravessia = useCallback(async () => {
+    /*
+     * TRAVA ENQUANTO ESPERA — o botão mais importante do app não pode ficar
+     * mudo.
+     *
+     * `iniciarDownwind()` faz DUAS idas ao servidor (POST de status +
+     * recarregar), o que no 4G da praia é segundos. Até aqui, durante esse
+     * tempo o botão continuava com a cara de sempre: nada girava, nada
+     * desabilitava, a tela não mudava. O dedo repete — e cada toque era outro
+     * par de requisições, na hora em que a pessoa está entrando na água.
+     *
+     * O `if` no começo é a trava de verdade; o `disabled` do botão é o que
+     * conta para quem está olhando. Os dois precisam existir: o estado do
+     * React não muda antes do fim do clique atual, então dois toques muito
+     * rápidos podem chegar os dois com o botão ainda habilitado.
+     */
+    if (iniciandoTravessia) return;
+    setIniciandoTravessia(true);
     // Nunca bloqueia a entrada no Modo Navegação por erro de rede — o
     // velejador está indo para a água. Se a transição para em_andamento
     // falhar (ex.: já foi iniciado por outro velejador um instante antes,
     // que é no-op e não erro real), o poll seguinte já traz o estado certo.
-    await iniciarDownwind();
+    try {
+      await iniciarDownwind();
+    } finally {
+      setIniciandoTravessia(false);
+    }
     setModoNavegacaoAtivo(true);
-  }, [iniciarDownwind]);
+  }, [iniciarDownwind, iniciandoTravessia]);
 
   const sos = useSosHold({
     hasActiveSos: Boolean(myActiveSos),
@@ -452,10 +477,18 @@ export const DownwindAoVivoView: React.FC = () => {
           <button
             type="button"
             onClick={iniciarTravessia}
-            className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 active:scale-95 transition-all shadow-md shadow-cyan-500/20"
+            disabled={iniciandoTravessia}
+            aria-busy={iniciandoTravessia}
+            className="flex flex-col items-center gap-1 px-5 py-2.5 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-slate-950 active:scale-95 transition-all shadow-md shadow-cyan-500/20 disabled:opacity-70 disabled:active:scale-100"
             aria-label="Iniciar travessia e travar a tela"
           >
-            <Navigation size={16} className="fill-current stroke-[1.5]" />
+            {iniciandoTravessia ? (
+              <Loader2 size={16} className="animate-spin stroke-[2.5]" />
+            ) : (
+              <Navigation size={16} className="fill-current stroke-[1.5]" />
+            )}
+            {/* Rótulo fixo: trocar o texto mudaria a largura do botão embaixo
+                do dedo, que é como se perde um toque. Quem gira é o ícone. */}
             <span className="text-[10px] font-black">Iniciar</span>
           </button>
         )}
@@ -629,12 +662,25 @@ export const DownwindAoVivoView: React.FC = () => {
                 {estadoVisual.cor === 'vermelho' && (
                   <button
                     type="button"
+                    // Mesma história do "Iniciar": ida ao servidor sem trava
+                    // nem sinal na tela virava fila de requisições repetidas
+                    // justamente quando a rede já está ruim (é por isso que o
+                    // estado está vermelho).
                     onClick={async () => {
-                      await iniciarDownwind();
+                      if (retomandoRastreio) return;
+                      setRetomandoRastreio(true);
+                      const res = await iniciarDownwind();
+                      setRetomandoRastreio(false);
+                      // Falhou de novo: agora diz. Antes o resultado era
+                      // descartado e o botão parecia não ter feito nada.
+                      if (!res.ok) setErro(res.error ?? 'Não foi possível retomar o rastreamento.');
                     }}
-                    className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-lg text-[10px] font-semibold transition-colors"
+                    disabled={retomandoRastreio}
+                    aria-busy={retomandoRastreio}
+                    className="px-2 py-1 bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/40 rounded-lg text-[10px] font-semibold transition-colors disabled:opacity-60 disabled:cursor-wait flex items-center gap-1"
                   >
-                    Tentar de novo
+                    {retomandoRastreio && <Loader2 size={10} className="animate-spin" />}
+                    <span>Tentar de novo</span>
                   </button>
                 )}
                 {trackingTelemetry && !trackingTelemetry.batteryOptimizationIgnored && (
