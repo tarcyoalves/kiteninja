@@ -47,12 +47,16 @@ export const EventsAndAlertsView: React.FC = () => {
     beachMode,
     createDownwind,
     setActiveTab,
+    setRiderIdAberto,
     refreshEventsAndAlerts,
   } = useKiteData();
   const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
+  const [erroEntrar, setErroEntrar] = useState<string | null>(null);
+  /** Downwind com geração de link de convite em voo — ver copiarLinkConvite. */
+  const [gerandoConviteId, setGerandoConviteId] = useState<string | null>(null);
 
   /** Abre o mapa ao vivo do downwind numa página própria. */
   const abrirDownwindAoVivo = useCallback((id: string) => {
@@ -64,7 +68,26 @@ export const EventsAndAlertsView: React.FC = () => {
    * — aqui é o atalho de uma toque, para quem acabou de criar o downwind e só
    * quer mandar no grupo do WhatsApp.
    */
+  /**
+   * Gera um convite por link e copia.
+   *
+   * DOIS DEFEITOS QUE ISTO CORRIGE
+   *
+   * (1) Cada toque criava um convite NOVO no banco
+   * (`INSERT INTO downwind_user_invites`, sem reaproveitar nada). Sem trava e
+   * sem nada girando na tela, o segundo toque durante a espera virava um
+   * segundo token válido — e a área de transferência ficava com o último,
+   * enquanto o primeiro seguia por aí, válido, sem ninguém saber.
+   *
+   * (2) A falha era muda: `catch {}` e um `return` no `!res.ok`. Sem rede, o
+   * botão não fazia absolutamente nada — que é exatamente a queixa de "cliquei
+   * e não respondeu". Agora o motivo aparece no mesmo aviso que o resto da
+   * aba já usa.
+   */
   const copiarLinkConvite = useCallback(async (id: string) => {
+    if (gerandoConviteId) return;
+    setErroEntrar(null);
+    setGerandoConviteId(id);
     try {
       const res = await fetch(`/api/downwind/${id}/invites`, {
         method: 'POST',
@@ -72,16 +95,26 @@ export const EventsAndAlertsView: React.FC = () => {
         body: JSON.stringify({ createLink: true, role: 'velejador' }),
       });
       const body = await res.json().catch(() => null);
-      if (!res.ok || !body?.token) return;
-      await navigator.clipboard.writeText(`${window.location.origin}/?dw_invite=${body.token}`);
-      setLinkCopiadoId(id);
+      if (!res.ok || !body?.token) {
+        setErroEntrar(body?.error ?? 'Não foi possível gerar o link de convite.');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(`${window.location.origin}/?dw_invite=${body.token}`);
+        setLinkCopiadoId(id);
+      } catch {
+        // O convite EXISTE — só a cópia automática falhou (contexto não
+        // seguro, permissão negada). Dizer isso importa: senão a pessoa
+        // acha que não gerou e toca de novo, criando outro token.
+        setErroEntrar('O convite foi criado, mas não consegui copiar. Use "Convidar velejadores".');
+      }
     } catch {
-      // Sem clipboard (contexto inseguro) ou sem rede: o botão simplesmente
-      // não confirma. O caminho completo continua no ConvidarVelejadoresSheet.
+      setErroEntrar('Sem conexão para gerar o link. Tente de novo.');
+    } finally {
+      setGerandoConviteId(null);
     }
-  }, []);
+  }, [gerandoConviteId]);
 
-  const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   const [apagandoId, setApagandoId] = useState<string | null>(null);
   const [resumoDownwindId, setResumoDownwindId] = useState<string | null>(null);
   /** Evento cuja lista de confirmados está aberta ({id, titulo}), ou null. */
@@ -829,9 +862,16 @@ export const EventsAndAlertsView: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => copiarLinkConvite(event.downwindId as string)}
-                      className="flex-1 py-2 rounded-xl text-xs font-black bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                      disabled={gerandoConviteId !== null}
+                      aria-busy={gerandoConviteId === event.downwindId}
+                      className="flex-1 py-2 rounded-xl text-xs font-black bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-60 disabled:active:scale-100 disabled:cursor-wait"
                     >
-                      {linkCopiadoId === event.downwindId ? (
+                      {gerandoConviteId === event.downwindId ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Gerando...</span>
+                        </>
+                      ) : linkCopiadoId === event.downwindId ? (
                         <>
                           <Check size={14} className="text-emerald-400" />
                           <span>Link copiado</span>
@@ -992,6 +1032,7 @@ export const EventsAndAlertsView: React.FC = () => {
                   event.downwindStatus !== 'encerrado' &&
                   event.downwindStatus !== 'cancelado' && (
                     <button
+                      type="button"
                       onClick={() => handleEntrarDownwind(event.downwindId!)}
                       disabled={entrandoEmId === event.downwindId}
                       className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-xs font-black active:scale-95 transition-all shadow-md shadow-cyan-500/20 disabled:opacity-60"
@@ -1081,6 +1122,7 @@ export const EventsAndAlertsView: React.FC = () => {
           eventoId={participantesDe.id}
           titulo={participantesDe.titulo}
           onFechar={() => setParticipantesDe(null)}
+          onAbrirPerfil={setRiderIdAberto}
         />
       )}
 

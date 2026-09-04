@@ -19,6 +19,15 @@ interface Props {
   eventoId: string;
   titulo: string;
   onFechar: () => void;
+  /**
+   * Abre o perfil público do velejador tocado.
+   *
+   * Tocar em alguém numa lista de gente abre essa pessoa — é o que o resto do
+   * app já faz (feed, busca, notificações, detalhe do velejo) e o que qualquer
+   * um tenta aqui por reflexo. Sem isto, a resposta para "quem é esse
+   * Fulano que vai?" era nenhuma: a lista mostrava o nome e parava ali.
+   */
+  onAbrirPerfil: (riderId: string) => void;
 }
 
 /**
@@ -34,7 +43,12 @@ interface Props {
  * Confirmar presença serve para o grupo se organizar. Saber quem vai é o
  * motivo de o botão existir; sem isso o número é enfeite.
  */
-export const ParticipantesEventoSheet: React.FC<Props> = ({ eventoId, titulo, onFechar }) => {
+export const ParticipantesEventoSheet: React.FC<Props> = ({
+  eventoId,
+  titulo,
+  onFechar,
+  onAbrirPerfil,
+}) => {
   const [participantes, setParticipantes] = useState<ParticipanteEvento[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -125,12 +139,24 @@ export const ParticipantesEventoSheet: React.FC<Props> = ({ eventoId, titulo, on
           )}
 
           {participantes?.map((p) => (
-            <div
+            /*
+             * Linha inteira clicável, e não só o avatar: o alvo é o dedo numa
+             * praia com sol, não o cursor. Fecha a folha ANTES de abrir o
+             * perfil — os dois são sobreposições, e deixar as duas abertas
+             * empilharia modal sobre modal com o fundo travado duas vezes.
+             */
+            <button
               key={p.id}
-              className={`flex items-center gap-3 p-2.5 rounded-2xl border ${
+              type="button"
+              onClick={() => {
+                onFechar();
+                onAbrirPerfil(p.id);
+              }}
+              aria-label={`Ver o perfil de ${p.name}`}
+              className={`w-full text-left flex items-center gap-3 p-2.5 rounded-2xl border transition-colors active:scale-[0.99] ${
                 p.souEu
-                  ? 'bg-emerald-500/10 border-emerald-500/30'
-                  : 'bg-slate-900/70 border-slate-800'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 hover:bg-emerald-500/15'
+                  : 'bg-slate-900/70 border-slate-800 hover:bg-slate-800/70'
               }`}
             >
               <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center">
@@ -162,7 +188,7 @@ export const ParticipantesEventoSheet: React.FC<Props> = ({ eventoId, titulo, on
                   )}
                 </div>
               </div>
-            </div>
+            </button>
           ))}
         </div>
 
