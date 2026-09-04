@@ -1,12 +1,19 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import { X, MapPin, Calendar, Wind, Download, Share2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { X, MapPin, Calendar, Wind, Download, Share2, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface PhotoLightboxModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Foto a mostrar — ou a capa, quando `imageUrls` traz o conjunto inteiro. */
   imageUrl: string;
+  /**
+   * Todas as fotos do velejo. Quando vem com mais de uma, o visualizador
+   * percorre o conjunto; quando falta, o comportamento é o de sempre (uma foto
+   * só), que é o que o anúncio do mercado usa — ele já pagina por fora.
+   */
+  imageUrls?: string[];
   title?: string;
   authorName?: string;
   spotName?: string;
@@ -20,11 +27,27 @@ interface PhotoLightboxModalProps {
  * O velejador abre isso para ver a condição na foto (tamanho da onda, se tinha
  * gente na água), então a imagem ganha o palco e os metadados ficam em barras
  * discretas por cima e por baixo.
+ *
+ * POR QUE O CONTEÚDO É UM COMPONENTE SEPARADO
+ *
+ * O índice da foto atual precisa voltar a zero toda vez que o visualizador
+ * abre com outro velejo. Zerar isso dentro de um efeito seria `setState` no
+ * corpo do efeito — o que o lint do React Compiler reprova, e com razão: é uma
+ * renderização a mais e um quadro com o índice errado. Montar e desmontar pela
+ * `key` resolve na origem, sem estado a sincronizar.
  */
-export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
-  isOpen,
+export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = (props) => {
+  const fotos = props.imageUrls?.length ? props.imageUrls : props.imageUrl ? [props.imageUrl] : [];
+  if (!props.isOpen || fotos.length === 0) return null;
+  // Chave curta: o conjunto pode ser data URL de 1,5 MB cada (fotos antigas),
+  // e comparar isso inteiro a cada render seria desperdício puro.
+  const chave = `${fotos.length}:${fotos[0].slice(0, 64)}`;
+  return <LightboxAberto key={chave} {...props} fotos={fotos} />;
+};
+
+const LightboxAberto: React.FC<PhotoLightboxModalProps & { fotos: string[] }> = ({
   onClose,
-  imageUrl,
+  fotos,
   title,
   authorName,
   spotName,
@@ -33,18 +56,49 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
 }) => {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const trilhoRef = useRef<HTMLDivElement>(null);
   // Para devolver o foco a quem abriu o modal ao fechar.
   const previouslyFocused = useRef<HTMLElement | null>(null);
+  const [indice, setIndice] = useState(0);
+
+  const total = fotos.length;
+  const imagemAtual = fotos[Math.min(indice, total - 1)];
+
+  /**
+   * Rolagem nativa com `scroll-snap`, igual ao carrossel do feed: arrastar com
+   * o dedo é o próprio navegador rolando. Os botões só empurram o mesmo
+   * trilho, então gesto e clique nunca discordam sobre onde a lista está.
+   */
+  const irPara = useCallback(
+    (i: number) => {
+      const el = trilhoRef.current;
+      const alvo = Math.max(0, Math.min(i, total - 1));
+      if (!el) {
+        setIndice(alvo);
+        return;
+      }
+      el.scrollTo({ left: alvo * el.clientWidth, behavior: 'smooth' });
+    },
+    [total]
+  );
 
   useEffect(() => {
-    if (!isOpen) return;
-
     previouslyFocused.current = document.activeElement as HTMLElement | null;
     closeButtonRef.current?.focus();
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         onClose();
+        return;
+      }
+
+      // Setas percorrem as fotos. Só quando há para onde ir: senão o teclado
+      // roubaria a seta de quem está rolando a página atrás por engano.
+      if (total > 1 && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+        e.preventDefault();
+        const el = trilhoRef.current;
+        const atual = el && el.clientWidth > 0 ? Math.round(el.scrollLeft / el.clientWidth) : 0;
+        irPara(atual + (e.key === 'ArrowRight' ? 1 : -1));
         return;
       }
 
@@ -78,7 +132,14 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
       document.body.style.overflow = previousOverflow;
       previouslyFocused.current?.focus();
     };
-  }, [isOpen, onClose]);
+  }, [onClose, total, irPara]);
+
+  const aoRolar = () => {
+    const el = trilhoRef.current;
+    if (!el || el.clientWidth === 0) return;
+    const novo = Math.round(el.scrollLeft / el.clientWidth);
+    setIndice((atual) => (atual === novo ? atual : novo));
+  };
 
   const handleShare = useCallback(async () => {
     if (navigator.share) {
@@ -86,7 +147,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
         await navigator.share({
           title: title || 'Foto de velejo no KiteNinja',
           text: spotName ? `Velejo em ${spotName}` : 'Velejo no KiteNinja',
-          url: imageUrl,
+          url: imagemAtual,
         });
       } catch {
         // Usuário cancelou o compartilhamento: não é erro.
@@ -95,14 +156,12 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
     }
 
     try {
-      await navigator.clipboard.writeText(imageUrl);
+      await navigator.clipboard.writeText(imagemAtual);
     } catch {
       // Clipboard bloqueado (contexto não seguro): o link "Abrir original"
       // abaixo continua sendo a saída manual.
     }
-  }, [imageUrl, title, spotName]);
-
-  if (!isOpen || !imageUrl) return null;
+  }, [imagemAtual, title, spotName]);
 
   return (
     <div
@@ -135,6 +194,14 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {total > 1 && (
+              <span
+                className="px-2.5 py-1 rounded-full bg-black/50 border border-white/10 text-[11px] font-black text-slate-200 backdrop-blur-md"
+                aria-live="polite"
+              >
+                {Math.min(indice, total - 1) + 1}/{total}
+              </span>
+            )}
             <button
               type="button"
               onClick={handleShare}
@@ -155,15 +222,92 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
           </div>
         </div>
 
-        <div className="relative flex-1 bg-black flex items-center justify-center min-h-[300px] sm:min-h-[480px] overflow-hidden">
-          {/* eslint-disable-next-line @next/next/no-img-element -- as fotos vêm
-              de domínios arbitrários informados pelo velejador; next/image
-              exigiria allowlist de hosts e quebraria com URL nova. */}
-          <img
-            src={imageUrl}
-            alt={title ? `Foto: ${title}` : 'Foto de velejo'}
-            className="w-full h-full max-h-[70vh] object-contain select-none"
-          />
+        <div className="relative flex-1 bg-black min-h-[300px] sm:min-h-[480px] overflow-hidden">
+          <div
+            ref={trilhoRef}
+            onScroll={total > 1 ? aoRolar : undefined}
+            className="flex h-full overflow-x-auto snap-x snap-mandatory no-scrollbar"
+            {...(total > 1
+              ? {
+                  role: 'group',
+                  'aria-roledescription': 'carrossel',
+                  'aria-label': 'Fotos do velejo',
+                }
+              : {})}
+          >
+            {fotos.map((url, i) => (
+              <div
+                key={`${i}-${url.slice(0, 48)}`}
+                className="shrink-0 w-full h-full flex items-center justify-center snap-center"
+                aria-label={total > 1 ? `${i + 1} de ${total}` : undefined}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- as fotos vêm
+                    de domínios arbitrários informados pelo velejador; next/image
+                    exigiria allowlist de hosts e quebraria com URL nova. */}
+                <img
+                  src={url}
+                  alt={
+                    total > 1
+                      ? `Foto ${i + 1} de ${total}${title ? ` — ${title}` : ''}`
+                      : title
+                        ? `Foto: ${title}`
+                        : 'Foto de velejo'
+                  }
+                  className="w-full h-full max-h-[70vh] object-contain select-none"
+                  // Só a primeira é buscada de imediato: as antigas são data URL
+                  // de até 1,5 MB, e quatro delas no 4G da praia custam caro para
+                  // quem talvez nem deslize.
+                  loading={i === 0 ? 'eager' : 'lazy'}
+                />
+              </div>
+            ))}
+          </div>
+
+          {total > 1 && (
+            <>
+              {/* Alvo de 44px de cada lado; some no primeiro/último para não
+                  oferecer um caminho que não existe. */}
+              {indice > 0 && (
+                <button
+                  type="button"
+                  onClick={() => irPara(indice - 1)}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-black/55 hover:bg-black/80 text-white border border-white/10 backdrop-blur-md transition-colors"
+                  aria-label="Foto anterior"
+                >
+                  <ChevronLeft size={20} aria-hidden="true" />
+                </button>
+              )}
+              {indice < total - 1 && (
+                <button
+                  type="button"
+                  onClick={() => irPara(indice + 1)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-11 h-11 flex items-center justify-center rounded-full bg-black/55 hover:bg-black/80 text-white border border-white/10 backdrop-blur-md transition-colors"
+                  aria-label="Próxima foto"
+                >
+                  <ChevronRight size={20} aria-hidden="true" />
+                </button>
+              )}
+
+              <div className="absolute bottom-2 left-0 right-0 flex items-center justify-center gap-1 pointer-events-none">
+                {fotos.map((url, i) => (
+                  <button
+                    key={`ponto-${i}-${url.slice(0, 24)}`}
+                    type="button"
+                    onClick={() => irPara(i)}
+                    aria-label={`Ver a foto ${i + 1}`}
+                    aria-current={indice === i}
+                    className="pointer-events-auto w-6 h-6 flex items-center justify-center"
+                  >
+                    <span
+                      className={`block rounded-full transition-all ${
+                        indice === i ? 'w-4 h-1.5 bg-white' : 'w-1.5 h-1.5 bg-white/50'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {(title || authorName || date) && (
@@ -188,7 +332,7 @@ export const PhotoLightboxModal: React.FC<PhotoLightboxModalProps> = ({
             </div>
 
             <a
-              href={imageUrl}
+              href={imagemAtual}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs border border-slate-700 transition-colors shrink-0"

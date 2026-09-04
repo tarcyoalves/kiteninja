@@ -4,24 +4,18 @@ import React, { useState } from 'react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import {
+  AlertTriangle,
   Compass,
   Calendar,
   Clock,
-  Wind,
-  Waves,
+  Loader2,
   Star,
   Plus,
   Trash2,
-  Share2,
-  Gauge,
-  ArrowUpCircle,
   ShieldCheck,
-  TrendingUp,
-  MapPin,
-  Sparkles,
+  X,
 } from 'lucide-react';
 import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
-import { SessionLog, Discipline } from '../types';
 import { AvisoVelejoNaoRegistrado } from '../components/AvisoVelejoNaoRegistrado';
 
 export const SessionsView: React.FC = () => {
@@ -29,8 +23,12 @@ export const SessionsView: React.FC = () => {
   const { user } = useAuth();
 
   const [disciplineFilter, setDisciplineFilter] = useState<string>('ALL');
+  const [apagandoId, setApagandoId] = useState<string | null>(null);
+  const [erroExclusao, setErroExclusao] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<{
     imageUrl: string;
+    /** Todas as fotos do velejo — o visualizador percorre o conjunto. */
+    imageUrls?: string[];
     title?: string;
     spotName?: string;
     windKnots?: number;
@@ -48,13 +46,24 @@ export const SessionsView: React.FC = () => {
   const totalHours = Math.round((totalMinutes / 60) * 10) / 10;
   const totalKm = Math.round(sessions.reduce((acc, s) => acc + (s.distanceKm || 0), 0) * 10) / 10;
   const highestJump = Math.max(0, ...sessions.map(s => s.highestJumpM || 0));
-  const maxSpeed = Math.max(0, ...sessions.map(s => s.maxSpeedKnots || 0));
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  /**
+   * Excluir um velejo — com resposta na tela, em vez de em silêncio.
+   *
+   * `apagandoId` trava o botão durante a ida ao servidor: sem isso, um segundo
+   * toque abria um segundo `confirm()` para uma linha que já estava sendo
+   * apagada. E o erro agora aparece: antes a linha voltava sozinha à lista,
+   * sem uma palavra, o que na praia é indistinguível de bug do app.
+   */
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Tem certeza que deseja excluir esta sessão do seu logbook?')) {
-      deleteSession(id);
-    }
+    if (apagandoId) return;
+    if (!confirm('Tem certeza que deseja excluir esta sessão do seu logbook?')) return;
+    setErroExclusao(null);
+    setApagandoId(id);
+    const res = await deleteSession(id);
+    setApagandoId(null);
+    if (!res.ok) setErroExclusao(res.error ?? 'Não foi possível excluir o velejo.');
   };
 
   return (
@@ -62,6 +71,26 @@ export const SessionsView: React.FC = () => {
       {/* Primeiro item da tela de propósito: é aqui que a pessoa vem procurar
           o velejo que não apareceu. Ver components/AvisoVelejoNaoRegistrado. */}
       <AvisoVelejoNaoRegistrado />
+
+      {/* A exclusão que falhou precisa DIZER que falhou: a linha voltando
+          sozinha à lista não é mensagem, é confusão. */}
+      {erroExclusao && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 p-3 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 text-xs"
+        >
+          <AlertTriangle size={15} className="shrink-0 mt-0.5 text-rose-400" />
+          <span className="flex-1 min-w-0">{erroExclusao}</span>
+          <button
+            type="button"
+            onClick={() => setErroExclusao(null)}
+            className="shrink-0 p-1 -m-1 text-rose-300 hover:text-white"
+            aria-label="Fechar aviso"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Top Banner KPI Cards */}
       <div
@@ -174,22 +203,43 @@ export const SessionsView: React.FC = () => {
                     ))}
                   </div>
                   <button
+                    type="button"
                     onClick={e => handleDelete(session.id, e)}
-                    className="p-2 min-w-11 min-h-11 rounded text-slate-400 hover:text-rose-500 transition-colors ml-2 flex items-center justify-center"
+                    disabled={apagandoId !== null}
+                    aria-busy={apagandoId === session.id}
+                    className="p-2 min-w-11 min-h-11 rounded text-slate-400 hover:text-rose-500 transition-colors ml-2 flex items-center justify-center disabled:opacity-50 disabled:cursor-wait"
                     aria-label="Excluir sessão"
                   >
-                    <Trash2 size={15} />
+                    {apagandoId === session.id ? (
+                      <Loader2 size={15} className="animate-spin text-rose-400" />
+                    ) : (
+                      <Trash2 size={15} />
+                    )}
                   </button>
                 </div>
               </div>
 
-              {/* Photo preview if present */}
+              {/*
+                * FOTOS DO VELEJO.
+                *
+                * Mostra a PRIMEIRA como capa, com a contagem quando há mais —
+                * tocar abre o visualizador, que percorre todas. Antes daqui
+                * existir, um velejo com quatro fotos mostrava uma no logbook
+                * do dono enquanto o feed mostrava as quatro.
+                */}
+              {(session.fotoUrls?.length ?? 0) > 1 && (
+                <span className="self-start mb-1 px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-[10px] font-black text-slate-300">
+                  {session.fotoUrls!.length} fotos
+                </span>
+              )}
               {session.photoUrl && (
                 <button
                   type="button"
                   onClick={() =>
                     setLightbox({
                       imageUrl: session.photoUrl!,
+                      // Todas as fotos vão para o visualizador, não só a capa.
+                      imageUrls: session.fotoUrls?.length ? session.fotoUrls : [session.photoUrl!],
                       title: session.spotName,
                       spotName: session.spotLocation,
                       windKnots: session.avgWindKnots,
@@ -264,6 +314,7 @@ export const SessionsView: React.FC = () => {
         isOpen={lightbox !== null}
         onClose={() => setLightbox(null)}
         imageUrl={lightbox?.imageUrl ?? ''}
+        imageUrls={lightbox?.imageUrls}
         title={lightbox?.title}
         authorName={user?.name}
         spotName={lightbox?.spotName}

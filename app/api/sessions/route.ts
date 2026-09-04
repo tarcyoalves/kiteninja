@@ -58,6 +58,14 @@ export async function GET() {
         s.highest_jump_m,
         s.notes,
         s.photo_url,
+        -- Todas as fotos, na ordem escolhida. COALESCE com photo_url porque a
+        -- gravação em session_photos acontece DEPOIS do INSERT da sessão e em
+        -- try/catch (a sessão nunca cai por causa de foto): se aquele passo
+        -- falhar, a capa ainda existe aqui e o velejo nao aparece sem imagem.
+        COALESCE((
+          SELECT array_agg(sp.url ORDER BY sp.ordem ASC, sp.created_at ASC)
+          FROM session_photos sp WHERE sp.session_id = s.id
+        ), CASE WHEN s.photo_url IS NULL THEN NULL ELSE ARRAY[s.photo_url] END) AS foto_urls,
         s.is_public,
         s.created_at,
         s.trilha_reduzida,
@@ -104,7 +112,16 @@ export async function GET() {
           maxSpeedKnots: r.max_speed_knots !== null ? Number(r.max_speed_knots) : undefined,
           highestJumpM: r.highest_jump_m !== null ? Number(r.highest_jump_m) : undefined,
           notes: r.notes ? String(r.notes) : undefined,
-          photoUrl: r.photo_url ? String(r.photo_url) : undefined,
+          fotoUrls: Array.isArray(r.foto_urls) ? (r.foto_urls as unknown[]).map(String) : [],
+          // Primeira foto, para quem já lia este campo (o card do logbook e o
+          // modal de detalhe). Sai de `foto_urls` para os dois nunca
+          // divergirem — antes vinha da coluna legada e passou a ser NULL
+          // quando o logbook começou a mandar `fotoUrls`.
+          photoUrl: Array.isArray(r.foto_urls) && r.foto_urls[0]
+            ? String(r.foto_urls[0])
+            : r.photo_url
+              ? String(r.photo_url)
+              : undefined,
           isPublic: Boolean(r.is_public),
           likesCount: Number(r.likes_count ?? 0),
           commentsCount: Number(r.comments_count ?? 0),
@@ -217,7 +234,7 @@ export async function POST(request: Request) {
           ${durationMinutes}, ${discipline}, ${kiteSizeM2}, ${boardModel || null},
           ${avgWindKnots}, ${maxGustKnots}, ${windDirection || null}, ${tideCondition || null},
           ${waterCondition || null}, ${rating}, ${distanceKm}, ${maxSpeedKnots},
-          ${highestJumpM}, ${notes || null}, ${photoUrl || null}, ${isPublic},
+          ${highestJumpM}, ${notes || null}, ${fotos[0] ?? null}, ${isPublic},
           ${trilhaReduzida ? JSON.stringify(trilhaReduzida) : null}::jsonb, ${latInicial}, ${lngInicial}
         )
         RETURNING *

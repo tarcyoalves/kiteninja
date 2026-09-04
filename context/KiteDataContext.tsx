@@ -42,7 +42,7 @@ interface KiteDataContextType {
   addSession: (
     session: Omit<SessionLog, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>
   ) => Promise<{ ok: boolean; error?: string }>;
-  deleteSession: (sessionId: string) => void;
+  deleteSession: (sessionId: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Community Feed
   posts: CommunityPost[];
@@ -59,6 +59,8 @@ interface KiteDataContextType {
   events: KiteEvent[];
   /** Downwinds visíveis para este velejador — ver GET /api/downwind. */
   toggleEventRegistration: (eventId: string) => void;
+  /** Ids de evento com confirmação de presença em voo — o botão fica travado. */
+  inscricoesEmAndamento: ReadonlySet<string>;
   deleteEvent: (eventId: string) => Promise<{ ok: boolean; error?: string }>;
   /**
    * Recarrega eventos/downwinds e alertas de segurança do servidor.
@@ -342,6 +344,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [safetyAlerts, setSafetyAlerts] = useState<SafetyOccurrence[]>([]);
   const [events, setEvents] = useState<KiteEvent[]>([]);
+  /**
+   * Eventos com confirmação de presença em voo.
+   *
+   * Estado, e não `useRef`, porque o botão precisa REAGIR a isso: uma trava
+   * invisível que só ignora o segundo toque deixa o velejador batendo num
+   * botão que parece vivo. Ver `toggleEventRegistration`.
+   */
+  const [inscricoesEmAndamento, setInscricoesEmAndamento] = useState<ReadonlySet<string>>(
+    () => new Set()
+  );
   /*
    * A lista de downwinds. Vem de `GET /api/downwind`, rota que não existia:
    * um downwind privado não gera evento e não aparecia em lugar nenhum — nem
@@ -946,11 +958,33 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  const deleteSession = (sessionId: string) => {
+  /**
+   * Apaga um velejo do logbook.
+   *
+   * POR QUE DEVOLVE ERRO EM VEZ DE ENGOLIR
+   *
+   * A versão anterior era otimista e muda: sumia o card e, se o servidor
+   * recusasse, chamava `loadSessions()`. A linha reaparecia sozinha, sem
+   * mensagem nenhuma — e do lado de cá da tela isso é indistinguível de "o
+   * app apagou e depois desapagou", ou de um bug de lista. Pior no 4G da
+   * praia, onde a recusa mais comum é a rede, não a permissão.
+   *
+   * Mesma forma de `deleteEvent`, de propósito: quem chama decide o que
+   * mostrar, e as duas exclusões do app se comportam igual.
+   */
+  const deleteSession = async (sessionId: string): Promise<{ ok: boolean; error?: string }> => {
+    const anterior = sessions;
     setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-    api(`/api/sessions/${sessionId}`, { method: 'DELETE' }).catch(() => {
-      loadSessions();
-    });
+    try {
+      await api(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+      return { ok: true };
+    } catch (err) {
+      // Restaura a lista que existia antes, e não `loadSessions()`: recarregar
+      // custa uma volta na rede que acabou de falhar, e ainda apagaria um
+      // velejo recém-criado que só existe aqui.
+      setSessions(anterior);
+      return { ok: false, error: err instanceof Error ? err.message : 'Não foi possível excluir.' };
+    }
   };
 
   const addPost = async (
@@ -1021,22 +1055,71 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       .catch(() => {});
   };
 
+  /**
+   * Confirmar/desmarcar presença — um pedido por evento de cada vez.
+   *
+   * O DEFEITO QUE ISTO CORRIGE
+   *
+   * O botão não tinha trava nenhuma: cada toque virava um POST, e a rota era
+   * um alternador cego. Dois toques rápidos (o dedo repete quando a rede da
+   * praia demora) mandavam duas requisições que se desfaziam, e a tela ficava
+   * com o que voltasse por último — podendo discordar do banco para sempre,
+   * sem erro nenhum em lugar nenhum.
+   *
+   * São duas causas, e as duas são consertadas na raiz:
+   *
+   *  - o cliente manda a INTENÇÃO (`participar`), não "inverta o que estiver
+   *    lá" — repetir a mesma intenção passa a não mudar nada;
+   *  - enquanto um pedido daquele evento está em voo, o botão fica
+   *    desabilitado (`inscricoesEmAndamento`), então o segundo toque nem sai.
+   *
+   * Nada disso é temporizador: um `setTimeout` esconderia o toque repetido e
+   * deixaria a divergência de estado exatamente onde estava.
+   */
   const toggleEventRegistration = (eventId: string) => {
+    if (inscricoesEmAndamento.has(eventId)) return;
+
+    const atual = events.find((ev) => ev.id === eventId);
+    if (!atual) return;
+    const queroParticipar = !atual.isRegistered;
+
+    setInscricoesEmAndamento((prev) => {
+      const proximo = new Set(prev);
+      proximo.add(eventId);
+      return proximo;
+    });
+
     setEvents((prev) =>
-      prev.map((ev) => {
-        if (ev.id !== eventId) return ev;
-        const isReg = !ev.isRegistered;
-        return { ...ev, isRegistered: isReg, participantsCount: isReg ? ev.participantsCount + 1 : Math.max(0, ev.participantsCount - 1) };
-      })
+      prev.map((ev) =>
+        ev.id === eventId
+          ? {
+              ...ev,
+              isRegistered: queroParticipar,
+              participantsCount: queroParticipar
+                ? ev.participantsCount + 1
+                : Math.max(0, ev.participantsCount - 1),
+            }
+          : ev
+      )
     );
 
-    api<{ isRegistered: boolean; participantsCount: number }>(`/api/events/${eventId}/register`, { method: 'POST' })
+    api<{ isRegistered: boolean; participantsCount: number }>(`/api/events/${eventId}/register`, {
+      method: 'POST',
+      body: JSON.stringify({ participar: queroParticipar }),
+    })
       .then((res) => {
         setEvents((prev) =>
           prev.map((ev) => (ev.id === eventId ? { ...ev, isRegistered: res.isRegistered, participantsCount: res.participantsCount } : ev))
         );
       })
-      .catch(() => loadFeedAndEvents());
+      .catch(() => loadFeedAndEvents())
+      .finally(() => {
+        setInscricoesEmAndamento((prev) => {
+          const proximo = new Set(prev);
+          proximo.delete(eventId);
+          return proximo;
+        });
+      });
   };
 
   const deleteEvent = async (eventId: string): Promise<{ ok: boolean; error?: string }> => {
@@ -1293,6 +1376,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         addSafetyAlert,
         events,
         toggleEventRegistration,
+        inscricoesEmAndamento,
         deleteEvent,
         refreshEventsAndAlerts: loadFeedAndEvents,
         avisarInicioDeVelejo,

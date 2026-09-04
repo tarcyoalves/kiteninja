@@ -270,6 +270,8 @@ export interface SessionDetail {
   highestJumpM?: number;
   notes?: string;
   photoUrl?: string;
+  /** Todas as fotos, na ordem escolhida. `photoUrl` é a primeira. */
+  fotoUrls?: string[];
   isPublic: boolean;
   trilhaReduzida?: Array<[number, number, number]>;
   authorId: string;

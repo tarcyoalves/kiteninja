@@ -47,6 +47,7 @@ interface SessaoDetalheRow {
   highest_jump_m: unknown;
   notes: unknown;
   photo_url: unknown;
+  foto_urls: unknown;
   is_public: unknown;
   trilha_reduzida: unknown;
   created_at: unknown;
@@ -87,6 +88,12 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
         s.water_condition, s.rating, s.distance_km, s.max_speed_knots,
         s.highest_jump_m, s.notes, s.photo_url, s.is_public, s.trilha_reduzida,
         s.created_at,
+        -- Mesma leitura da listagem: todas as fotos, com a capa legada como
+        -- rede de segurança. Ver o comentario em app/api/sessions/route.ts.
+        COALESCE((
+          SELECT array_agg(sp.url ORDER BY sp.ordem ASC, sp.created_at ASC)
+          FROM session_photos sp WHERE sp.session_id = s.id
+        ), CASE WHEN s.photo_url IS NULL THEN NULL ELSE ARRAY[s.photo_url] END) AS foto_urls,
         u.name AS author_name, u.avatar_url AS author_avatar_url,
         u.rider_id AS author_rider_id, u.country_flag AS author_country_flag,
         COALESCE((
@@ -129,7 +136,12 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       maxSpeedKnots: r.max_speed_knots !== null ? Number(r.max_speed_knots) : undefined,
       highestJumpM: r.highest_jump_m !== null ? Number(r.highest_jump_m) : undefined,
       notes: r.notes ? String(r.notes) : undefined,
-      photoUrl: r.photo_url ? String(r.photo_url) : undefined,
+      fotoUrls: Array.isArray(r.foto_urls) ? (r.foto_urls as unknown[]).map(String) : [],
+      photoUrl: Array.isArray(r.foto_urls) && r.foto_urls[0]
+        ? String(r.foto_urls[0])
+        : r.photo_url
+          ? String(r.photo_url)
+          : undefined,
       isPublic: Boolean(r.is_public),
       trilhaReduzida: Array.isArray(r.trilha_reduzida)
         ? (r.trilha_reduzida as SessionDetail['trilhaReduzida'])
