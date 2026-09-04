@@ -192,3 +192,4 @@ O estado antigo de `master` está preservado na branch
 | `FOTOS-DO-VELEJO.md` | Fotos saíram do Postgres para o Blob; várias por velejo, e por que a migração copia sem converter |
 | `VARREDURA-CHAT.md` | Cinco defeitos do chat, quatro deles "código de mouse rodando num dedo" |
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |
+| `AUDITORIA-EVENTOS-VELEJO-DOWNWIND.md` | Sete defeitos, seis deles o mesmo botão sem trava nem sinal; a forma do conserto |
