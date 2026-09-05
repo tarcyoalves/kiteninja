@@ -197,3 +197,4 @@ O estado antigo de `master` está preservado na branch
 | `VARREDURA-DOWNWIND-GRAVACAO.md` | Gravar/fechar/salvar/registrar no downwind: quatro defeitos no fim do fluxo, e o que já estava certo |
 | `VELOCIDADE-EM-KMH.md` | A mesma medida em duas unidades em telas diferentes; velejo em km/h, vento em nós |
 | `DOWNWIND-COM-VARIOS-VELEJADORES.md` | O DW de grupo: cancelar apagava tudo, alarme falso de sem-sinal, e o que já estava certo |
+| `LINK-DE-APOIO-EM-TERRA.md` | O link do motorista funciona no DW; no velejo solo o botão compartilha a home do app |
