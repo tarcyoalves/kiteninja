@@ -15,6 +15,8 @@ import {
 } from '../lib/downwindTracker';
 import { useAoMudar } from '../lib/useAoMudar';
 import { mapaMostraDownwind } from '../lib/activity';
+import { useKiteData } from './KiteDataContext';
+import { DISTANCIA_MINIMA_PARA_REGISTRO_KM } from '../lib/trilhaSessao';
 
 /**
  * Estado do mapa ao vivo do downwind — se o usuário está numa travessia agora.
@@ -189,6 +191,12 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, user } = useAuth();
+  /*
+   * DownwindProvider é montado DENTRO de KiteDataProvider (ver app/page.tsx),
+   * então ler o logbook daqui é legítimo — e é o que permite registrar o
+   * velejo de quem teve a travessia encerrada por outra pessoa.
+   */
+  const { abrirLoggerComResumo } = useKiteData();
   const [downwindAtivo, setDownwindAtivo] = useState<DownwindAtivo | null>(null);
   const [carregando, setCarregando] = useState(true);
   /*
@@ -426,6 +434,93 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [deveRastrear, idDw]);
 
+  /**
+   * Guarda o último `downwindAtivo` visto, para reparar a TRANSIÇÃO.
+   *
+   * Ref e não estado: isto é memória entre duas respostas de `recarregar`,
+   * não algo que a tela desenha. Como estado, entraria na cascata de renders
+   * que o comentário de `recarregar` abaixo descreve.
+   */
+  const ultimoAtivoRef = useRef<DownwindAtivo | null>(null);
+
+  /**
+   * Downwind cuja participação EU encerrei — para não oferecer o logbook duas
+   * vezes.
+   *
+   * O último participante a encerrar fecha o downwind inteiro (ver o UPDATE em
+   * app/api/downwind/[id]/participantes/[userId]/route.ts). Nesse caso, a
+   * mesma ação faz `/ativo` devolver null com a minha participação ainda
+   * 'navegando' no snapshot anterior — o gatilho de "encerraram por mim"
+   * dispararia por cima do logbook que a própria tela já abriu.
+   */
+  const encerradoPorMimRef = useRef<string | null>(null);
+
+  /**
+   * O organizador encerrou a travessia — e o meu velejo não pode sumir com ela.
+   *
+   * Busca o resumo (que `resumirEPurgar` acabou de gravar no servidor a partir
+   * de `downwind_posicoes`), acha a minha linha e abre o logbook já preenchido,
+   * exatamente como acontece para quem encerra a própria participação.
+   *
+   * NÃO abre para qualquer um: só para quem estava 'navegando' (apoio em terra
+   * nunca chega a esse estado) e só acima da distância mínima de registro — a
+   * mesma trava de `valePenaRegistrarSessao`, para um toque acidental no
+   * Iniciar não virar um rascunho de velejo de 40 metros.
+   *
+   * Silencioso quando falha: quem acabou de sair da água não pode receber um
+   * erro de rede no lugar do mapa. O resumo continua acessível pelo card do
+   * evento.
+   */
+  const oferecerRegistroDoVelejo = useCallback(
+    async (anterior: DownwindAtivo) => {
+      try {
+        const dados = await api<{
+          downwind: {
+            nome: string;
+            iniciadoEm: string | null;
+            encerradoEm: string | null;
+            saida: { nome: string } | null;
+            chegada: { nome: string } | null;
+          };
+          participantes: Array<{
+            userId: string;
+            distanciaKm: number | null;
+            velocidadeMaxNos: number | null;
+            trilhaReduzida: Array<[number, number, number]>;
+          }>;
+        }>(`/api/downwind/${anterior.id}/resumo`);
+
+        const meu = dados.participantes.find((p) => p.userId === user?.id);
+        const distanciaKm = meu?.distanciaKm ?? 0;
+        if (!meu || distanciaKm < DISTANCIA_MINIMA_PARA_REGISTRO_KM) return;
+
+        const inicio = dados.downwind.iniciadoEm
+          ? new Date(dados.downwind.iniciadoEm)
+          : new Date();
+        const fim = dados.downwind.encerradoEm ? new Date(dados.downwind.encerradoEm) : new Date();
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const saida = dados.downwind.saida?.nome || anterior.nome;
+        const chegada = dados.downwind.chegada?.nome;
+
+        abrirLoggerComResumo({
+          distanceKm: Math.round(distanciaKm * 10) / 10,
+          maxSpeedKnots: Math.round((meu.velocidadeMaxNos ?? 0) * 10) / 10,
+          durationMinutes: Math.max(1, Math.round((fim.getTime() - inicio.getTime()) / 60000)),
+          date: [inicio.getFullYear(), pad2(inicio.getMonth() + 1), pad2(inicio.getDate())].join('-'),
+          startTime: `${pad2(inicio.getHours())}:${pad2(inicio.getMinutes())}`,
+          trilhaReduzida: meu.trilhaReduzida ?? [],
+          spotId: undefined,
+          customSpotName: chegada ? `${saida} \u2192 ${chegada}` : saida,
+          notes: `Downwind em grupo: ${dados.downwind.nome}`,
+        });
+      } catch {
+        // Ver o bloco acima: falhar aqui não pode virar erro na cara de quem
+        // acabou de sair da água.
+      }
+    },
+    [abrirLoggerComResumo, user?.id]
+  );
+
   const recarregar = useCallback(async () => {
     // Sem sessão não há o que buscar. O RESET de estado desse caso não mora
     // mais aqui: virou ajuste no render (`useAoMudar` de `isAuthenticated`),
@@ -436,6 +531,30 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     try {
       const data = await api<{ downwind: DownwindAtivo | null }>('/api/downwind/ativo');
       if (minhaVersao !== versaoRef.current) return;
+      /*
+       * O downwind sumiu enquanto eu ainda estava NAVEGANDO?
+       *
+       * Então quem encerrou foi outra pessoa — o organizador, ou o cancelamento
+       * — e o meu velejo estava prestes a ir para o lixo. `/api/downwind/ativo`
+       * só devolve 'aberto' e 'em_andamento', então quando o organizador
+       * encerra, na varredura seguinte a tela do downwind simplesmente sai do
+       * ar e volta o mapa normal.
+       *
+       * Até aqui, SÓ quem segurava "Encerrar velejo" no próprio aparelho tinha
+       * o velejo registrado. Numa travessia de grupo — que é o ponto de um
+       * downwind — bastava o organizador encerrar primeiro para todo o resto do
+       * grupo perder o registro de 20 km de água, sem aviso nenhum.
+       */
+      const anterior = ultimoAtivoRef.current;
+      ultimoAtivoRef.current = data.downwind;
+      if (
+        anterior &&
+        data.downwind?.id !== anterior.id &&
+        anterior.minhaParticipacao?.estado === 'navegando' &&
+        encerradoPorMimRef.current !== anterior.id
+      ) {
+        void oferecerRegistroDoVelejo(anterior);
+      }
       setDownwindAtivo(data.downwind);
       salvarDica(
         data.downwind ? { id: data.downwind.id, nome: data.downwind.nome, em: new Date().toISOString() } : null
@@ -446,7 +565,10 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     } finally {
       if (minhaVersao === versaoRef.current) setCarregando(false);
     }
-  }, [isAuthenticated]);
+    // `oferecerRegistroDoVelejo` é estável na prática (depende de
+    // `abrirLoggerComResumo`, que é useCallback sem deps, e do id do usuário,
+    // que só muda com login/logout — quando `isAuthenticated` já muda junto).
+  }, [isAuthenticated, oferecerRegistroDoVelejo]);
 
   // Dica de abertura: Neon free suspende por inatividade e a primeira consulta
   // demora visivelmente. Sem isto, reabrir o PWA na praia mostraria as abas
@@ -595,6 +717,9 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       }
     ) => {
       if (!downwindAtivo || !user) return { ok: false, error: 'Nenhum downwind ativo.' };
+      // Antes da chamada, não depois: o `recarregar()` lá embaixo é o que
+      // observa a transição, e ele roda dentro desta mesma função.
+      encerradoPorMimRef.current = downwindAtivo.id;
       try {
         await api(`/api/downwind/${downwindAtivo.id}/participantes/${user.id}`, {
           method: 'PATCH',
