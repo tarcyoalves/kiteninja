@@ -12,6 +12,7 @@ import {
 import { buscarParticipacao, ehUuid, listarParticipantes, resumirEPurgar } from '@/lib/downwindDb';
 import { podeEncerrarDownwind } from '@/lib/downwind';
 import { revogarTokensDoParticipante, revogarTodosTokensDoDownwind } from '@/lib/trackingToken';
+import { simplificarTrilha } from '@/lib/simplificarTrilha';
 
 export const dynamic = 'force-dynamic';
 
@@ -83,7 +84,7 @@ export async function PATCH(request: Request, ctx: Params) {
                 p.length === 3 &&
                 p.every((n) => typeof n === 'number' && Number.isFinite(n))
             );
-          trilhaReduzida = amostrarTrilha(bruta, LIMITE_TRILHA_RESUMO);
+          trilhaReduzida = simplificarTrilha(bruta, LIMITE_TRILHA_RESUMO);
         }
       }
     }

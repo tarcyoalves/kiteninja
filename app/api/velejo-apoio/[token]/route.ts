@@ -2,7 +2,8 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { hashToken, HttpError } from '@/lib/auth';
 import { motivoIndisponivel } from '@/lib/apoioSolo';
-import { amostrarTrilha, type PontoTrilha } from '@/lib/trilhaDownwind';
+import { type PontoTrilha } from '@/lib/trilhaDownwind';
+import { simplificarTrilha } from '@/lib/simplificarTrilha';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,7 +71,7 @@ export async function GET(_request: Request, ctx: Params) {
       const r = p as Record<string, unknown>;
       return [Number(r.lat), Number(r.lng), Date.parse(String(r.registrado_em))] as PontoTrilha;
     });
-    const trilha = amostrarTrilha(trilhaBruta, LIMITE_PONTOS);
+    const trilha = simplificarTrilha(trilhaBruta, LIMITE_PONTOS);
     const ultima = trilhaBruta.length > 0 ? trilhaBruta[trilhaBruta.length - 1] : null;
 
     return {

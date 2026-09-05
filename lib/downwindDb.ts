@@ -1,12 +1,12 @@
-import 'server-only';
+﻿import 'server-only';
 
 import { sql } from './db';
 import { hashToken } from './auth';
 import { haversineKm } from './geo';
-import { amostrarTrilha } from './trilhaDownwind';
 import type { PontoTrilha } from './trilhaDownwind';
 import type { MinhaParticipacao } from './downwindAcesso';
 import type { DownwindStatus } from './downwind';
+import { simplificarTrilha } from './simplificarTrilha';
 
 /** Pontos do resumo gravado no encerramento — ver lib/schema.sql. */
 const LIMITE_TRILHA_RESUMO = 200;
@@ -223,7 +223,7 @@ export async function resumirEPurgar(downwindId: string) {
         }
       }
 
-      const reduzida = amostrarTrilha(brutos, LIMITE_TRILHA_RESUMO);
+      const reduzida = simplificarTrilha(brutos, LIMITE_TRILHA_RESUMO);
 
       await sql`
         UPDATE downwind_participantes

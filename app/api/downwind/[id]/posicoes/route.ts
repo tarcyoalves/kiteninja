@@ -14,6 +14,7 @@ import { amostrarTrilha, MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ulti
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
 import { validarTokenRastreio } from '@/lib/trackingToken';
 import { resolverSilencio } from '@/lib/downwindSilencio';
+import { simplificarTrilha } from '@/lib/simplificarTrilha';
 
 /**
  * O coração do mapa ao vivo — o ÚNICO endpoint polled desta feature (a regra
@@ -207,7 +208,7 @@ export async function GET(request: Request, ctx: Params) {
           const row = r as Record<string, unknown>;
           return [Number(row.lat), Number(row.lng), Date.parse(String(row.registrado_em))] as PontoTrilha;
         });
-        trilha = amostrarTrilha(pontos, LIMITE_TRILHA_INICIAL);
+        trilha = simplificarTrilha(pontos, LIMITE_TRILHA_INICIAL);
       }
 
       const ultimo = ultimoTimestamp(trilha);

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Trilha de sessão do Modo Navegação: distância percorrida, velocidade atual
  * e velocidade máxima, calculadas a partir do `watchPosition` do navegador.
  *
@@ -19,7 +19,8 @@
  */
 
 import { haversineKm, LatLng } from './geo';
-import { amostrarTrilha, PontoTrilha } from './trilhaDownwind';
+import { PontoTrilha } from './trilhaDownwind';
+import { simplificarTrilha } from './simplificarTrilha';
 
 const NOS_POR_MPS = 1.94384;
 
@@ -442,7 +443,13 @@ export function paraPrefillLogbook(
     durationMinutes,
     date,
     startTime,
-    trilhaReduzida: amostrarTrilha(resumo.trilha ?? [], 200),
+    /*
+     * Douglas-Peucker, não decimação uniforme: é ESTA trilha que o card do
+     * feed e o detalhe do velejo desenham, e era ela que saía "praticamente
+     * reta". Mesmo orçamento de pontos, curvas de verdade — ver
+     * lib/simplificarTrilha.ts.
+     */
+    trilhaReduzida: simplificarTrilha(resumo.trilha ?? [], 200),
   };
 }
 
@@ -493,5 +500,5 @@ export function validarTrilhaReduzida(raw: unknown, limite = 200): PontoTrilha[]
     pontos.push([lat, lng, tsMs]);
   }
 
-  return amostrarTrilha(pontos, limite);
+  return simplificarTrilha(pontos, limite);
 }

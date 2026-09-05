@@ -199,3 +199,4 @@ O estado antigo de `master` está preservado na branch
 | `DOWNWIND-COM-VARIOS-VELEJADORES.md` | O DW de grupo: cancelar apagava tudo, alarme falso de sem-sinal, e o que já estava certo |
 | `LINK-DE-APOIO-EM-TERRA.md` | O link do motorista funciona no DW; no velejo solo o botão compartilha a home do app |
 | `PUSH-E-RASTREIO-NO-IPHONE.md` | Por que o push do chat chega e o do aviso não; e por que o iPhone para de rastrear com a tela apagada |
+| `TRILHA-COM-CURVAS-REAIS.md` | Por que as trilhas saíam retas (decimação uniforme) e o teste que quase mediu a coisa errada |
