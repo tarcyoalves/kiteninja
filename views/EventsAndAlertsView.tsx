@@ -239,9 +239,25 @@ export const EventsAndAlertsView: React.FC = () => {
           const seguidores = Number(body?.seguidores ?? 0);
           if (seguidores === 0) {
             setErroEntrar(
-              'Você ainda não tem seguidores para avisar. O downwind está na agenda de todo mundo — compartilhe o link de convite.'
+              'Você ainda não tem seguidores para avisar. O aviso vai para quem SEGUE você — o downwind já está na agenda de todo mundo; para chamar alguém específico, use o link de convite.'
             );
             return;
+          }
+          /*
+           * Avisou, mas ninguém tem push ligado.
+           *
+           * Não é falha: a notificação aparece no sininho do app de todos eles.
+           * Mas dizer isso importa — o relato foi "cliquei em avisar e não
+           * chegou push", e sem esta linha não há como distinguir "não enviou"
+           * de "enviou por um canal que essa pessoa não tem ligado". Push
+           * exige a assinatura do navegador, que no iPhone só existe com o app
+           * instalado na tela inicial.
+           */
+          const enviados = Number(body?.enviados ?? 0);
+          if (enviados === 0) {
+            setErroEntrar(
+              `Avisamos ${seguidores} ${seguidores === 1 ? 'amigo' : 'amigos'} no app (aparece no sininho deles). Nenhum tem notificação do celular ligada, então não saiu push.`
+            );
           }
           setAvisoEnviadoId(downwindId);
           await refreshEventsAndAlerts();

@@ -88,3 +88,46 @@ describe('Visual Status do Rastreamento (lib/downwindStatusVisual.ts)', () => {
     expect(estado.kind).toBe('iniciando');
   });
 });
+describe('web/PWA sem serviço nativo (o caso do iPhone)', () => {
+  const webComTelaAcesa = {
+    isServiceRunning: false,
+    statusTrackingNativo: null,
+    telaTravadaLigada: true,
+    telemetry: null,
+  };
+
+  it('NÃO é verde — verde quer dizer "pode ir", e no iPhone isso é falso', () => {
+    /*
+     * O relato: "veja se mesmo com a tela do iPhone fechada continua
+     * rastreando, pois mesmo com a tela fechada chega push do chat".
+     *
+     * Não continua. O push chega porque quem entrega é o sistema operacional;
+     * o GPS para porque o iOS suspende a página web ao bloquear a tela. O app
+     * dizia verde, "Localização sendo compartilhada" — e o grupo achava que
+     * enxergava alguém que tinha sumido.
+     */
+    const estado = derivarEstadoCompartilhamento(webComTelaAcesa);
+    expect(estado.cor).not.toBe('verde');
+    expect(estado.cor).toBe('amarelo');
+  });
+
+  it('a condição está no TÍTULO, não escondida no detalhe', () => {
+    // Quem olha de relance lê o título. A ressalva em letra pequena embaixo de
+    // um "está tudo certo" não é aviso, é rodapé.
+    const estado = derivarEstadoCompartilhamento(webComTelaAcesa);
+    expect(estado.titulo).toMatch(/tela acesa/i);
+    expect(estado.detalhe).toMatch(/para/i);
+  });
+
+  it('com serviço nativo ativo continua verde — lá o rastreio sobrevive à tela', () => {
+    // A distinção é o ponto: no Android com o Foreground Service o verde é
+    // verdade. Rebaixar os dois casos igualaria plataformas que não são iguais.
+    const estado = derivarEstadoCompartilhamento({
+      isServiceRunning: true,
+      statusTrackingNativo: 'ativo',
+      telaTravadaLigada: true,
+      telemetry: null,
+    });
+    expect(estado.cor).toBe('verde');
+  });
+});
