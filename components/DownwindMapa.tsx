@@ -13,6 +13,7 @@ import { dividirCauda, type PontoTrilha } from '@/lib/trilhaDownwind';
 import { opcoesDeTile } from '@/lib/mapTiles';
 import type { DownwindParticipanteMapa } from '@/lib/useDownwindPosicoes';
 import type { DownwindPonto } from '@/context/DownwindContext';
+import { MarcadorSuave } from './MarcadorSuave';
 
 /**
  * O mapa ao vivo do downwind — Leaflet dedicado, separado de
@@ -111,9 +112,24 @@ function criarIconeVelejador(p: DownwindParticipanteMapa, agora: Date, ehVoce: b
     ? `<div style="position:absolute;top:-4px;right:-2px;font-size:11px;">👑</div>`
     : '';
 
+  /*
+   * A SETA DE RUMO fica escondida (`opacity:0`) até haver movimento.
+   * `MarcadorSuave` a encontra por `data-seta`, gira e mostra quando o
+   * velejador de fato se desloca entre duas leituras — ver
+   * lib/animacaoMarcador.ts sobre por que rumo de dois pontos iguais não vale.
+   *
+   * Fica FORA do círculo, num contêiner que gira inteiro: girar o avatar
+   * deixaria o rosto de lado.
+   */
+  const seta = `
+      <div data-seta style="position:absolute;inset:0;opacity:0;transition:opacity .3s;transform-origin:50% 50%;pointer-events:none;">
+        <div style="position:absolute;left:50%;top:-9px;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid ${corAnel};filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));"></div>
+      </div>`;
+
   const html = `
     <div style="${esmaecido} width:${tamanho}px;height:${tamanho}px;position:relative;">
       <div style="width:100%;height:100%;border-radius:9999px;border:3px solid ${corAnel};box-shadow:0 2px 8px rgba(0,0,0,.5);overflow:hidden;">${miolo}</div>
+      ${seta}
       ${coroa}
       ${ehVoce ? `<div style="position:absolute;inset:-4px;border-radius:9999px;border:2px solid #22d3ee;"></div>` : ''}
     </div>
@@ -316,8 +332,11 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
         </>
       )}
 
+      {/* MarcadorSuave, não Marker: a posição chega a cada 30s e o marcador
+          DESLIZA até ela em vez de teleportar — sem isso, meio minuto parado,
+          um salto, e de novo parado. Ver lib/animacaoMarcador.ts. */}
       {participantesComPosicao.map((p) => (
-        <Marker
+        <MarcadorSuave
           key={p.userId}
           position={[p.lat as number, p.lng as number]}
           icon={

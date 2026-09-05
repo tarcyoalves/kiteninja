@@ -3,11 +3,12 @@
 import 'leaflet/dist/leaflet.css';
 
 import React, { useEffect, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import { opcoesDeTile } from '@/lib/mapTiles';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
+import { MarcadorSuave } from './MarcadorSuave';
 
 interface Props {
   trilha: PontoTrilha[];
@@ -62,9 +63,16 @@ export const TrilhaAoVivoMapa: React.FC<Props> = ({ trilha, ultimaPosicao, nome 
     () =>
       L.divIcon({
         className: '',
-        html: `<div style="width:38px;height:38px;border-radius:9999px;border:3px solid #22d3ee;background:#0f172a;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.18);">${escaparHtml(
-          iniciaisDoNome(nome)
-        )}</div>`,
+        // Mesma seta de rumo do mapa do downwind: `MarcadorSuave` a encontra
+        // por `data-seta`, gira e mostra quando há movimento de verdade.
+        html: `<div style="width:38px;height:38px;position:relative;">
+          <div style="width:100%;height:100%;border-radius:9999px;border:3px solid #22d3ee;background:#0f172a;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;color:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.18);">${escaparHtml(
+            iniciaisDoNome(nome)
+          )}</div>
+          <div data-seta style="position:absolute;inset:0;opacity:0;transition:opacity .3s;transform-origin:50% 50%;pointer-events:none;">
+            <div style="position:absolute;left:50%;top:-9px;transform:translateX(-50%);width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid #22d3ee;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6));"></div>
+          </div>
+        </div>`,
         iconSize: [38, 38],
         iconAnchor: [19, 19],
       }),
@@ -91,7 +99,7 @@ export const TrilhaAoVivoMapa: React.FC<Props> = ({ trilha, ultimaPosicao, nome 
         </>
       )}
       {ultimaPosicao && (
-        <Marker position={[ultimaPosicao.lat, ultimaPosicao.lng]} icon={icone} />
+        <MarcadorSuave position={[ultimaPosicao.lat, ultimaPosicao.lng]} icon={icone} />
       )}
       <SegueOVelejador posicao={ultimaPosicao} />
     </MapContainer>
