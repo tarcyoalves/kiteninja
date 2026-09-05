@@ -13,7 +13,38 @@ export interface ContextoAtividade {
     id: string;
     nome: string;
     status: 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado';
+    /** Ver `aindaEstouNaTravessia`. Ausente = trata como ainda participando. */
+    minhaParticipacao?: { estado?: string | null } | null;
   } | null;
+}
+
+/**
+ * EU ainda estou nesta travessia?
+ *
+ * O BUG QUE ISTO CORRIGE
+ *
+ * "Travessia em andamento" olhava só o status do DOWNWIND, nunca se a pessoa
+ * ainda fazia parte dele. Quem chegava na praia e encerrava o próprio velejo
+ * continuava, para o app, "na água":
+ *
+ *  - a aba Mapa seguia presa no mapa ao vivo do grupo, sem saída — porque
+ *    `fecharTelaDoDownwind` não tem efeito enquanto a travessia é "em
+ *    andamento";
+ *  - o botão PLAY dizia "Você está na água no downwind X. Encerre a sua
+ *    participação antes de iniciar outra atividade" para alguém que já tinha
+ *    encerrado, e bloqueava iniciar qualquer coisa.
+ *
+ * Os dois somem quando a pergunta certa é feita. `encerrado` e `desistiu` são
+ * os dois estados finais de `downwind_participantes`; `confirmado` e
+ * `navegando` ainda contam como estar na travessia (quem confirmou e não
+ * entrou na água ainda pode entrar).
+ *
+ * Estado ausente conta como participando: uma resposta antiga do servidor sem
+ * o campo não pode liberar duas navegações ao mesmo tempo, que é a invariante
+ * do produto no topo deste arquivo.
+ */
+export function aindaEstouNaTravessia(estado: string | null | undefined): boolean {
+  return estado !== 'encerrado' && estado !== 'desistiu';
 }
 
 export interface EstadoAtividadeAtual {
@@ -74,13 +105,25 @@ export function travessiaEmAndamento(
  * própria (o resumo), e o mapa principal não é lugar de travessia que acabou.
  */
 export function mapaMostraDownwind(args: {
-  downwind: { status: string } | null | undefined;
+  downwind: { status: string; minhaParticipacao?: { estado?: string | null } | null } | null | undefined;
   /** A pessoa tocou em "Abrir downwind" / "Entrar no Downwind". */
   abertoDeliberadamente: boolean;
 }): boolean {
   const { downwind, abertoDeliberadamente } = args;
   if (!downwind) return false;
-  if (travessiaEmAndamento(downwind)) return true;
+  if (travessiaEmAndamento(downwind)) {
+    /*
+     * TERCEIRA PORTA, e ela existe porque a travessia do GRUPO não acaba
+     * quando a minha acaba.
+     *
+     * Quem já encerrou o próprio velejo continuava preso no mapa ao vivo até o
+     * último do grupo sair da água — podia ser uma hora depois, com a pessoa
+     * já no carro. Acompanhar quem ficou é legítimo, e continua possível: vira
+     * a mesma porta do agendado, a pedido ("Voltar ao downwind"), em vez de
+     * imposição.
+     */
+    return aindaEstouNaTravessia(downwind.minhaParticipacao?.estado) || abertoDeliberadamente;
+  }
   return abertoDeliberadamente && downwind.status === 'aberto';
 }
 
@@ -92,7 +135,10 @@ export function determinarAtividadeAtual(contexto: ContextoAtividade): EstadoAti
       ? { id: downwindAtivo.id, nome: downwindAtivo.nome }
       : null;
 
-  if (travessiaEmAndamento(downwindAtivo)) {
+  // Só bloqueia quem AINDA está na travessia: dizer "encerre a sua
+  // participação" para quem acabou de encerrá-la é o app discordando do que a
+  // pessoa acabou de fazer, e ainda impedia iniciar qualquer outra coisa.
+  if (travessiaEmAndamento(downwindAtivo) && aindaEstouNaTravessia(downwindAtivo?.minhaParticipacao?.estado)) {
     return {
       tipo: 'downwind',
       emAndamento: true,

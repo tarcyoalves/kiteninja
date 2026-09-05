@@ -194,3 +194,4 @@ O estado antigo de `master` está preservado na branch
 | `INVESTIGACAO-RASTREIO-BACKGROUND.md` | Rastreio com o app fechado no Android |
 | `AUDITORIA-EVENTOS-VELEJO-DOWNWIND.md` | Sete defeitos, seis deles o mesmo botão sem trava nem sinal; a forma do conserto |
 | `BUG-VELEJO-SOLO-NAO-INICIA.md` | Dois botões "Velejo Solo", só um ligava o modo; e a guarda que reprovou o próprio teste |
+| `VARREDURA-DOWNWIND-GRAVACAO.md` | Gravar/fechar/salvar/registrar no downwind: quatro defeitos no fim do fluxo, e o que já estava certo |

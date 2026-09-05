@@ -1,6 +1,7 @@
 ﻿import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
+  aindaEstouNaTravessia,
   determinarAtividadeAtual,
   mapaMostraDownwind,
   travessiaEmAndamento,
@@ -226,5 +227,79 @@ describe('os dois caminhos de "Velejo Solo" ligam o Modo Navegação', () => {
     const ctx = readFileSync('context/KiteDataContext.tsx', 'utf8');
     expect(ctx).toContain('modoNavegacaoSolo');
     expect(ctx).toContain('setModoNavegacaoSolo');
+  });
+});
+
+describe('aindaEstouNaTravessia', () => {
+  it('encerrado e desistiu são os estados finais — saí', () => {
+    expect(aindaEstouNaTravessia('encerrado')).toBe(false);
+    expect(aindaEstouNaTravessia('desistiu')).toBe(false);
+  });
+
+  it('confirmado e navegando ainda contam como estar na travessia', () => {
+    // Quem confirmou e não entrou na água ainda pode entrar — não é o mesmo
+    // que ter saído.
+    expect(aindaEstouNaTravessia('confirmado')).toBe(true);
+    expect(aindaEstouNaTravessia('navegando')).toBe(true);
+  });
+
+  it('estado ausente conta como participando', () => {
+    // Resposta antiga do servidor sem o campo não pode liberar duas
+    // navegações ao mesmo tempo — é a invariante do produto.
+    expect(aindaEstouNaTravessia(undefined)).toBe(true);
+    expect(aindaEstouNaTravessia(null)).toBe(true);
+  });
+});
+
+describe('encerrei o meu velejo, o grupo continua na água', () => {
+  const travessia = (estado: string) => ({
+    id: 'dw-1',
+    nome: 'Galinhos',
+    status: 'em_andamento' as const,
+    minhaParticipacao: { estado },
+  });
+
+  it('a aba Mapa me solta — antes eu ficava preso até o último sair da água', () => {
+    // O bug: `fecharTelaDoDownwind` não tinha efeito nenhum enquanto o
+    // downwind estivesse em_andamento, mesmo eu já estando no carro.
+    expect(
+      mapaMostraDownwind({ downwind: travessia('encerrado'), abertoDeliberadamente: false })
+    ).toBe(false);
+  });
+
+  it('mas eu posso voltar a acompanhar o grupo, a pedido', () => {
+    expect(
+      mapaMostraDownwind({ downwind: travessia('encerrado'), abertoDeliberadamente: true })
+    ).toBe(true);
+  });
+
+  it('quem ainda está na água continua entrando sozinho', () => {
+    for (const estado of ['confirmado', 'navegando']) {
+      expect(
+        mapaMostraDownwind({ downwind: travessia(estado), abertoDeliberadamente: false }),
+        estado
+      ).toBe(true);
+    }
+  });
+
+  it('e o app para de dizer que estou na água quando não estou', () => {
+    // Antes: "Você está na água no downwind X. Encerre a sua participação
+    // antes de iniciar outra atividade" — para quem tinha acabado de
+    // encerrar. E bloqueava iniciar qualquer coisa.
+    const atividade = determinarAtividadeAtual({
+      modoNavegacaoAtivo: false,
+      downwindAtivo: travessia('encerrado'),
+    });
+    expect(atividade.podeIniciarOutra).toBe(true);
+    expect(atividade.emAndamento).toBe(false);
+  });
+
+  it('quem não encerrou continua bloqueado — a invariante não mudou', () => {
+    const atividade = determinarAtividadeAtual({
+      modoNavegacaoAtivo: false,
+      downwindAtivo: travessia('navegando'),
+    });
+    expect(atividade.podeIniciarOutra).toBe(false);
+    expect(atividade.motivoBloqueio).toMatch(/na água/i);
   });
 });
