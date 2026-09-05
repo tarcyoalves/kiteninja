@@ -1368,3 +1368,50 @@ SELECT s.id, s.photo_url, 0
    AND NOT EXISTS (
      SELECT 1 FROM session_photos p WHERE p.session_id = s.id AND p.ordem = 0
    );
+
+-- ---------------------------------------------------------------------------
+-- Acompanhamento do velejo SOLO por apoio em terra.
+--
+-- POR QUE TABELAS PRÓPRIAS, E NÃO REUSO DE `downwinds`
+--
+-- O caminho barato seria criar um downwind de uma pessoa só. Não serve: ele
+-- entraria em `GET /api/downwind/ativo`, tomaria a aba Mapa, contaria como
+-- atividade em curso em `determinarAtividadeAtual`, criaria linha em `events`
+-- e apareceria na agenda. Um velejo solo não é nada disso. Tabelas separadas
+-- custam duas CREATEs e não tocam em NENHUM caminho existente — que é
+-- exatamente o que se quer ao acrescentar funcionalidade num app que já
+-- funciona.
+--
+-- O molde é o mesmo de `downwind_convites` e `downwind_posicoes`, de
+-- propósito: o token guardado só como hash, validade curta, e a posição numa
+-- tabela própria com índice pela ordem de leitura.
+CREATE TABLE IF NOT EXISTS velejo_apoio_sessoes (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Só o hash. O token em claro existe uma vez, na resposta que cria a sessão.
+  token_hash    TEXT NOT NULL UNIQUE,
+  expira_em     TIMESTAMPTZ NOT NULL,
+  -- Preenchido quando o velejador sai da água: o acompanhamento acaba junto.
+  encerrado_em  TIMESTAMPTZ,
+  criado_em     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- "A sessão de acompanhamento aberta deste velejador" — a consulta que decide
+-- se o botão oferece um link novo ou reaproveita o que já está valendo.
+CREATE INDEX IF NOT EXISTS idx_velejo_apoio_aberta
+  ON velejo_apoio_sessoes (user_id, criado_em DESC)
+  WHERE encerrado_em IS NULL;
+
+CREATE TABLE IF NOT EXISTS velejo_apoio_posicoes (
+  id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  sessao_id     UUID NOT NULL REFERENCES velejo_apoio_sessoes(id) ON DELETE CASCADE,
+  lat           NUMERIC(9,6) NOT NULL,
+  lng           NUMERIC(9,6) NOT NULL,
+  accuracy_m    NUMERIC(7,2),
+  registrado_em TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- A página de quem acompanha lê sempre a trilha desta sessão em ordem de
+-- tempo, e a última posição é o fim dessa mesma varredura.
+CREATE INDEX IF NOT EXISTS idx_velejo_apoio_posicoes
+  ON velejo_apoio_posicoes (sessao_id, registrado_em);

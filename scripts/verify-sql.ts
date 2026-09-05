@@ -1517,6 +1517,40 @@ async function main() {
     `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'downwind_iniciado')`,
     [seguidorLigado, velejador]
   );
+  /*
+   * Acompanhamento do velejo solo. As duas garantias que importam aqui são de
+   * segurança, não de forma: um token não pode valer para duas sessões, e
+   * apagar a conta tem que levar a trilha junto.
+   */
+  await expectOk(
+    db,
+    'velejo_apoio: abre sessão de acompanhamento',
+    `INSERT INTO velejo_apoio_sessoes (id, user_id, token_hash, expira_em)
+     VALUES ('11111111-1111-4111-8111-111111111111', $1, 'hash-apoio-1', NOW() + INTERVAL '12 hours')`,
+    [velejador]
+  );
+  await expectFail(
+    db,
+    'velejo_apoio: o mesmo token nunca vale para duas sessões',
+    `INSERT INTO velejo_apoio_sessoes (user_id, token_hash, expira_em)
+     VALUES ($1, 'hash-apoio-1', NOW() + INTERVAL '12 hours')`,
+    [velejador]
+  );
+  await expectOk(
+    db,
+    'velejo_apoio: grava posição da sessão',
+    `INSERT INTO velejo_apoio_posicoes (sessao_id, lat, lng, accuracy_m)
+     VALUES ('11111111-1111-4111-8111-111111111111', -5.1, -36.8, 12.5)`,
+    []
+  );
+  await expectFail(
+    db,
+    'velejo_apoio: posição sem sessão é recusada',
+    `INSERT INTO velejo_apoio_posicoes (sessao_id, lat, lng)
+     VALUES ('22222222-2222-4222-8222-222222222222', -5.1, -36.8)`,
+    []
+  );
+
   await expectOk(
     db,
     'notifications aceita o tipo downwind_novo (aviso de downwind marcado)',
