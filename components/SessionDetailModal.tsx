@@ -31,6 +31,7 @@ import { useCurtidaOtimista } from '@/lib/useCurtidaOtimista';
 import { formatRelativeTime } from '@/lib/chat';
 import type { SessionComment, SessionDetail } from '@/types';
 import { useAoMudar } from '../lib/useAoMudar';
+import { formatarVelocidadeVelejo } from '../lib/velocidadeVelejo';
 
 /**
  * Mesmo Leaflet real do card do feed (não um mapa novo) — a diferença aqui é
@@ -512,7 +513,9 @@ export const SessionDetailModal: React.FC<SessionDetailModalProps> = ({
                 {sessao.distanceKm !== undefined ? `${sessao.distanceKm.toFixed(1)}km` : '—'}
               </EstatisticaCard>
               <EstatisticaCard icone={<Gauge size={14} className="text-amber-400" />} rotulo="Vel. máx">
-                {sessao.maxSpeedKnots !== undefined ? `${sessao.maxSpeedKnots.toFixed(1)}nós` : '—'}
+                {/* km/h — ver lib/velocidadeVelejo.ts. O vento, logo abaixo,
+                    continua em nós de propósito. */}
+                {formatarVelocidadeVelejo(sessao.maxSpeedKnots)}
               </EstatisticaCard>
               <EstatisticaCard icone={<Clock size={14} className="text-slate-300" />} rotulo="Duração">
                 {formatarDuracao(sessao.durationMinutes)}

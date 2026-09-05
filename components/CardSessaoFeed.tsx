@@ -6,6 +6,7 @@ import { CarrosselDoVelejo } from './CarrosselDoVelejo';
 import { formatRelativeTime } from '@/lib/chat';
 import { useCurtidaOtimista } from '@/lib/useCurtidaOtimista';
 import type { SessionFeedItem } from '@/types';
+import { formatarVelocidadeVelejo } from '../lib/velocidadeVelejo';
 
 /**
  * Margem generosa (~2 alturas de card) antes/depois do viewport real para
@@ -177,7 +178,10 @@ export const CardSessaoFeed = memo(function CardSessaoFeed({
           {sessao.distanceKm !== undefined ? `${sessao.distanceKm.toFixed(1)}km` : '—'}
         </EstatisticaCard>
         <EstatisticaCard icone={<Gauge size={14} className="text-amber-400" />} rotulo="Vel. máx">
-          {sessao.maxSpeedKnots !== undefined ? `${sessao.maxSpeedKnots.toFixed(1)}nós` : '—'}
+          {/* km/h, igual ao Modo Navegação e ao resumo do downwind. Mostrar
+              o MESMO número em nós aqui era o que fazia o app parecer errar a
+              velocidade — ver lib/velocidadeVelejo.ts. */}
+          {formatarVelocidadeVelejo(sessao.maxSpeedKnots)}
         </EstatisticaCard>
         <EstatisticaCard icone={<Clock size={14} className="text-slate-300" />} rotulo="Duração">
           {formatarDuracao(sessao.durationMinutes)}

@@ -27,6 +27,7 @@ import { useAoMudar } from '@/lib/useAoMudar';
 import { opcoesDeTile } from '@/lib/mapTiles';
 import { escaparHtml, iniciaisDoNome } from '@/lib/htmlEscape';
 import { metricasDaTrilhaReplay } from '@/lib/metricasReplay';
+import { formatarVelocidadeVelejo, nosParaKmh } from '../../lib/velocidadeVelejo';
 
 function formatarUltimaAtualizacao(registradoEm: string | null | undefined, tsMs?: number): { hora: string; relativo: string } {
   const ts = tsMs && tsMs > 0 ? tsMs : (registradoEm ? new Date(registradoEm).getTime() : 0);
@@ -764,7 +765,9 @@ export const DownwindLiveReplayViewer: React.FC<{
                     <div className="min-w-0 flex-1">
                       <p className="text-xs font-bold text-white truncate leading-tight">{p.name}</p>
                       <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5 font-mono">
-                        <span>{pos ? `${speedVal.toFixed(1)} nós` : '0 nós'}</span>
+                        {/* km/h, como em toda velocidade de velejo do app —
+                            ver lib/velocidadeVelejo.ts. */}
+                        <span>{pos ? formatarVelocidadeVelejo(speedVal) : '0.0 km/h'}</span>
                         <span>•</span>
                         <span>{distanciaKm > 0 ? `${distanciaKm.toFixed(1)} km` : '0 km'}</span>
                       </div>
@@ -856,11 +859,15 @@ export const DownwindLiveReplayViewer: React.FC<{
               <span className="text-[10px] text-slate-400 font-bold flex items-center justify-center gap-1">
                 <Gauge size={12} className="text-cyan-400" /> Atual
               </span>
+              {/* INVERTIDO: km/h em cima, nós embaixo. Esta tela mostrava as
+                  duas — o que é bom aqui, é uma tela de análise — mas com o
+                  destaque na unidade que o resto do app não usa para velejo. */}
               <p className="text-sm font-black text-white font-mono mt-0.5">
-                {(posicaoRiderSelecionado?.speedKnots ?? 0).toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
+                {nosParaKmh(posicaoRiderSelecionado?.speedKnots ?? 0).toFixed(1)}{' '}
+                <span className="text-[10px] font-normal text-slate-400">km/h</span>
               </p>
               <p className="text-[9px] text-slate-500 font-mono">
-                {((posicaoRiderSelecionado?.speedKnots ?? 0) * 1.852).toFixed(1)} km/h
+                {(posicaoRiderSelecionado?.speedKnots ?? 0).toFixed(1)} nós
               </p>
             </div>
 
@@ -869,10 +876,11 @@ export const DownwindLiveReplayViewer: React.FC<{
                 <Trophy size={12} className="text-amber-400" /> Máxima
               </span>
               <p className="text-sm font-black text-amber-300 font-mono mt-0.5">
-                {velocidadeMaxRiderSelecionado.toFixed(1)} <span className="text-[10px] font-normal text-slate-400">nós</span>
+                {nosParaKmh(velocidadeMaxRiderSelecionado).toFixed(1)}{' '}
+                <span className="text-[10px] font-normal text-slate-400">km/h</span>
               </p>
               <p className="text-[9px] text-slate-500 font-mono">
-                {(velocidadeMaxRiderSelecionado * 1.852).toFixed(1)} km/h
+                {velocidadeMaxRiderSelecionado.toFixed(1)} nós
               </p>
             </div>
 

@@ -195,3 +195,4 @@ O estado antigo de `master` está preservado na branch
 | `AUDITORIA-EVENTOS-VELEJO-DOWNWIND.md` | Sete defeitos, seis deles o mesmo botão sem trava nem sinal; a forma do conserto |
 | `BUG-VELEJO-SOLO-NAO-INICIA.md` | Dois botões "Velejo Solo", só um ligava o modo; e a guarda que reprovou o próprio teste |
 | `VARREDURA-DOWNWIND-GRAVACAO.md` | Gravar/fechar/salvar/registrar no downwind: quatro defeitos no fim do fluxo, e o que já estava certo |
+| `VELOCIDADE-EM-KMH.md` | A mesma medida em duas unidades em telas diferentes; velejo em km/h, vento em nós |

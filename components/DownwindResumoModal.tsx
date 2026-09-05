@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic';
 import { Loader2, MapPin, Route, Trophy, Wind, X } from 'lucide-react';
 import { corDoUsuario } from '../lib/downwindCores';
 import { iniciaisDoNome } from '../lib/htmlEscape';
+import { formatarVelocidadeVelejo } from '../lib/velocidadeVelejo';
 
 /**
  * Resumo pós-downwind, no espírito Strava: cada participante vê distância e
@@ -243,7 +244,7 @@ export const DownwindResumoModal: React.FC<DownwindResumoModalProps> = ({
                               não nós. Mesma conversão de components/ModoNavegacao.tsx: o
                               cálculo em lib/trilhaSessao.ts é interno em nós (limiares de
                               GPS calibrados nessa unidade), converte só na exibição. */}
-                          {p.velocidadeMaxNos !== null ? `${(p.velocidadeMaxNos * 1.852).toFixed(1)} km/h` : '—'}
+                          {formatarVelocidadeVelejo(p.velocidadeMaxNos)}
                         </span>
                       </div>
                     </div>

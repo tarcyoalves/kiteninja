@@ -10,6 +10,7 @@ import { NUMEROS_PRIORITARIOS } from '../lib/emergencia';
 import { useKiteData } from '../context/KiteDataContext';
 import { DownwindChat } from './DownwindChat';
 import type { PontoTrilha } from '../lib/trilhaDownwind';
+import { NOS_PARA_KMH } from '../lib/velocidadeVelejo';
 
 /**
  * Tela preta de navegação — mantém o app em primeiro plano com Wake Lock
@@ -52,16 +53,15 @@ import type { PontoTrilha } from '../lib/trilhaDownwind';
 /** Tempo de toque contínuo para desbloquear a tela. Ver decisão acima. */
 const DESBLOQUEIO_HOLD_MS = 1500;
 
-/**
- * `lib/trilhaSessao.ts` calcula e filtra tudo internamente em nós (os
- * limiares de GPS ali — deslocamento mínimo, salto impossível — foram
- * calibrados nessa unidade, contra o recorde mundial de kitesurf em nós).
- * Convertemos só aqui, na exibição: o velejador lê a própria velocidade em
- * km/h (como o app de referência mostra), enquanto o vento continua em nós
- * em todo o resto do KiteNinja — são duas grandezas diferentes por
- * convenção do esporte, não a mesma coisa em duas unidades.
+/*
+ * A conversão mora em lib/velocidadeVelejo.ts, não mais aqui.
+ *
+ * Ela estava escrita nesta tela e no resumo do downwind, e faltava no card do
+ * feed e no detalhe da sessão — que por isso mostravam o MESMO número rotulado
+ * "nós". Duas telas diziam 44,3 e duas diziam 23,9 sobre a mesma medida, e a
+ * leitura de quem usa foi "o app errou a velocidade". Uma regra em dois
+ * arquivos é uma regra que diverge; agora é uma só.
  */
-const NOS_PARA_KMH = 1.852;
 
 /** Recalcula "há quanto tempo" o sinal foi visto pela última vez. Não precisa
  * ser mais frequente que isso — é um indicador de leitura, não um alerta. */

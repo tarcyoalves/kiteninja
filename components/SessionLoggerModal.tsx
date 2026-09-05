@@ -9,6 +9,7 @@ import { upload } from '@vercel/blob/client';
 import { compressImage } from '../lib/imageCompress';
 import { MAX_FOTOS_POR_VELEJO, PREFIXO_BLOB_VELEJO } from '../lib/fotosDoVelejo';
 import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
+import { kmhParaNos, nosParaKmh } from '../lib/velocidadeVelejo';
 
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar, para não travar o navegador com arquivos gigantes
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -39,7 +40,15 @@ export const SessionLoggerModal: React.FC = () => {
   const [waterCondition, setWaterCondition] = useState('Chop Médio');
   const [rating, setRating] = useState(5);
   const [distanceKm, setDistanceKm] = useState<number | ''>(28.4);
-  const [maxSpeedKnots, setMaxSpeedKnots] = useState<number | ''>(26.8);
+  /*
+   * O CAMPO É EM km/h; a coluna do banco é em nós.
+   *
+   * O formulário perguntava em nós enquanto o Modo Navegação mostrava km/h —
+   * então quem quisesse corrigir à mão o próprio recorde digitaria o número
+   * que acabou de ver na tela (44) num campo que o guardaria como 44 nós, ou
+   * seja, 81 km/h. A conversão acontece uma vez, no envio.
+   */
+  const [maxSpeedKmh, setMaxSpeedKmh] = useState<number | ''>(50);
   const [highestJumpM, setHighestJumpM] = useState<number | ''>(9.2);
   const [notes, setNotes] = useState('');
   /*
@@ -84,7 +93,7 @@ export const SessionLoggerModal: React.FC = () => {
     // Sincroniza o rascunho entregue pelo rastreador GPS.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setDistanceKm(loggerPrefill.distanceKm);
-    setMaxSpeedKnots(loggerPrefill.maxSpeedKnots);
+    setMaxSpeedKmh(Number(nosParaKmh(loggerPrefill.maxSpeedKnots).toFixed(1)));
     setHighestJumpM('');
     setDurationMinutes(loggerPrefill.durationMinutes);
     setDate(loggerPrefill.date);
@@ -146,7 +155,9 @@ export const SessionLoggerModal: React.FC = () => {
       waterCondition,
       rating,
       distanceKm: distanceKm === '' ? undefined : Number(distanceKm),
-      maxSpeedKnots: maxSpeedKnots === '' ? undefined : Number(maxSpeedKnots),
+      // De volta para nós: é o que a coluna `max_speed_knots` e a validação
+      // da rota esperam. Ver lib/velocidadeVelejo.ts.
+      maxSpeedKnots: maxSpeedKmh === '' ? undefined : kmhParaNos(Number(maxSpeedKmh)),
       highestJumpM: highestJumpM === '' ? undefined : Number(highestJumpM),
       notes: notes || undefined,
       fotoUrls,
@@ -177,7 +188,7 @@ export const SessionLoggerModal: React.FC = () => {
     setWaterCondition('Chop Médio');
     setRating(5);
     setDistanceKm(28.4);
-    setMaxSpeedKnots(26.8);
+    setMaxSpeedKmh(50);
     setHighestJumpM(9.2);
     setNotes('');
     setFotoUrls([]);
@@ -514,12 +525,12 @@ export const SessionLoggerModal: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-slate-400 mb-0.5">Velocidade Máx (nós)</label>
+                <label className="block text-slate-400 mb-0.5">Velocidade Máx (km/h)</label>
                 <input
                   type="number"
                   step="0.1"
-                  value={maxSpeedKnots}
-                  onChange={e => setMaxSpeedKnots(e.target.value === '' ? '' : Number(e.target.value))}
+                  value={maxSpeedKmh}
+                  onChange={e => setMaxSpeedKmh(e.target.value === '' ? '' : Number(e.target.value))}
                   className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-cyan-400 font-bold"
                   placeholder="28.4"
                 />
