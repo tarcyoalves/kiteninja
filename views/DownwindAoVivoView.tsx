@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, ChevronLeft, Settings, Radio } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
@@ -300,10 +300,53 @@ export const DownwindAoVivoView: React.FC = () => {
     setModoNavegacaoAtivo(false);
   }, []);
 
+  /**
+   * Abre o logbook com o velejo desta travessia.
+   *
+   * Extraída de `encerrarVelejo` porque passou a ter DOIS chamadores: quem
+   * encerra a própria participação, e quem teve a participação encerrada por
+   * outra pessoa (ver `useEffect` logo abaixo).
+   */
+  const abrirLogbookDaTravessia = useCallback(
+    (snapshotDownwind: NonNullable<typeof downwindAtivo>) => {
+      const trilhaDoVelejo = mesclarTrilha(trilhaMedidaRef.current, minhaTrilhaRef.current ?? []);
+      const metricas = calcularMetricasTrilha(trilhaDoVelejo);
+      const dataInicio =
+        metricas.iniciadoEm ||
+        inicioMedidoRef.current ||
+        (snapshotDownwind.iniciadoEm ? new Date(snapshotDownwind.iniciadoEm) : new Date());
+      const pad2 = (n: number) => String(n).padStart(2, '0');
+      const date = [dataInicio.getFullYear(), pad2(dataInicio.getMonth() + 1), pad2(dataInicio.getDate())].join('-');
+      const startTime = `${pad2(dataInicio.getHours())}:${pad2(dataInicio.getMinutes())}`;
+      const spotSaida = snapshotDownwind.saida?.nome || 'Downwind';
+      const spotChegada = snapshotDownwind.chegada?.nome;
+      const duracaoCalculada =
+        metricas.duracaoMinutos || Math.max(1, Math.round((Date.now() - dataInicio.getTime()) / 60000));
+
+      abrirLoggerComResumo({
+        distanceKm: metricas.distanciaKm || Math.round((snapshotDownwind.minhaParticipacao.distanciaKm || 0) * 10) / 10,
+        maxSpeedKnots:
+          metricas.velocidadeMaxNos ||
+          Math.round((snapshotDownwind.minhaParticipacao.velocidadeMaxNos || 0) * 10) / 10,
+        durationMinutes: duracaoCalculada,
+        date,
+        startTime,
+        trilhaReduzida: trilhaDoVelejo,
+        spotId: undefined,
+        customSpotName: spotChegada ? `${spotSaida} \u2192 ${spotChegada}` : spotSaida,
+        notes: `Downwind em grupo: ${snapshotDownwind.nome}`,
+      });
+    },
+    [abrirLoggerComResumo]
+  );
+
   const encerrarVelejo = useCallback(async () => {
     if (!downwindAtivo) return;
     const snapshotDownwind = { ...downwindAtivo };
     const alvo = estadoDeSaidaVelejo(snapshotDownwind.minhaParticipacao.estado ?? 'confirmado');
+    // Antes do PATCH: o `recarregar` que ele dispara é o que traz o estado
+    // novo, e o efeito acima observa essa mudança.
+    encerradoPorMimRef.current = snapshotDownwind.id;
 
     /*
      * A trilha do velejo: o que o APARELHO mediu, mesclado com o que o
@@ -341,31 +384,46 @@ export const DownwindAoVivoView: React.FC = () => {
     }
 
     // Se concluiu a travessia de fato, abre o logbook com dados reais de GPS
-    if (alvo === 'encerrado') {
-      const dataInicio =
-        metricas.iniciadoEm ||
-        inicioMedidoRef.current ||
-        (snapshotDownwind.iniciadoEm ? new Date(snapshotDownwind.iniciadoEm) : new Date());
-      const pad2 = (n: number) => String(n).padStart(2, '0');
-      const date = [dataInicio.getFullYear(), pad2(dataInicio.getMonth() + 1), pad2(dataInicio.getDate())].join('-');
-      const startTime = `${pad2(dataInicio.getHours())}:${pad2(dataInicio.getMinutes())}`;
-      const spotSaida = snapshotDownwind.saida?.nome || 'Downwind';
-      const spotChegada = snapshotDownwind.chegada?.nome;
-      const duracaoCalculada = metricas.duracaoMinutos || Math.max(1, Math.round((Date.now() - dataInicio.getTime()) / 60000));
+    if (alvo === 'encerrado') abrirLogbookDaTravessia(snapshotDownwind);
+  }, [downwindAtivo, encerrarMinhaParticipacao, abrirLogbookDaTravessia]);
 
-      abrirLoggerComResumo({
-        distanceKm: metricas.distanciaKm || Math.round((snapshotDownwind.minhaParticipacao.distanciaKm || 0) * 10) / 10,
-        maxSpeedKnots: metricas.velocidadeMaxNos || Math.round((snapshotDownwind.minhaParticipacao.velocidadeMaxNos || 0) * 10) / 10,
-        durationMinutes: duracaoCalculada,
-        date,
-        startTime,
-        trilhaReduzida: trilhaDoVelejo,
-        spotId: undefined,
-        customSpotName: spotChegada ? `${spotSaida} → ${spotChegada}` : spotSaida,
-        notes: `Downwind em grupo: ${snapshotDownwind.nome}`,
-      });
-    }
-  }, [downwindAtivo, encerrarMinhaParticipacao, abrirLoggerComResumo, minhaTrilha]);
+  /**
+   * O ORGANIZADOR ENCERROU A MINHA PARTICIPAÇÃO — e o meu velejo não some com
+   * ela.
+   *
+   * `podeMudarEstadoDeParticipante` permite ao organizador marcar outro
+   * participante como 'encerrado'. É recurso legítimo e usado: o velejador
+   * chegou na praia com o celular morto, e sem isso o downwind inteiro trava,
+   * porque encerrar exige que todos tenham saído da água.
+   *
+   * Só que, para quem foi marcado, isso acontecia em silêncio total: o
+   * servidor não guarda os números dele nessa transição (o resumo por
+   * participante só é aceito de quem encerra a PRÓPRIA participação, ver a
+   * rota PATCH), e a tela agora o solta do mapa ao vivo — sem uma palavra.
+   *
+   * Aqui o aparelho dele ainda tem a medição inteira, então oferece o registro
+   * na hora. Sem isto, restaria só o aviso do Logbook, que depende de a pessoa
+   * ir procurar em 12h.
+   *
+   * `encerradoPorMimRef` evita abrir duas vezes: quando sou eu que encerro, o
+   * `encerrarVelejo` acima já abriu. Guarda o ID do downwind em vez de um
+   * booleano que o efeito precisaria zerar — escrever numa ref dentro do
+   * efeito E dentro de outro callback é justamente o que o lint do React
+   * Compiler reprova ("value previously passed as an argument to a hook").
+   * Comparar não modifica nada.
+   */
+  const estadoAnteriorRef = useRef<string | null>(null);
+  const encerradoPorMimRef = useRef<string | null>(null);
+  const estadoAtualParticipacao = downwindAtivo?.minhaParticipacao?.estado ?? null;
+  useEffect(() => {
+    const anterior = estadoAnteriorRef.current;
+    estadoAnteriorRef.current = estadoAtualParticipacao;
+    if (anterior !== 'navegando') return;
+    if (estadoAtualParticipacao !== 'encerrado' && estadoAtualParticipacao !== 'desistiu') return;
+    if (!downwindAtivo) return;
+    if (encerradoPorMimRef.current === downwindAtivo.id) return;
+    abrirLogbookDaTravessia(downwindAtivo);
+  }, [estadoAtualParticipacao, downwindAtivo, abrirLogbookDaTravessia]);
 
   const holdEncerrar = usePressAndHold(HOLD_ENCERRAR_MS, () => {
     try {

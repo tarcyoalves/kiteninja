@@ -196,3 +196,4 @@ O estado antigo de `master` está preservado na branch
 | `BUG-VELEJO-SOLO-NAO-INICIA.md` | Dois botões "Velejo Solo", só um ligava o modo; e a guarda que reprovou o próprio teste |
 | `VARREDURA-DOWNWIND-GRAVACAO.md` | Gravar/fechar/salvar/registrar no downwind: quatro defeitos no fim do fluxo, e o que já estava certo |
 | `VELOCIDADE-EM-KMH.md` | A mesma medida em duas unidades em telas diferentes; velejo em km/h, vento em nós |
+| `DOWNWIND-COM-VARIOS-VELEJADORES.md` | O DW de grupo: cancelar apagava tudo, alarme falso de sem-sinal, e o que já estava certo |
