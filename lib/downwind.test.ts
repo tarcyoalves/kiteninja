@@ -1,3 +1,4 @@
+﻿import { readFileSync } from 'node:fs';
 /**
  * Testes das regras do Downwind.
  *
@@ -10,6 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DownwindParticipante,
+  contarSemSinal,
   estadoDeSaidaVelejo,
   estadoSinal,
   podeEncerrarDownwind,
@@ -442,5 +444,93 @@ describe('clampAlturaMapaSplitApoio — arraste do split mapa/chat do motorista'
   it('valor não-finito (NaN de um gesto interrompido) cai no meio, não trava a UI', () => {
     expect(clampAlturaMapaSplitApoio(NaN)).toBe(50);
     expect(clampAlturaMapaSplitApoio(Infinity)).toBe(50);
+  });
+});
+
+/**
+ * Guarda de código-fonte: cancelar também resume a travessia.
+ *
+ * POR QUE ESTE TESTE LÊ O ARQUIVO
+ *
+ * Encerrar exige quórum (`podeEncerrarDownwindComoUsuario` recusa com 409
+ * enquanto houver velejador na água), então CANCELAR é o único caminho que
+ * tira do ar um downwind com gente ainda em `navegando`. E o cancelamento não
+ * chamava `resumirEPurgar`: distância, velocidade máxima e trilha de TODOS os
+ * participantes ficavam NULL, e a purga preguiçosa apaga
+ * `downwind_posicoes` de downwind cancelado depois de 7 dias.
+ *
+ * Uma chamada de função ausente num `if` não aparece em tipo, lint, teste de
+ * unidade nem build — o código compila e responde 200. O que se perde só
+ * aparece uma semana depois, no banco.
+ */
+describe('cancelar um downwind em andamento resume antes de sumir', () => {
+  const ROTA = 'app/api/downwind/[id]/status/route.ts';
+
+  /** Comentários fora: citar a função num comentário não é chamá-la. */
+  const semComentarios = (texto: string) =>
+    texto
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((linha) => linha.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+  const trechoDoCancelamento = () => {
+    const src = semComentarios(readFileSync(ROTA, 'utf8'));
+    const i = src.indexOf("if (para === 'cancelado')");
+    expect(i, 'ramo de cancelamento não encontrado').toBeGreaterThan(-1);
+    const fim = src.indexOf("if (para === 'encerrado')", i);
+    return src.slice(i, fim > i ? fim : src.indexOf('// para ===', i));
+  };
+
+  it('o ramo de cancelamento chama resumirEPurgar', () => {
+    expect(trechoDoCancelamento()).toContain('resumirEPurgar(id)');
+  });
+
+  it('e só quando já havia travessia — downwind aberto não tem o que resumir', () => {
+    expect(trechoDoCancelamento()).toMatch(/status === 'em_andamento'/);
+  });
+});
+
+describe('contarSemSinal — o alarme não pode gritar por quem nem começou', () => {
+  const agora = new Date('2026-09-05T12:00:00Z');
+  const recente = new Date('2026-09-05T11:59:00Z').toISOString();
+  const antigo = new Date('2026-09-05T11:00:00Z').toISOString();
+
+  it('não conta quem confirmou e ainda não entrou na água', () => {
+    // O caso real: dez confirmam na véspera, quatro entram às 8h, e a faixa
+    // anunciava "6 sem sinal" sobre gente tomando café.
+    const conta = contarSemSinal(
+      [
+        { estado: 'confirmado', registradoEm: null },
+        { estado: 'confirmado', registradoEm: null },
+        { estado: 'navegando', registradoEm: recente },
+      ],
+      agora
+    );
+    expect(conta).toBe(0);
+  });
+
+  it('não conta o apoio em terra, que nunca reporta posição', () => {
+    expect(contarSemSinal([{ estado: 'confirmado', registradoEm: null }], agora)).toBe(0);
+  });
+
+  it('não conta quem já saiu da água', () => {
+    for (const estado of ['encerrado', 'desistiu']) {
+      expect(contarSemSinal([{ estado, registradoEm: antigo }], agora), estado).toBe(0);
+    }
+  });
+
+  it('CONTA quem estava reportando e parou — é para isso que o alarme existe', () => {
+    expect(contarSemSinal([{ estado: 'navegando', registradoEm: antigo }], agora)).toBe(1);
+  });
+
+  it('CONTA quem tocou Iniciar e nunca reportou — o GPS não subiu', () => {
+    // Dizer "estou na água" e não mandar posição nenhuma é alarmante de
+    // verdade, ao contrário de nem ter começado.
+    expect(contarSemSinal([{ estado: 'navegando', registradoEm: null }], agora)).toBe(1);
+  });
+
+  it('não conta quem reportou agora há pouco', () => {
+    expect(contarSemSinal([{ estado: 'navegando', registradoEm: recente }], agora)).toBe(0);
   });
 });

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { AlertTriangle, Users } from 'lucide-react';
-import { estadoSinal, progressoDownwind, velejadoresPendentes } from '@/lib/downwind';
+import { contarSemSinal, progressoDownwind, velejadoresPendentes } from '@/lib/downwind';
 import { haversineKm } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
 import type { DownwindParticipanteMapa } from '@/lib/useDownwindPosicoes';
@@ -74,14 +74,9 @@ export const DownwindFaixaInfo: React.FC<DownwindFaixaInfoProps> = ({
         })()
       : null;
 
-  const semSinal = useMemo(
-    () =>
-      participantes.filter((p) => {
-        if (p.estado === 'encerrado' || p.estado === 'desistiu') return false;
-        return estadoSinal(p.registradoEm ? new Date(p.registradoEm) : null, agora).estado === 'sem_sinal';
-      }).length,
-    [participantes, agora]
-  );
+  // Só quem disse que está na água. Contar `confirmado` aqui anunciava "6 sem
+  // sinal" sobre gente que ainda estava tomando café — ver contarSemSinal.
+  const semSinal = useMemo(() => contarSemSinal(participantes, agora), [participantes, agora]);
 
   const itens: string[] = [];
   if (velejadores.length > 0) itens.push(`Na água: ${pendentes.length} de ${velejadores.length}`);

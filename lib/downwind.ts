@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Regras puras do Downwind: navegação em grupo de um ponto A a um ponto B ao
  * longo da costa. Velejadores vão na água; apoio em terra acompanha de carro.
  *
@@ -112,6 +112,42 @@ export function velejadoresPendentes(
   participantes: DownwindParticipante[]
 ): DownwindParticipante[] {
   return velejadores(participantes).filter((v) => !ESTADOS_QUE_NAO_BLOQUEIAM.has(v.estado));
+}
+
+/**
+ * Quantos participantes DE FATO perderam o sinal — o número do alarme.
+ *
+ * O FALSO ALARME QUE ISTO CORRIGE
+ *
+ * A faixa do mapa contava como "sem sinal" todo participante cujo último
+ * report não fosse recente, excluindo apenas quem já tinha encerrado ou
+ * desistido. Só que `estadoSinal(null, agora)` devolve `sem_sinal` — o pior
+ * caso, e está certo em devolver isso, porque de fato não dá para saber.
+ *
+ * O resultado num downwind de grupo de verdade: dez pessoas confirmam presença
+ * na véspera, quatro entram na água às 8h e as outras seis ainda estão tomando
+ * café. Desde o primeiro instante a faixa anunciava **"6 sem sinal"** — em
+ * vermelho, sobre gente que não tinha nem chegado na praia. O apoio em terra,
+ * que nunca reporta posição porque não navega, entrava na conta também.
+ *
+ * Alarme falso em indicador de segurança é pior que indicador nenhum: ele
+ * ensina o grupo a ignorar a faixa, inclusive na hora em que ela estiver certa
+ * e alguém tiver sumido de verdade no meio da travessia.
+ *
+ * A regra certa: só conta quem disse que está na água (`navegando`). Aí as
+ * duas situações que sobram são ambas alarmantes de verdade — quem reportava e
+ * parou, e quem tocou "Iniciar" e nunca conseguiu reportar (GPS que não subiu).
+ * Quem está em `confirmado` não perdeu sinal: ainda não começou.
+ */
+export function contarSemSinal(
+  participantes: Array<{ estado: string; registradoEm: string | null }>,
+  agora: Date
+): number {
+  return participantes.filter((p) => {
+    if (p.estado !== 'navegando') return false;
+    const ultima = p.registradoEm ? new Date(p.registradoEm) : null;
+    return estadoSinal(ultima, agora).estado === 'sem_sinal';
+  }).length;
 }
 
 // ---------------------------------------------------------------------------

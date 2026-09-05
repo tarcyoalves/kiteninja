@@ -102,6 +102,33 @@ export async function POST(request: Request, ctx: Params) {
       `;
       if (rows.length === 0) throw new HttpError(409, 'Este downwind já foi encerrado ou cancelado.');
 
+      /*
+       * CANCELAR TAMBÉM TEM QUE RESUMIR, quando já havia gente na água.
+       *
+       * Cancelar não exige quórum — é a única forma de tirar a travessia do ar
+       * com velejadores ainda em `navegando` (encerrar é recusado com 409
+       * enquanto alguém não saiu; ver `podeEncerrarDownwindComoUsuario`). Ou
+       * seja: é exatamente o caminho pelo qual um downwind EM ANDAMENTO some
+       * para todo mundo de uma vez.
+       *
+       * E `resumirEPurgar` não era chamado aqui. Então `distancia_km`,
+       * `velocidade_max_nos` e `trilha_reduzida` ficavam NULL para todos os
+       * participantes — e a purga preguiçosa APAGA `downwind_posicoes` de
+       * downwind cancelado depois de 7 dias. Sete dias depois de um
+       * cancelamento, a travessia inteira do grupo tinha sumido do servidor
+       * sem nunca ter sido resumida.
+       *
+       * Motivo realista, não hipótese: o vento morreu no meio, alguém se
+       * machucou, ou o organizador tocou no botão errado. O grupo velejou 15 km
+       * de qualquer jeito.
+       *
+       * Só quando havia travessia: cancelar um downwind `aberto` não tem
+       * posição nenhuma para resumir.
+       */
+      if (status === 'em_andamento') {
+        await resumirEPurgar(id);
+      }
+
       // Cancelled: revoga tokens de rastreio
       await revogarTodosTokensDoDownwind(id);
 
