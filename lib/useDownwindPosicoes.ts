@@ -65,6 +65,12 @@ export function useDownwindPosicoes(
     pausadoRef.current = pausado;
   });
 
+  /**
+   * Última `buscar` criada pelo efeito principal, para o efeito de despausar
+   * abaixo poder chamá-la sem recriar o poll (recriar perderia o cursor).
+   */
+  const buscarRef = useRef<(() => Promise<void>) | null>(null);
+
   useEffect(() => {
     if (!downwindId) return;
     let cancelado = false;
@@ -107,6 +113,7 @@ export function useDownwindPosicoes(
       }
     };
 
+    buscarRef.current = buscar;
     buscar();
     const id = setInterval(buscar, INTERVALO_MS);
 
@@ -127,6 +134,31 @@ export function useDownwindPosicoes(
     // sem precisar recriar o efeito.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [downwindId]);
+
+  /**
+   * Despausou? Busca AGORA, não daqui a 30 segundos.
+   *
+   * BUG REAL: no downwind, `pausado` fica true durante a travessia inteira (o
+   * Modo Navegação está por cima). Ao sair da tela preta, o velejador segura
+   * "Encerrar velejo" por 1,5s — e o encerramento lê `minhaTrilha` para gravar
+   * a distância, a velocidade máxima e o mapa do velejo no logbook.
+   *
+   * Sem esta busca, `minhaTrilha` ainda é a de ANTES da travessia: o tick de
+   * 30s não chegou, e `visibilitychange` não dispara (a aba nunca ficou
+   * oculta — a tela preta é um overlay do próprio app, não outra aba).
+   * Resultado: velejo gravado com distância ~0 e sem trilha.
+   *
+   * Roda só na BORDA de despausar, não a todo render: `estavaPausadoRef`
+   * guarda o valor anterior. Sem isso, cada render com `pausado: false`
+   * dispararia um GET.
+   */
+  const estavaPausadoRef = useRef(pausado);
+  useEffect(() => {
+    const despausou = estavaPausadoRef.current && !pausado;
+    estavaPausadoRef.current = pausado;
+    if (!despausou) return;
+    void buscarRef.current?.();
+  }, [pausado]);
 
   return { participantes, minhaTrilha, carregando, erro, servePosicoes };
 }

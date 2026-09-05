@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { Ban, Car, Check, Copy, LifeBuoy, LogOut, Loader2, MessageCircle, Navigation, Octagon, Route, UserPlus, X, ChevronDown, ChevronUp, ChevronLeft, Settings, Radio } from 'lucide-react';
 import { useDownwind } from '../context/DownwindContext';
@@ -12,7 +12,8 @@ import { useSplitArrastavel } from '../lib/useSplitArrastavel';
 import { SplitDragHandle } from '../components/SplitDragHandle';
 import { useDownwindPosicoes } from '../lib/useDownwindPosicoes';
 import { DownwindChat } from '../components/DownwindChat';
-import { ModoNavegacao } from '../components/ModoNavegacao';
+import { ModoNavegacao, type ResumoNavegacao } from '../components/ModoNavegacao';
+import { amostrarTrilha, mesclarTrilha, type PontoTrilha } from '../lib/trilhaDownwind';
 import { DownwindFaixaInfo } from '../components/DownwindFaixaInfo';
 import { DownwindParticipanteSheet } from '../components/DownwindParticipanteSheet';
 import { derivarEstadoCompartilhamento } from '../lib/downwindStatusVisual';
@@ -113,6 +114,28 @@ export const DownwindAoVivoView: React.FC = () => {
   const [iniciandoTravessia, setIniciandoTravessia] = useState(false);
   /** Idem para "Tentar de novo" do rastreamento. */
   const [retomandoRastreio, setRetomandoRastreio] = useState(false);
+  /**
+   * A trilha que o MEU aparelho mediu durante a travessia.
+   *
+   * POR QUE ISTO PRECISA EXISTIR
+   *
+   * O Modo Navegação mede a trilha de verdade (`useTrilhaSessao`, GPS local) e
+   * entrega tudo em `onSair`. Aqui esse resumo era **jogado fora**
+   * (`onSair={() => setModoNavegacaoAtivo(false)}`), e o encerramento usava
+   * `minhaTrilha`, que vem do poll do servidor — o mesmo poll que fica
+   * PAUSADO enquanto o Modo Navegação está aberto, ou seja, durante a
+   * travessia inteira.
+   *
+   * O poll não busca ao despausar: ele espera o próximo tick de 30s. Sair da
+   * tela preta e segurar "Encerrar velejo" leva 1,5s. Então, na prática, o
+   * velejo era gravado com a trilha de ANTES da travessia: distância ~0,
+   * velocidade máxima ~0, e o mapa do velejo vazio no logbook.
+   *
+   * `useRef` e não estado: nada na tela depende disto até o encerramento, e um
+   * render a mais por saída do Modo Navegação não serve para nada.
+   */
+  const trilhaMedidaRef = useRef<PontoTrilha[]>([]);
+  const inicioMedidoRef = useRef<Date | null>(null);
   // Split mapa/chat exclusivo do apoio_terra (motorista), arrastável — ver
   // lib/useSplitArrastavel.ts. O velejador nunca usa isto.
   const splitApoio = useSplitArrastavel(50);
@@ -128,6 +151,26 @@ export const DownwindAoVivoView: React.FC = () => {
     downwindAtivo?.id ?? null,
     !emAndamento || modoNavegacaoAtivo
   );
+
+  /*
+   * Espelho da trilha do servidor numa ref, para o encerramento ler o valor
+   * mais recente.
+   *
+   * "Encerrar velejo" é um toque LONGO (1,5s), e o handler que dispara no fim
+   * é o que existia quando o dedo encostou. Se a resposta do poll chegar
+   * durante esses 1,5s — que é exatamente o que acontece agora, já que sair do
+   * Modo Navegação dispara uma busca imediata (ver lib/useDownwindPosicoes.ts)
+   * — o closure ainda enxergaria a trilha de antes. Uma ref não tem esse
+   * problema: não é fechada no closure, é lida na hora.
+   *
+   * `useLayoutEffect` e não atribuição no corpo do render: escrever em ref
+   * durante o render é impuro e o React 19 pode renderizar duas vezes. Mesmo
+   * padrão de `pausadoRef` em lib/useDownwindPosicoes.ts.
+   */
+  const minhaTrilhaRef = useRef<PontoTrilha[]>(minhaTrilha);
+  useLayoutEffect(() => {
+    minhaTrilhaRef.current = minhaTrilha;
+  }, [minhaTrilha]);
 
   const iniciarTravessia = useCallback(async () => {
     /*
@@ -242,14 +285,55 @@ export const DownwindAoVivoView: React.FC = () => {
   // receber 409 e ficar PRESO no takeover para sempre: essa transição só é
   // válida a partir de 'navegando'. estadoDeSaidaVelejo (lib/downwind.ts)
   // escolhe o alvo certo a partir do estado atual.
+  /**
+   * Sair da tela preta guardando o que o GPS mediu.
+   *
+   * Acumula em vez de substituir: dá para entrar e sair do Modo Navegação
+   * várias vezes na mesma travessia (parar na praia, checar o mapa, voltar), e
+   * cada entrada monta um `useTrilhaSessao` novo, do zero. Trocar o valor a
+   * cada saída apagaria os trechos anteriores. `mesclarTrilha` deduplica pelo
+   * timestamp, então mesclar duas medições que se sobrepõem é seguro.
+   */
+  const guardarMedicaoESair = useCallback((resumo: ResumoNavegacao) => {
+    trilhaMedidaRef.current = mesclarTrilha(trilhaMedidaRef.current, resumo.trilha);
+    if (inicioMedidoRef.current === null) inicioMedidoRef.current = resumo.iniciadoEm;
+    setModoNavegacaoAtivo(false);
+  }, []);
+
   const encerrarVelejo = useCallback(async () => {
     if (!downwindAtivo) return;
     const snapshotDownwind = { ...downwindAtivo };
     const alvo = estadoDeSaidaVelejo(snapshotDownwind.minhaParticipacao.estado ?? 'confirmado');
-    const metricas = calcularMetricasTrilha(minhaTrilha ?? []);
+
+    /*
+     * A trilha do velejo: o que o APARELHO mediu, mesclado com o que o
+     * SERVIDOR recebeu.
+     *
+     * Antes daqui, só `minhaTrilha` (servidor) era usada — e ela está parada
+     * desde antes da travessia, porque o poll pausa enquanto o Modo Navegação
+     * está aberto e não busca ao despausar (espera o tick de 30s; o
+     * encerramento leva 1,5s de toque).
+     *
+     * As duas juntas, e não uma escolha entre elas: a medição local tem os
+     * pontos que o beacon ainda não conseguiu mandar (túnel de rede na praia),
+     * e a do servidor tem os pontos de quando o app foi morto pelo Android e
+     * o rastreio continuou pelo serviço nativo. `mesclarTrilha` deduplica pelo
+     * timestamp, então quem tem o ponto duas vezes não o conta duas vezes.
+     */
+    const trilhaDoVelejo = mesclarTrilha(trilhaMedidaRef.current, minhaTrilhaRef.current ?? []);
+    const metricas = calcularMetricasTrilha(trilhaDoVelejo);
 
     setProcessando(true);
-    const res = await encerrarMinhaParticipacao(alvo);
+    const res = await encerrarMinhaParticipacao(alvo, {
+      // Mandar os números medidos era o que faltava para o resumo da travessia
+      // existir: sem eles, `downwind_participantes` fica com distância e
+      // velocidade NULL e o pódio do resumo ordena por nada.
+      distanciaKm: metricas.distanciaKm || undefined,
+      velocidadeMaxNos: metricas.velocidadeMaxNos || undefined,
+      // O servidor reamostra de novo; reduzir aqui é para não subir milhares
+      // de pontos no 4G da praia, que é onde este POST acontece.
+      trilhaReduzida: trilhaDoVelejo.length > 0 ? amostrarTrilha(trilhaDoVelejo, 200) : undefined,
+    });
     setProcessando(false);
     if (!res.ok) {
       setErro(res.error ?? 'Falha ao encerrar.');
@@ -258,7 +342,10 @@ export const DownwindAoVivoView: React.FC = () => {
 
     // Se concluiu a travessia de fato, abre o logbook com dados reais de GPS
     if (alvo === 'encerrado') {
-      const dataInicio = metricas.iniciadoEm || (snapshotDownwind.iniciadoEm ? new Date(snapshotDownwind.iniciadoEm) : new Date());
+      const dataInicio =
+        metricas.iniciadoEm ||
+        inicioMedidoRef.current ||
+        (snapshotDownwind.iniciadoEm ? new Date(snapshotDownwind.iniciadoEm) : new Date());
       const pad2 = (n: number) => String(n).padStart(2, '0');
       const date = [dataInicio.getFullYear(), pad2(dataInicio.getMonth() + 1), pad2(dataInicio.getDate())].join('-');
       const startTime = `${pad2(dataInicio.getHours())}:${pad2(dataInicio.getMinutes())}`;
@@ -272,7 +359,7 @@ export const DownwindAoVivoView: React.FC = () => {
         durationMinutes: duracaoCalculada,
         date,
         startTime,
-        trilhaReduzida: minhaTrilha ?? [],
+        trilhaReduzida: trilhaDoVelejo,
         spotId: undefined,
         customSpotName: spotChegada ? `${spotSaida} → ${spotChegada}` : spotSaida,
         notes: `Downwind em grupo: ${snapshotDownwind.nome}`,
@@ -819,7 +906,7 @@ export const DownwindAoVivoView: React.FC = () => {
       {modoNavegacaoAtivo && (
         <ModoNavegacao
           rotuloSair="Voltar ao mapa"
-          onSair={() => setModoNavegacaoAtivo(false)}
+          onSair={guardarMedicaoESair}
           ultimaPosicaoConfirmadaEm={ultimaPosicaoEm}
           downwindId={downwindAtivo.id}
         />

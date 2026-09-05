@@ -116,7 +116,13 @@ interface DownwindContextType {
   iniciarDownwind: () => Promise<{ ok: boolean; error?: string }>;
   encerrarMinhaParticipacao: (
     motivo: 'encerrado' | 'desistiu',
-    resumo?: { distanciaKm?: number; velocidadeMaxNos?: number }
+    resumo?: {
+      distanciaKm?: number;
+      velocidadeMaxNos?: number;
+      /** Pontos [lat, lng, tsMs] medidos pelo próprio aparelho — vão para
+       *  `downwind_participantes.trilha_reduzida`, que alimenta o resumo. */
+      trilhaReduzida?: Array<[number, number, number]>;
+    }
   ) => Promise<{ ok: boolean; error?: string }>;
   encerrarDownwind: () => Promise<{ ok: boolean; error?: string }>;
   cancelarDownwind: () => Promise<{ ok: boolean; error?: string }>;
@@ -565,10 +571,28 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   }, [downwindAtivo, recarregar]);
 
+  /**
+   * Encerra a MINHA participação, mandando o que o meu aparelho mediu.
+   *
+   * O `trilhaReduzida` faltava aqui — e essa ausência não aparecia em lugar
+   * nenhum. A rota PATCH aceita o campo e grava em
+   * `downwind_participantes.trilha_reduzida`; `GET /api/downwind/[id]/resumo`
+   * lê a coluna e monta o resumo estilo Strava da travessia. Só que **nada no
+   * app jamais enviava o campo**, então a coluna ficava NULL para todo mundo e
+   * o resumo de qualquer downwind saía sem trilha nenhuma, para sempre.
+   *
+   * Mesma família de defeito que já apareceu meia dúzia de vezes nesta base: a
+   * ponta que grava existe, a ponta que lê existe, e no meio não passa nada.
+   */
   const encerrarMinhaParticipacao = useCallback(
     async (
       motivo: 'encerrado' | 'desistiu',
-      resumo?: { distanciaKm?: number; velocidadeMaxNos?: number }
+      resumo?: {
+        distanciaKm?: number;
+        velocidadeMaxNos?: number;
+        /** Pontos [lat, lng, tsMs] medidos pelo próprio aparelho. */
+        trilhaReduzida?: Array<[number, number, number]>;
+      }
     ) => {
       if (!downwindAtivo || !user) return { ok: false, error: 'Nenhum downwind ativo.' };
       try {
@@ -578,6 +602,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             estado: motivo,
             distanciaKm: resumo?.distanciaKm,
             velocidadeMaxNos: resumo?.velocidadeMaxNos,
+            trilhaReduzida: resumo?.trilhaReduzida,
           }),
         });
         await recarregar();
