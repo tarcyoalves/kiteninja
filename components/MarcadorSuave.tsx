@@ -4,10 +4,20 @@ import React, { useEffect, useRef } from 'react';
 import { Marker } from 'react-leaflet';
 import L from 'leaflet';
 import { DURACAO_TWEEN_MS, interpolar, rumoDoMovimento, vaisAnimar } from '@/lib/animacaoMarcador';
+import { posicaoNoInstante } from '@/lib/reproducaoTrilha';
+import type { PontoTrilha } from '@/lib/trilhaDownwind';
 
 interface Props {
-  /** Última leitura conhecida. O marcador desliza até aqui. */
+  /** Última leitura conhecida. Usada quando não há trilha para reproduzir. */
   position: [number, number];
+  /**
+   * Últimas posições em ordem cronológica.
+   *
+   * Com duas ou mais, o marcador REPRODUZ o percurso continuamente em vez de
+   * deslizar de leitura em leitura — é a diferença entre andar e dar um
+   * pulinho a cada 45 segundos. Ver lib/reproducaoTrilha.ts.
+   */
+  trilha?: PontoTrilha[];
   icon: L.DivIcon;
   zIndexOffset?: number;
   eventHandlers?: Parameters<typeof Marker>[0]['eventHandlers'];
@@ -36,6 +46,7 @@ interface Props {
  */
 export const MarcadorSuave: React.FC<Props> = ({
   position,
+  trilha,
   icon,
   zIndexOffset,
   eventHandlers,
@@ -65,7 +76,63 @@ export const MarcadorSuave: React.FC<Props> = ({
     setaEl.style.opacity = '1';
   }, [icon]);
 
+  const reproduzindo = Array.isArray(trilha) && trilha.length >= 2;
+
+  /**
+   * MODO REPRODUÇÃO: o marcador anda sem parar.
+   *
+   * O laço só se reagenda enquanto há trilha à frente (`noFim === false`).
+   * Chegando ao último ponto conhecido, ele para de rodar até chegar leitura
+   * nova — sem isso, vinte marcadores parados n'água manteriam vinte laços de
+   * animação acordados a 60Hz, gastando bateria para não desenhar movimento
+   * nenhum.
+   */
   useEffect(() => {
+    if (!reproduzindo) return;
+    const marker = markerRef.current;
+    if (!marker) return;
+    let vivo = true;
+    let frame: number | null = null;
+    /*
+     * `performance.now()` e não `Date.now()`: o que importa é quanto tempo
+     * passou desde que ESTA trilha chegou, não a hora do aparelho. Os carimbos
+     * dos pontos vêm do relógio do servidor, e um celular desacertado deixaria
+     * o marcador travado no começo ou no fim — ver lib/reproducaoTrilha.ts.
+     * `performance.now()` ainda é monotônico: não anda para trás se o sistema
+     * acertar a hora no meio da travessia.
+     */
+    const chegouEm = performance.now();
+
+    const passo = () => {
+      const r = posicaoNoInstante(trilha!, performance.now() - chegouEm);
+      if (!vivo || !r) return;
+      marker.setLatLng([r.lat, r.lng]);
+      atualRef.current = [r.lat, r.lng];
+
+      if (r.rumoGraus !== null) {
+        rumoRef.current = r.rumoGraus;
+        const setaEl = marker.getElement()?.querySelector<HTMLElement>('[data-seta]');
+        if (setaEl) {
+          setaEl.style.transform = `rotate(${r.rumoGraus}deg)`;
+          setaEl.style.opacity = '1';
+        }
+      }
+
+      if (!r.noFim) frame = requestAnimationFrame(passo);
+      else frame = null;
+    };
+
+    frame = requestAnimationFrame(passo);
+    return () => {
+      vivo = false;
+      if (frame !== null) cancelAnimationFrame(frame);
+    };
+  }, [reproduzindo, trilha]);
+
+  useEffect(() => {
+    // Reprodução no comando: o tween por leitura brigaria com ela pelo mesmo
+    // marcador, e o resultado seria o boneco tremendo entre duas posições.
+    if (reproduzindo) return;
     const marker = markerRef.current;
     const de = atualRef.current;
     const para = position;
@@ -136,7 +203,7 @@ export const MarcadorSuave: React.FC<Props> = ({
         frameRef.current = null;
       }
     };
-  }, [position]);
+  }, [position, reproduzindo]);
 
   return (
     <Marker

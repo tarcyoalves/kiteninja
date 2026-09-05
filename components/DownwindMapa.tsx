@@ -332,13 +332,17 @@ export const DownwindMapa: React.FC<DownwindMapaProps> = ({
         </>
       )}
 
-      {/* MarcadorSuave, não Marker: a posição chega a cada 30s e o marcador
-          DESLIZA até ela em vez de teleportar — sem isso, meio minuto parado,
-          um salto, e de novo parado. Ver lib/animacaoMarcador.ts. */}
+      {/* MarcadorSuave, não Marker: o velejador ANDA no mapa em vez de pular
+          de leitura em leitura. Com os pontos recentes que a rota devolve, o
+          marcador reproduz o percurso continuamente (lib/reproducaoTrilha.ts);
+          sem eles, desliza até a leitura nova (lib/animacaoMarcador.ts). */}
       {participantesComPosicao.map((p) => (
         <MarcadorSuave
           key={p.userId}
           position={[p.lat as number, p.lng as number]}
+          // Com dois ou mais pontos recentes o marcador REPRODUZ o percurso
+          // continuamente; com menos, cai no deslize por leitura.
+          trilha={p.recentes}
           icon={
             p.papel === 'apoio_terra'
               ? criarIconeApoio(p)

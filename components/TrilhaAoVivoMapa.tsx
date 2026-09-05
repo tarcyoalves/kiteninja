@@ -99,7 +99,13 @@ export const TrilhaAoVivoMapa: React.FC<Props> = ({ trilha, ultimaPosicao, nome 
         </>
       )}
       {ultimaPosicao && (
-        <MarcadorSuave position={[ultimaPosicao.lat, ultimaPosicao.lng]} icon={icone} />
+        <MarcadorSuave
+          position={[ultimaPosicao.lat, ultimaPosicao.lng]}
+          // A página de acompanhamento recebe a trilha inteira, então aqui o
+          // movimento é sempre contínuo — ver lib/reproducaoTrilha.ts.
+          trilha={trilha}
+          icon={icone}
+        />
       )}
       <SegueOVelejador posicao={ultimaPosicao} />
     </MapContainer>

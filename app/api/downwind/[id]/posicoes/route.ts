@@ -29,6 +29,20 @@ export const dynamic = 'force-dynamic';
 /** Alvo de amostragem da carga inicial da própria trilha. */
 const LIMITE_TRILHA_INICIAL = 120;
 
+/**
+ * Últimas posições de CADA participante, só para o marcador se mover.
+ *
+ * Quatro pontos, não a trilha inteira: a decisão de não desenhar o trajeto de
+ * terceiros no mapa continua valendo (vinte trilhas cruzadas viram sopa
+ * visual). Isto não desenha nada — alimenta a reprodução do MOVIMENTO, que
+ * precisa de pelo menos dois pontos para saber para onde a pessoa vai, e de
+ * uma folga para não travar quando uma leitura se perde.
+ *
+ * O custo é quatro pares de coordenadas por participante numa resposta que já
+ * carrega nome, avatar e papel de cada um.
+ */
+const PONTOS_PARA_MOVIMENTO = 4;
+
 interface Params {
   params: Promise<{ id: string }>;
 }
@@ -108,6 +122,19 @@ export async function GET(request: Request, ctx: Params) {
         WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
         ORDER BY registrado_em DESC LIMIT 1
       ) p ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT json_agg(
+                 json_build_array(x.lat, x.lng, EXTRACT(EPOCH FROM x.registrado_em) * 1000)
+                 ORDER BY x.registrado_em ASC
+               ) AS pontos
+        FROM (
+          SELECT lat, lng, registrado_em
+          FROM downwind_posicoes
+          WHERE downwind_id = dp.downwind_id AND user_id = dp.user_id
+          ORDER BY registrado_em DESC
+          LIMIT ${PONTOS_PARA_MOVIMENTO}
+        ) x
+      ) r ON TRUE
       WHERE dp.downwind_id = ${id}
     `;
 
@@ -133,6 +160,12 @@ export async function GET(request: Request, ctx: Params) {
         accuracyM: visivel && r.accuracy_m !== null ? Number(r.accuracy_m) : null,
         registradoEm:
           visivel && r.registrado_em ? new Date(String(r.registrado_em)).toISOString() : null,
+        /*
+         * Mesma trava de `posicaoVisivel` da posição atual: quem já saiu da
+         * água não tem trajeto servido a ninguém. Sem este `visivel` aqui, o
+         * histórico recente vazaria justamente por onde a posição foi fechada.
+         */
+        recentes: visivel && Array.isArray(r.pontos) ? (r.pontos as PontoTrilha[]) : [],
         // Calculado no servidor: o cliente não deveria montar esse cruzamento,
         // e centralizar evita a tela do velejador e a do motorista divergirem.
         ehMeuApoio: meuApoioId !== null && userId === meuApoioId,

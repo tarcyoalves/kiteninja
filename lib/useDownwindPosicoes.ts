@@ -27,6 +27,12 @@ export interface DownwindParticipanteMapa {
   lng: number | null;
   accuracyM: number | null;
   registradoEm: string | null;
+  /**
+   * Últimas posições desta pessoa, em ordem cronológica — só para o marcador
+   * se MOVER (ver lib/reproducaoTrilha.ts). Não é o trajeto dela: o mapa
+   * continua sem desenhar trilha de terceiros.
+   */
+  recentes: PontoTrilha[];
   ehMeuApoio: boolean;
   souApoioDele: boolean;
 }
