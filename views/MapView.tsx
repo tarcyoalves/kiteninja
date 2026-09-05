@@ -49,6 +49,8 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     allActiveSosList,
     setLastKnownPosition,
     abrirLoggerComResumo,
+    modoNavegacaoSolo: modoNavegacaoAtivo,
+    setModoNavegacaoSolo: setModoNavegacaoAtivo,
   } = useKiteData();
   const {
     downwindAtivo,
@@ -74,7 +76,12 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   // Modo Navegação: tela cheia preta que mantém o app em primeiro plano
   // durante uma travessia. Entra a partir daqui (aba Mapa) porque é onde o
   // velejador está antes de ir para a água — ver components/ModoNavegacao.tsx.
-  const [modoNavegacaoAtivo, setModoNavegacaoAtivo] = useState(false);
+  //
+  // O estado vem do CONTEXTO, não daqui: a folha "Iniciar" existe em dois
+  // lugares (esta tela e a global do botão PLAY, montada em app/page.tsx), e
+  // enquanto ele era local desta tela a folha global não conseguia ligar o
+  // modo — ela avisava os seguidores, fechava e mandava para a aba Mapa, e o
+  // velejo não começava. Ver docs/BUG-VELEJO-SOLO-NAO-INICIA.md.
   const [sheetIniciarAberto, setSheetIniciarAberto] = useState(false);
   const [modalCriarDwAberto, setModalCriarDwAberto] = useState(false);
   // Incrementado a cada clique manual no botão "Minha localização", para o

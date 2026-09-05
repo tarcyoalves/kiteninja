@@ -165,6 +165,18 @@ interface KiteDataContextType {
   isSheetIniciarOpen: boolean;
   setIsSheetIniciarOpen: (open: boolean) => void;
   abrirIniciarAtividade: () => void;
+  /**
+   * Modo Navegação de VELEJO SOLO ligado (a tela preta com odômetro).
+   *
+   * Mora aqui, e não em `views/MapView.tsx`, porque existem DOIS botões
+   * "Velejo Solo": o da folha aberta pelo mapa e o da folha global do botão
+   * PLAY do menu inferior, que é montada em `app/page.tsx`. Enquanto isto era
+   * estado local do MapView, a folha global não tinha como ligar o modo — ela
+   * avisava os seguidores, fechava e mandava para a aba Mapa, e o velejo
+   * simplesmente não começava. Ver docs/BUG-VELEJO-SOLO-NAO-INICIA.md.
+   */
+  modoNavegacaoSolo: boolean;
+  setModoNavegacaoSolo: (ativo: boolean) => void;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   /** Seção interna exibida em FeedView. O menu inferior força `comunidade`. */
@@ -387,6 +399,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
   const [isSheetIniciarOpen, setIsSheetIniciarOpen] = useState(false);
+  const [modoNavegacaoSolo, setModoNavegacaoSolo] = useState(false);
   const abrirIniciarAtividade = useCallback(() => setIsSheetIniciarOpen(true), []);
   const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
   const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
@@ -1416,6 +1429,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         isSheetIniciarOpen,
         setIsSheetIniciarOpen,
         abrirIniciarAtividade,
+        modoNavegacaoSolo,
+        setModoNavegacaoSolo,
         isBuscaVelejadoresOpen,
         setIsBuscaVelejadoresOpen,
         riderIdAberto,

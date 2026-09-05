@@ -1,4 +1,5 @@
-﻿import { describe, it, expect } from 'vitest';
+﻿import { readFileSync } from 'node:fs';
+import { describe, it, expect } from 'vitest';
 import {
   determinarAtividadeAtual,
   mapaMostraDownwind,
@@ -165,5 +166,65 @@ describe('mapaMostraDownwind', () => {
   it('sem downwind, nunca', () => {
     expect(mapaMostraDownwind({ downwind: null, abertoDeliberadamente: true })).toBe(false);
     expect(mapaMostraDownwind({ downwind: undefined, abertoDeliberadamente: true })).toBe(false);
+  });
+});
+
+/**
+ * Guarda de código-fonte: os DOIS botões "Velejo Solo" ligam o Modo Navegação?
+ *
+ * O relato foi "cliquei em play, iniciar velejo solo, e voltou para o mapa
+ * normal sem gravar". A causa: `modoNavegacaoAtivo` era estado LOCAL de
+ * views/MapView.tsx, e a folha global (a do botão PLAY do menu inferior,
+ * montada em app/page.tsx) não tinha como alcançá-lo. Ela avisava os
+ * seguidores, fechava e ia para a aba Mapa — e parava aí.
+ *
+ * Nada disso era visível para tipo, lint, teste de unidade ou build: os dois
+ * caminhos compilavam, e um deles funcionava. Só o caminho MENOS usado por
+ * quem escreve o código (o do mapa) é que funcionava.
+ *
+ * Por isso o teste lê o arquivo. É feio de propósito: o custo de voltar a
+ * errar aqui é o velejador achar que está sendo gravado e não estar — e os
+ * seguidores recebendo "entrei na água" enquanto nada acontece.
+ */
+describe('os dois caminhos de "Velejo Solo" ligam o Modo Navegação', () => {
+  /*
+   * Os COMENTÁRIOS saem antes da conferência.
+   *
+   * Sem isso a guarda é falsa: comentar a chamada (`// setModoNavegacaoSolo(true)`)
+   * deixa o texto no arquivo e o teste passa verde com o bug de volta. Foi o
+   * que a contraprova mostrou na primeira versão deste teste.
+   */
+  const semComentarios = (texto: string) =>
+    texto
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((linha) => linha.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+  const trechoDoHandler = (arquivo: string, prop: string) => {
+    const src = semComentarios(readFileSync(arquivo, 'utf8'));
+    const i = src.indexOf(prop);
+    expect(i, `${prop} não existe em ${arquivo}`).toBeGreaterThan(-1);
+    // Do início da prop até o fim do handler — folgado de propósito.
+    return src.slice(i, i + 2500);
+  };
+
+  it('a folha global (botão PLAY do menu inferior) liga o modo', () => {
+    const handler = trechoDoHandler('app/page.tsx', 'onIniciarVelejoSolo');
+    expect(handler).toContain('setModoNavegacaoSolo(true)');
+  });
+
+  it('a folha do mapa liga o modo', () => {
+    const handler = trechoDoHandler('views/MapView.tsx', 'onIniciarVelejoSolo');
+    expect(handler).toMatch(/setModoNavegacaoAtivo\(true\)/);
+  });
+
+  it('o estado mora no contexto, não numa tela só', () => {
+    // É o que torna os dois caminhos alcançáveis. Se alguém devolver isto
+    // para dentro do MapView, o botão do menu inferior quebra de novo em
+    // silêncio.
+    const ctx = readFileSync('context/KiteDataContext.tsx', 'utf8');
+    expect(ctx).toContain('modoNavegacaoSolo');
+    expect(ctx).toContain('setModoNavegacaoSolo');
   });
 });

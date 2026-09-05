@@ -73,6 +73,8 @@ const MainContent: React.FC = () => {
     dmUnreadCount,
     isSheetIniciarOpen,
     setIsSheetIniciarOpen,
+    modoNavegacaoSolo,
+    setModoNavegacaoSolo,
     createDownwind,
     avisarInicioDeVelejo,
     spots,
@@ -319,7 +321,7 @@ const MainContent: React.FC = () => {
           onClose={() => setIsSheetIniciarOpen(false)}
           selectedSpot={selectedSpot}
           downwindAtivo={downwindAtivo}
-          modoNavegacaoAtivo={false}
+          modoNavegacaoAtivo={modoNavegacaoSolo}
           onIniciarVelejoSolo={() => {
             // Lê o spot ANTES do setSelectedSpot(null) logo abaixo — depois
             // dele a informação some, e o aviso viraria "entrou na água" sem
@@ -328,6 +330,25 @@ const MainContent: React.FC = () => {
             setIsSheetIniciarOpen(false);
             setSelectedSpot(null);
             setActiveTab('mapa');
+            /*
+             * LIGA O MODO NAVEGAÇÃO. Faltava exatamente esta linha.
+             *
+             * O botão avisava os seguidores que o velejador entrou na água,
+             * fechava a folha, ia para a aba Mapa — e parava aí. O relato foi
+             * "cliquei em play, iniciar velejo solo, e voltou para o mapa
+             * normal sem gravar", que é literalmente o que o código fazia.
+             *
+             * A causa não era esquecimento numa linha: `modoNavegacaoAtivo`
+             * era estado LOCAL de views/MapView.tsx, e daqui não havia como
+             * alcançá-lo. A outra folha (a do próprio mapa) funcionava, então
+             * o defeito só aparecia por este caminho — o do menu inferior, que
+             * é o que a maioria usa. O estado foi para o KiteDataContext, que
+             * é onde já moram `isSheetIniciarOpen` e `activeTab`.
+             *
+             * Pior que não funcionar: o aviso de "entrei na água" ia para os
+             * seguidores enquanto nada era gravado.
+             */
+            setModoNavegacaoSolo(true);
           }}
           onAbrirCriarDownwind={() => {
             setIsSheetIniciarOpen(false);
