@@ -177,6 +177,19 @@ interface KiteDataContextType {
    */
   modoNavegacaoSolo: boolean;
   setModoNavegacaoSolo: (ativo: boolean) => void;
+  /**
+   * Alguém em terra está acompanhando este velejo solo.
+   *
+   * Enquanto for `false`, o aparelho NÃO manda posição nenhuma ao servidor —
+   * ver ACOMPANHAMENTO_NUNCA_LIGA_SOZINHO em lib/apoioSolo.ts. Mora aqui
+   * porque quem liga (a folha "Iniciar atividade") e quem transmite (o Modo
+   * Navegação, dentro do MapView) são telas diferentes.
+   */
+  apoioSoloAtivo: boolean;
+  /** Abre (ou reaproveita) a sessão e devolve o link para compartilhar. */
+  ativarApoioSolo: () => Promise<{ ok: boolean; url?: string; error?: string }>;
+  /** Velejador saiu da água: para de transmitir e mata o link. */
+  encerrarApoioSolo: () => void;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   /** Seção interna exibida em FeedView. O menu inferior força `comunidade`. */
@@ -400,6 +413,13 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [isNewListingOpen, setIsNewListingOpen] = useState(false);
   const [isSheetIniciarOpen, setIsSheetIniciarOpen] = useState(false);
   const [modoNavegacaoSolo, setModoNavegacaoSolo] = useState(false);
+  const [apoioSoloAtivo, setApoioSoloAtivo] = useState(false);
+  /**
+   * O link da sessão em curso. O servidor devolve o token em claro UMA vez
+   * (guarda só o hash), então quem reaproveita a sessão precisa do link que
+   * ficou aqui — pedir de novo não traz o token de volta.
+   */
+  const [linkApoioSolo, setLinkApoioSolo] = useState<string | null>(null);
   const abrirIniciarAtividade = useCallback(() => setIsSheetIniciarOpen(true), []);
   const [isBuscaVelejadoresOpen, setIsBuscaVelejadoresOpen] = useState(false);
   const [riderIdAberto, setRiderIdAberto] = useState<string | null>(null);
@@ -898,6 +918,61 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         });
       });
   };
+
+  /**
+   * Liga o acompanhamento do velejo solo e devolve o link.
+   *
+   * Reaproveita a sessão aberta: o servidor responde `reaproveitada: true` sem
+   * token, e aí vale o link que já está guardado aqui. Se não houver (o app foi
+   * recarregado), a sessão é encerrada e outra é aberta — melhor um link novo
+   * que funciona do que um antigo que ninguém tem.
+   */
+  const ativarApoioSolo = useCallback(async (): Promise<{
+    ok: boolean;
+    url?: string;
+    error?: string;
+  }> => {
+    try {
+      const res = await api<{ token: string | null; reaproveitada: boolean }>(
+        '/api/velejo-apoio',
+        { method: 'POST' }
+      );
+      if (res.token) {
+        const url = `${window.location.origin}/velejo-apoio/${res.token}`;
+        setLinkApoioSolo(url);
+        setApoioSoloAtivo(true);
+        return { ok: true, url };
+      }
+      if (linkApoioSolo) {
+        setApoioSoloAtivo(true);
+        return { ok: true, url: linkApoioSolo };
+      }
+      // Reaproveitou uma sessão cujo link se perdeu: encerra e abre outra.
+      await api('/api/velejo-apoio', { method: 'DELETE' }).catch(() => {});
+      const nova = await api<{ token: string | null }>('/api/velejo-apoio', { method: 'POST' });
+      if (!nova.token) return { ok: false, error: 'Não foi possível gerar o link.' };
+      const url = `${window.location.origin}/velejo-apoio/${nova.token}`;
+      setLinkApoioSolo(url);
+      setApoioSoloAtivo(true);
+      return { ok: true, url };
+    } catch (err) {
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : 'Não foi possível gerar o link.',
+      };
+    }
+  }, [linkApoioSolo]);
+
+  /**
+   * Desliga a transmissão. Otimista de propósito: o que não pode acontecer é
+   * o aparelho continuar mandando posição porque a rede falhou na hora de
+   * avisar o servidor. O servidor também para sozinho quando as 12h vencem.
+   */
+  const encerrarApoioSolo = useCallback(() => {
+    setApoioSoloAtivo(false);
+    setLinkApoioSolo(null);
+    void api('/api/velejo-apoio', { method: 'DELETE' }).catch(() => {});
+  }, []);
 
   const convertWind = (knots: number) => {
     if (windUnit === 'km/h') {
@@ -1431,6 +1506,9 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         abrirIniciarAtividade,
         modoNavegacaoSolo,
         setModoNavegacaoSolo,
+        apoioSoloAtivo,
+        ativarApoioSolo,
+        encerrarApoioSolo,
         isBuscaVelejadoresOpen,
         setIsBuscaVelejadoresOpen,
         riderIdAberto,

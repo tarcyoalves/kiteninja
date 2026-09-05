@@ -51,6 +51,8 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
     abrirLoggerComResumo,
     modoNavegacaoSolo: modoNavegacaoAtivo,
     setModoNavegacaoSolo: setModoNavegacaoAtivo,
+    ativarApoioSolo,
+    encerrarApoioSolo,
   } = useKiteData();
   const {
     downwindAtivo,
@@ -135,10 +137,14 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   const handleSairModoNavegacao = useCallback(
     (resumo: ResumoNavegacao) => {
       setModoNavegacaoAtivo(false);
+      // Saiu da água: o acompanhamento acaba junto. Continuar transmitindo
+      // seria rastrear a pessoa no caminho de casa — mesma decisão de
+      // `posicaoVisivel` no downwind.
+      encerrarApoioSolo();
       if (!valePenaRegistrarSessao(resumo)) return;
       abrirLoggerComResumo(paraPrefillLogbook(resumo, new Date()));
     },
-    [abrirLoggerComResumo]
+    [abrirLoggerComResumo, encerrarApoioSolo]
   );
 
   const handleSelectSpot = useCallback((spot: Spot) => {
@@ -382,10 +388,22 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
             setSheetIniciarAberto(false);
           }}
           onCompartilharSoloLink={async () => {
+            /*
+             * LINK DE VERDADE. Antes isto compartilhava
+             * `window.location.origin` — a home do app: quem recebia não via
+             * nada daquele velejo, porque velejo solo não mandava posição
+             * para lugar nenhum. Agora abre a sessão de acompanhamento (que é
+             * o que liga a transmissão) e manda o endereço dela.
+             */
+            const sessao = await ativarApoioSolo();
+            if (!sessao.ok || !sessao.url) {
+              alert(sessao.error ?? 'Não foi possível gerar o link de acompanhamento.');
+              return;
+            }
             const shareData = {
               title: 'Acompanhar Velejo KiteNinja',
-              text: `Estou iniciando um velejo solo em ${selectedMapSpot?.name || 'KiteNinja'}! Acompanhe comigo.`,
-              url: typeof window !== 'undefined' ? window.location.origin : '',
+              text: `Estou velejando${selectedMapSpot?.name ? ` em ${selectedMapSpot?.name}` : ''}. Acompanhe ao vivo:`,
+              url: sessao.url,
             };
             if (navigator.share) {
               try {

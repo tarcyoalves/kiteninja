@@ -11,6 +11,7 @@ import { useKiteData } from '../context/KiteDataContext';
 import { DownwindChat } from './DownwindChat';
 import type { PontoTrilha } from '../lib/trilhaDownwind';
 import { NOS_PARA_KMH } from '../lib/velocidadeVelejo';
+import { useApoioSoloBeacon } from '../lib/useApoioSoloBeacon';
 
 /**
  * Tela preta de navegação — mantém o app em primeiro plano com Wake Lock
@@ -236,7 +237,23 @@ export const ModoNavegacao: React.FC<ModoNavegacaoProps> = ({
   // componente, então receber por prop só criaria prop drilling sem
   // propósito. Ler do contexto aqui é o caminho mais curto e o mais
   // consistente com o resto do app.
-  const { myActiveSos, fetchActiveSos } = useKiteData();
+  const { myActiveSos, fetchActiveSos, apoioSoloAtivo, encerrarApoioSolo } = useKiteData();
+
+  /*
+   * Transmite a posição para quem está acompanhando em terra — SÓ quando
+   * alguém pediu o link (`apoioSoloAtivo`). Num downwind isto fica desligado:
+   * lá quem reporta é `useDownwindBeacon`, e ligar os dois mandaria a mesma
+   * posição por dois caminhos.
+   *
+   * Reaproveita o `watchPosition` que `useTrilhaSessao` já mantém — não abre
+   * um segundo GPS. O custo desta funcionalidade é uma requisição a cada 45s,
+   * nada de bateria além do que o velejo já gastava.
+   */
+  useApoioSoloBeacon(
+    apoioSoloAtivo && downwindId === undefined,
+    trilha.pontos.length > 0 ? trilha.pontos[trilha.pontos.length - 1] : null,
+    encerrarApoioSolo
+  );
   const hasActiveSos = Boolean(myActiveSos);
 
   const sos = useSosHold({

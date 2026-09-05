@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACOMPANHAMENTO_NUNCA_LIGA_SOZINHO,
@@ -88,5 +89,57 @@ describe('textoDoConvite', () => {
     expect(textoDoConvite({ nome: 'Ana', spot: null })).toBe(
       'Ana está velejando. Acompanhe ao vivo:'
     );
+  });
+});
+
+/**
+ * Guarda de código-fonte: o botão compartilha o LINK, não a home do app.
+ *
+ * O defeito original: `onCompartilharSoloLink` mandava
+ * `window.location.origin`. Quem recebia abria o KiteNinja e não via nada
+ * daquele velejo. Nada em tipo, lint, teste ou build acusa isso — a URL era
+ * válida, só não levava a lugar nenhum.
+ *
+ * São DOIS lugares que montam a mesma folha (a do mapa e a global do botão
+ * PLAY). Consertar um e esquecer o outro reproduziria o relato pela outra
+ * porta — foi o que aconteceu com a criação de downwind aberto.
+ */
+describe('o convite de apoio compartilha um link que funciona', () => {
+  const PORTAS = ['views/MapView.tsx', 'app/page.tsx'];
+
+  const semComentarios = (texto: string) =>
+    texto
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((linha) => linha.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+  const trecho = (arquivo: string) => {
+    const src = semComentarios(readFileSync(arquivo, 'utf8'));
+    const i = src.indexOf('onCompartilharSoloLink');
+    expect(i, `onCompartilharSoloLink não existe em ${arquivo}`).toBeGreaterThan(-1);
+    return src.slice(i, i + 1500);
+  };
+
+  for (const porta of PORTAS) {
+    it(`${porta} abre a sessão de acompanhamento antes de compartilhar`, () => {
+      expect(trecho(porta)).toContain('ativarApoioSolo');
+    });
+
+    it(`${porta} não compartilha a home do app`, () => {
+      // `window.location.origin` continua aparecendo no arquivo (o link é
+      // montado a partir dele no contexto), mas não pode ser o que vai como
+      // `url:` do compartilhamento.
+      expect(trecho(porta)).not.toMatch(/url:\s*typeof window[^\n]*location\.origin/);
+    });
+  }
+
+  it('a transmissão só liga junto com a sessão, nunca antes', () => {
+    // O beacon é o único caminho que sobe posição de velejo solo, e ele é
+    // condicionado a `apoioSoloAtivo`. Se alguém ligar isso incondicionalmente,
+    // todo velejo solo passa a transmitir — o oposto do contrato.
+    const modo = semComentarios(readFileSync('components/ModoNavegacao.tsx', 'utf8'));
+    expect(modo).toContain('useApoioSoloBeacon');
+    expect(modo).toMatch(/useApoioSoloBeacon\(\s*apoioSoloAtivo/);
   });
 });
