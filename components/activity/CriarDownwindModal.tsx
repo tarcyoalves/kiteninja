@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import { Calendar, Globe, Loader2, Lock, MapPin, Users, X } from 'lucide-react';
 import { Spot } from '@/types';
-import { useAuth } from '@/context/AuthContext';
 
 interface CriarDownwindModalProps {
   isOpen: boolean;
@@ -26,8 +25,6 @@ export const CriarDownwindModal: React.FC<CriarDownwindModalProps> = ({
   defaultSpotId,
   onCriarDownwind,
 }) => {
-  const { canOrganizeDownwind } = useAuth();
-  const podeOrganizarComunidade = canOrganizeDownwind;
 
   const [nome, setNome] = useState('');
   const [spotSaida, setSpotSaida] = useState(defaultSpotId || spots[0]?.id || '');
@@ -166,6 +163,7 @@ export const CriarDownwindModal: React.FC<CriarDownwindModalProps> = ({
               <button
                 type="button"
                 onClick={() => setVisibilidade('privado')}
+                aria-pressed={visibilidade === 'privado'}
                 className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
                   visibilidade === 'privado'
                     ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-200'
@@ -179,16 +177,17 @@ export const CriarDownwindModal: React.FC<CriarDownwindModalProps> = ({
                 </div>
               </button>
 
+              {/*
+                * Sem trava de cargo: qualquer velejador cria downwind aberto.
+                * O botão ficava desabilitado com "apenas moderadores e
+                * instrutores podem criar downwinds públicos" — ver o bloco em
+                * app/api/downwind/route.ts sobre por que isso saiu.
+                */}
               <button
                 type="button"
-                onClick={() => {
-                  if (podeOrganizarComunidade) setVisibilidade('comunidade');
-                  else setErro('Apenas moderadores e instrutores podem criar downwinds públicos da comunidade.');
-                }}
-                disabled={!podeOrganizarComunidade}
+                onClick={() => setVisibilidade('comunidade')}
+                aria-pressed={visibilidade === 'comunidade'}
                 className={`p-2.5 rounded-xl border text-left flex items-start gap-2 transition-all ${
-                  !podeOrganizarComunidade ? 'opacity-40 cursor-not-allowed' : ''
-                } ${
                   visibilidade === 'comunidade'
                     ? 'bg-cyan-500/10 border-cyan-500/40 text-cyan-200'
                     : 'bg-slate-950 border-slate-800 text-slate-400'

@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
+import { requireUser, HttpError } from '@/lib/auth';
 import { canCreateOfficialEvent } from '@/lib/authz';
 import { str } from '@/lib/validation';
 import { dataDoEvento } from '@/lib/dataEvento';
@@ -11,6 +11,7 @@ import {
 import { normalizarUf } from '@/lib/uf';
 import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import type { KiteEvent } from '@/types';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const EVENT_TYPES = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'] as const;
 
@@ -138,7 +139,26 @@ export async function GET(request: Request) {
  * contrário (o evento sempre existe antes do downwind ser tentado).
  */
 async function createDownwindEvent(body: unknown) {
-  const user = await requireDownwindOrganizer();
+  /*
+   * QUALQUER VELEJADOR AUTENTICADO, não só cargo.
+   *
+   * Esta é a SEGUNDA porta de criação de downwind — a outra é
+   * `POST /api/downwind` (modal do Mapa), que passou a aceitar qualquer
+   * velejador inclusive para `comunidade`. Manter o cargo só aqui deixaria as
+   * duas portas discordando sobre a mesma capacidade: dava para criar um
+   * downwind aberto pelo mapa e o botão da aba Eventos continuava invisível.
+   *
+   * Isto NÃO afrouxa os outros tipos de evento: `createOfficialEvent`
+   * (Campeonato, Clínica, Encontro) segue com a permissão dele. Só downwind
+   * mudou, e mudou nas duas portas ao mesmo tempo.
+   *
+   * O limite de criação passa a valer AQUI TAMBÉM. Esta rota não tinha
+   * nenhum: ela dependia inteiramente do cargo para segurar volume. Tirar o
+   * cargo sem pôr o limite teria aberto criação de evento público sem teto —
+   * o mesmo cuidado tomado na outra porta.
+   */
+  const user = await requireUser();
+  rateLimiters.downwindCriar(user.id);
 
   const title = str(body, 'title', { max: 200 });
   const location = str(body, 'location', { max: 200 });

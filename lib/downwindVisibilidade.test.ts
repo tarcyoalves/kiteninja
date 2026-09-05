@@ -203,3 +203,45 @@ describe('podeVerEvento', () => {
     ).toBe(true);
   });
 });
+
+/**
+ * Guarda de código-fonte: criar downwind ABERTO não exige cargo.
+ *
+ * O relato: "tentei criar um dw com um usuário comum e só permite criar
+ * privado". A causa era `requireDownwindOrganizer()` no ramo `comunidade` —
+ * admin, moderador, instrutor ou a liberação pontual. Combinar uma travessia
+ * com os amigos não é ato administrativo.
+ *
+ * O teste lê o arquivo porque é uma regra de PERMISSÃO em duas rotas
+ * diferentes: nada em tipo, lint ou teste de unidade acusa alguém devolvendo a
+ * trava para uma delas, e a que sobrasse fechada voltaria a produzir o mesmo
+ * relato — só que pela outra porta.
+ *
+ * E confere o par: sem o cargo, quem segura volume é o limite de criação.
+ * Tirar um sem pôr o outro abriria criação pública sem teto.
+ */
+describe('qualquer velejador cria downwind aberto', () => {
+  const PORTAS = [
+    'app/api/downwind/route.ts',
+    'app/api/events/route.ts',
+  ];
+
+  const semComentarios = (texto: string) =>
+    texto
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((linha) => linha.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+  for (const porta of PORTAS) {
+    it(`${porta} não exige cargo de organizador`, () => {
+      const src = semComentarios(readFileSync(porta, 'utf8'));
+      expect(src).not.toContain('requireDownwindOrganizer');
+    });
+
+    it(`${porta} mantém o limite de criação, que é o que segura abuso agora`, () => {
+      const src = semComentarios(readFileSync(porta, 'utf8'));
+      expect(src).toContain('rateLimiters.downwindCriar');
+    });
+  }
+});

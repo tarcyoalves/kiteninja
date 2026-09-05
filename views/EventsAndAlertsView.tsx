@@ -50,7 +50,7 @@ export const EventsAndAlertsView: React.FC = () => {
     setRiderIdAberto,
     refreshEventsAndAlerts,
   } = useKiteData();
-  const { user, openAuthModal, canOrganizeDownwind, canModerateEvents } = useAuth();
+  const { user, openAuthModal, canModerateEvents } = useAuth();
   const { entrarNoDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
@@ -1102,10 +1102,15 @@ export const EventsAndAlertsView: React.FC = () => {
       )}
 
       {/* FAB "Criar Downwind" — mesmo padrão de posicionamento do botão
-          Publicar em FeedView (publish-fab-bottom, globals.css), só visível
-          na subaba Eventos e para quem tem canOrganizeDownwind (admin/
-          moderator/instructor pelo role, ou rider com a liberação pontual). */}
-      {activeSubTab === 'eventos' && canOrganizeDownwind && !isCreatingDownwind && (
+          Publicar em FeedView (publish-fab-bottom, globals.css).
+
+          Visível para QUALQUER velejador logado. Era restrito a
+          `canOrganizeDownwind`, mas combinar uma travessia com os amigos não é
+          ato administrativo — e com a outra porta (modal do Mapa) liberada,
+          esconder este botão só deixaria as duas discordando. Quem cria já é o
+          organizador DAQUELE downwind, que é o que governa iniciar, encerrar e
+          avisar os seguidores. Ver app/api/downwind/route.ts. */}
+      {activeSubTab === 'eventos' && user && !isCreatingDownwind && (
         <div className="fixed publish-fab-bottom left-0 right-0 z-20 flex justify-center pointer-events-none">
           <button
             onClick={() => setIsCreatingDownwind(true)}

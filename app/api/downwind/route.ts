@@ -1,6 +1,6 @@
 ﻿import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser, requireDownwindOrganizer, HttpError } from '@/lib/auth';
+import { requireUser, HttpError } from '@/lib/auth';
 import { rateLimiters } from '@/lib/rateLimit';
 import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import { str } from '@/lib/validation';
@@ -155,11 +155,32 @@ export async function POST(request: Request) {
       : VISIBILIDADE_PADRAO;
     if (visibilidade === null) throw new HttpError(400, 'Visibilidade inválida.');
 
-    if (visibilidade === 'comunidade') {
-      await requireDownwindOrganizer();
-    } else {
-      rateLimiters.downwindCriar(user.id);
-    }
+    /*
+     * QUALQUER VELEJADOR CRIA DOWNWIND ABERTO.
+     *
+     * Antes, `comunidade` exigia `requireDownwindOrganizer()` — admin,
+     * moderador, instrutor, ou a liberação pontual `pode_organizar_downwind`.
+     * Um usuário comum conseguia criar downwind, mas só FECHADO, e a tela
+     * dizia "apenas moderadores e instrutores podem criar downwinds públicos".
+     *
+     * Decisão do dono, e ela faz sentido para o produto: um downwind é um
+     * grupo de amigos combinando uma travessia, não um evento oficial. Exigir
+     * cargo para convidar a comunidade transformava a funcionalidade principal
+     * do app num privilégio — e quem cria o downwind já é o organizador DELE
+     * (`eh_organizador` na tabela de participantes), que é o que de fato
+     * governa quem pode iniciar, encerrar e avisar os seguidores.
+     *
+     * O QUE SEGURA O ABUSO, agora que o cargo não segura:
+     *
+     *  - `rateLimiters.downwindCriar` passou a valer para TODA criação. Antes
+     *    ele só corria no ramo privado — o público pulava o limite inteiro,
+     *    porque se assumia que só cargo de confiança chegava ali. Tirar o
+     *    cargo sem mover o limite teria aberto criação pública sem teto.
+     *  - `podeNotificarSeguidores` continua uma vez por downwind, e o push vai
+     *    só para quem SEGUE o criador — não para o app inteiro.
+     *  - Apagar continua com o dono do evento e a moderação.
+     */
+    rateLimiters.downwindCriar(user.id);
 
     const spotSaidaRows = await sql`SELECT id, name, location, state FROM spots WHERE id = ${spotSaida} LIMIT 1`;
     if (spotSaidaRows.length === 0) throw new HttpError(400, 'Spot de saída inválido.');
