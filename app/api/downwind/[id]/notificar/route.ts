@@ -78,6 +78,31 @@ export async function POST(_request: Request, ctx: Params) {
     if (!veredicto.permitido) throw new HttpError(409, veredicto.motivo);
 
     /*
+     * OS DESTINATÁRIOS SÃO LIDOS ANTES DA MARCA.
+     *
+     * A ordem antiga era: marcar, depois buscar seguidores, e se não houvesse
+     * nenhum, `return { enviados: 0 }`. Com zero seguidores — que é o caso de
+     * quem acabou de entrar no app, e provavelmente o caso do relato "avisar
+     * os amigos não funcionou" — a única chance de avisar era QUEIMADA sem
+     * ninguém ter sido avisado. `notificado_em` preenchido, botão travado para
+     * sempre, e a tela dizendo que deu certo.
+     *
+     * Sem ninguém para avisar não há o que marcar: a trava existe para impedir
+     * push repetido, e push nenhum foi mandado. O organizador consegue avisar
+     * depois, quando alguém passar a segui-lo.
+     */
+    const seguidores = await sql`
+      SELECT follower_id FROM user_follows WHERE following_id = ${user.id}
+    `;
+    const destinatarios = seguidores.map((r) =>
+      String((r as Record<string, unknown>).follower_id)
+    );
+
+    if (destinatarios.length === 0) {
+      return { enviados: 0, seguidores: 0, avisados: 0 };
+    }
+
+    /*
      * A MARCA VEM ANTES DO PUSH, de propósito.
      *
      * Se o disparo ficasse por último, uma falha no meio do envio (rede,
@@ -103,15 +128,6 @@ export async function POST(_request: Request, ctx: Params) {
       throw new HttpError(409, 'A comunidade já foi avisada deste downwind.');
     }
 
-    const seguidores = await sql`
-      SELECT follower_id FROM user_follows WHERE following_id = ${user.id}
-    `;
-    const destinatarios = seguidores.map((r) =>
-      String((r as Record<string, unknown>).follower_id)
-    );
-
-    if (destinatarios.length === 0) return { enviados: 0, seguidores: 0 };
-
     const trajeto = [dw.spot_saida_nome, dw.spot_chegada_nome]
       .filter((n): n is string => typeof n === 'string' && n.length > 0)
       .join(' → ');
@@ -131,6 +147,43 @@ export async function POST(_request: Request, ctx: Params) {
       quando,
     });
 
+    /*
+     * NOTIFICAÇÃO DENTRO DO APP, e não só push. ISTO É O CONSERTO PRINCIPAL.
+     *
+     * O aviso existia SÓ como push. Push exige a assinatura do navegador —
+     * permissão concedida, service worker vivo, e no iPhone o app instalado na
+     * tela inicial. Na prática, a maioria dos amigos não tem. Para eles o
+     * botão "Avisar a comunidade" não fazia absolutamente nada: nenhuma
+     * notificação, nenhum badge, nenhum rastro em lugar nenhum.
+     *
+     * A tabela `notifications` e o sininho já existiam, com convite de
+     * downwind e velejo iniciado passando por lá. Só o aviso de downwind novo
+     * é que não passava — de novo a família de defeito desta base: a ponta que
+     * grava existe, a ponta que lê existe, e no meio não passa nada.
+     *
+     * Um INSERT com SELECT sobre a lista, não um por seguidor: uma ida ao
+     * banco em vez de N. `ON CONFLICT DO NOTHING` não é necessário (não há
+     * unicidade aqui), mas o filtro `actor_id <> recipient_id` do CHECK da
+     * tabela é: alguém que segue a si mesmo por dado inconsistente derrubaria
+     * o INSERT inteiro e ninguém seria avisado.
+     */
+    let avisados = 0;
+    try {
+      const inseridas = await sql`
+        INSERT INTO notifications (recipient_id, actor_id, type, downwind_id)
+        SELECT f.follower_id, ${user.id}, 'downwind_novo', ${id}
+        FROM user_follows f
+        WHERE f.following_id = ${user.id} AND f.follower_id <> ${user.id}
+        RETURNING id
+      `;
+      avisados = inseridas.length;
+    } catch (err) {
+      // O push ainda pode salvar o aviso; falhar aqui não pode derrubar a
+      // resposta. Mas registra: notificação in-app é o caminho que funciona
+      // para a maioria, então uma falha aqui é grave e tem que aparecer.
+      console.error('[downwind/notificar] falha ao gravar notificação in-app', err);
+    }
+
     const enviados = await sendPushToUsers(destinatarios, {
       title: titulo,
       body: corpo,
@@ -138,6 +191,8 @@ export async function POST(_request: Request, ctx: Params) {
       tag: `downwind-novo-${id}`,
     });
 
-    return { enviados, seguidores: destinatarios.length };
+    // `avisados` é o número honesto: quantos amigos vão VER o aviso, com ou
+    // sem push. `enviados` conta só os que receberam a notificação do sistema.
+    return { enviados, seguidores: destinatarios.length, avisados };
   });
 }

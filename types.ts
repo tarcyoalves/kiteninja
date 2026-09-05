@@ -314,7 +314,9 @@ export interface AppNotification {
     | 'novo_seguidor'
     | 'convite_downwind'
     | 'velejo_iniciado'
-    | 'downwind_iniciado';
+    | 'downwind_iniciado'
+    /** O organizador avisou os seguidores de um downwind novo na agenda. */
+    | 'downwind_novo';
   actorId: string;
   actorName: string;
   actorAvatarUrl?: string;

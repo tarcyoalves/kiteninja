@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Valida o schema e as queries das rotas contra um Postgres real, em processo
  * (PGlite). Não precisa de Neon nem de rede — serve para pegar coluna
  * inexistente, violação de constraint e erro de sintaxe antes do deploy.
@@ -1516,6 +1516,29 @@ async function main() {
     'notifications aceita o tipo downwind_iniciado',
     `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'downwind_iniciado')`,
     [seguidorLigado, velejador]
+  );
+  await expectOk(
+    db,
+    'notifications aceita o tipo downwind_novo (aviso de downwind marcado)',
+    `INSERT INTO notifications (recipient_id, actor_id, type) VALUES ($1, $2, 'downwind_novo')`,
+    [seguidorLigado, velejador]
+  );
+  /*
+   * O INSERT ... SELECT de app/api/downwind/[id]/notificar/route.ts, contra o
+   * Postgres de verdade. É o conserto de "avisar os amigos não funcionou": o
+   * aviso existia só como push, e quem não tem push não recebia nada. Se o
+   * CHECK do tipo não incluísse 'downwind_novo', este INSERT falharia em
+   * produção dentro de um try/catch e o aviso voltaria a não chegar a
+   * ninguém — em silêncio.
+   */
+  await expectOk(
+    db,
+    'o aviso de downwind grava uma notificação por seguidor',
+    `INSERT INTO notifications (recipient_id, actor_id, type, downwind_id)
+     SELECT f.follower_id, $1, 'downwind_novo', $2
+     FROM user_follows f
+     WHERE f.following_id = $1 AND f.follower_id <> $1`,
+    [velejador, null]
   );
   await expectFail(
     db,

@@ -245,3 +245,56 @@ describe('qualquer velejador cria downwind aberto', () => {
     });
   }
 });
+
+/**
+ * Guarda de código-fonte: o aviso chega a quem NÃO tem push.
+ *
+ * O relato foi "avisar aos amigos sobre o dw não funcionou". A rota existia,
+ * respondia 200 e estava correta — só que o aviso era **exclusivamente** push.
+ * Push exige assinatura do navegador: permissão concedida, service worker
+ * vivo, e no iPhone o app instalado na tela inicial. Quem não tem nada disso —
+ * a maioria — não recebia absolutamente nada: nem notificação, nem badge, nem
+ * rastro.
+ *
+ * A tabela `notifications` e o sininho já existiam. Só este aviso é que não
+ * passava por lá.
+ *
+ * O teste lê o arquivo porque nada em tipo, lint ou teste de unidade distingue
+ * "avisou" de "tentou avisar por um canal que a pessoa não tem".
+ */
+describe('o aviso de downwind novo não depende só de push', () => {
+  const ROTA = 'app/api/downwind/[id]/notificar/route.ts';
+
+  const semComentarios = (texto: string) =>
+    texto
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .split('\n')
+      .map((linha) => linha.replace(/\/\/.*$/, ''))
+      .join('\n');
+
+  const src = () => semComentarios(readFileSync(ROTA, 'utf8'));
+
+  it('grava notificação dentro do app, não só push', () => {
+    expect(src()).toMatch(/INSERT INTO notifications/);
+    expect(src()).toContain("'downwind_novo'");
+  });
+
+  it('continua mandando push também — os dois canais, não a troca de um pelo outro', () => {
+    expect(src()).toContain('sendPushToUsers');
+  });
+
+  it('não queima a chance única quando não há ninguém para avisar', () => {
+    /*
+     * A ordem é o bug: marcar `notificado_em` ANTES de saber se existe
+     * destinatário travava o botão para sempre sem ninguém ter sido avisado —
+     * e a tela dizia que deu certo. Quem acabou de entrar no app não tem
+     * seguidores, então esse era o caminho mais provável do relato.
+     */
+    const corpo = src();
+    const buscaSeguidores = corpo.indexOf('FROM user_follows');
+    const marca = corpo.indexOf('SET notificado_em');
+    expect(buscaSeguidores, 'busca de seguidores não encontrada').toBeGreaterThan(-1);
+    expect(marca, 'marca de notificado_em não encontrada').toBeGreaterThan(-1);
+    expect(buscaSeguidores).toBeLessThan(marca);
+  });
+});

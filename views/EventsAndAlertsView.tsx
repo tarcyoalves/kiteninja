@@ -224,11 +224,29 @@ export const EventsAndAlertsView: React.FC = () => {
   const notificarComunidade = useCallback(
     async (downwindId: string) => {
       setNotificandoId(downwindId);
+      setErroEntrar(null);
       try {
         const res = await fetch(`/api/downwind/${downwindId}/notificar`, { method: 'POST' });
+        const body = await res.json().catch(() => null);
         if (res.ok) {
+          /*
+           * O NÚMERO IMPORTA. A versão anterior ignorava o corpo da resposta e
+           * marcava "avisado" em qualquer 200 — inclusive quando o aviso não
+           * chegou a ninguém, que é o caso de quem ainda não tem seguidores.
+           * "Avisei e ninguém veio" é indistinguível de "o botão não
+           * funciona", e foi assim que o defeito chegou como relato.
+           */
+          const seguidores = Number(body?.seguidores ?? 0);
+          if (seguidores === 0) {
+            setErroEntrar(
+              'Você ainda não tem seguidores para avisar. O downwind está na agenda de todo mundo — compartilhe o link de convite.'
+            );
+            return;
+          }
           setAvisoEnviadoId(downwindId);
           await refreshEventsAndAlerts();
+        } else {
+          setErroEntrar(body?.error ?? 'Não foi possível avisar a comunidade.');
         }
       } catch {
         // Sem rede: o botão volta ao normal e a pessoa tenta de novo. Não

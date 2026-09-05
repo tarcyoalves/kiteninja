@@ -31,6 +31,14 @@ interface NotificationCenterModalProps {
   totalChatUnread: number;
   onIrParaChat: () => void;
   onAbrirDownwind?: (downwindId: string) => void;
+  /**
+   * Leva para a agenda de eventos.
+   *
+   * Separado de `onAbrirDownwind` (que vai para o mapa ao vivo) porque o
+   * destino certo depende do que aconteceu: um downwind MARCADO ainda não tem
+   * mapa ao vivo — o lugar dele é a agenda, onde dá para confirmar presença.
+   */
+  onIrParaEventos?: () => void;
 }
 
 function mensagemNotificacao(n: AppNotification): string {
@@ -51,6 +59,10 @@ function mensagemNotificacao(n: AppNotification): string {
       return `entrou na água${n.spotName ? ` em ${n.spotName}` : ''}`;
     case 'downwind_iniciado':
       return `começou um downwind${n.downwindNome ? ` "${n.downwindNome}"` : ''}`;
+    case 'downwind_novo':
+      // "marcou", não "começou": o downwind ainda vai acontecer, e a diferença
+      // decide se a pessoa larga tudo agora ou se organiza para depois.
+      return `marcou um downwind${n.downwindNome ? ` "${n.downwindNome}"` : ''}`;
   }
 }
 
@@ -65,6 +77,7 @@ function iconeNotificacao(type: AppNotification['type']) {
       return <UserPlus size={14} className="text-emerald-400" />;
     case 'convite_downwind':
     case 'downwind_iniciado':
+    case 'downwind_novo':
       return <Navigation size={14} className="text-cyan-400" />;
     case 'velejo_iniciado':
       return <Wind size={14} className="text-teal-400" />;
@@ -79,6 +92,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
   totalChatUnread,
   onIrParaChat,
   onAbrirDownwind,
+  onIrParaEventos,
 }) => {
   const [notificacoes, setNotificacoes] = useState<AppNotification[]>([]);
   const [carregando, setCarregando] = useState(false);
@@ -185,6 +199,11 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
     onClose();
     if (n.type === 'novo_seguidor') {
       onAbrirPerfil(n.actorId);
+    } else if (n.type === 'downwind_novo') {
+      // O downwind foi MARCADO, não começou: o destino é a agenda, onde dá
+      // para ver o trajeto e confirmar presença. Uma notificação em que tocar
+      // não leva a lugar nenhum é meia funcionalidade.
+      onIrParaEventos?.();
     } else if (n.sessionId) {
       onAbrirSessao(n.sessionId);
     }

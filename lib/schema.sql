@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   recipient_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   actor_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind', 'velejo_iniciado', 'downwind_iniciado')),
+  type         TEXT NOT NULL CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario', 'novo_seguidor', 'convite_downwind', 'velejo_iniciado', 'downwind_iniciado', 'downwind_novo')),
   session_id   UUID REFERENCES sessions_log(id) ON DELETE CASCADE,
   comment_id   UUID REFERENCES session_comments(id) ON DELETE CASCADE,
   read_at      TIMESTAMPTZ,
@@ -966,7 +966,7 @@ BEGIN
     ADD CONSTRAINT notifications_type_check
       CHECK (type IN ('curtida_sessao', 'comentario_sessao', 'resposta_comentario',
                       'novo_seguidor', 'convite_downwind', 'velejo_iniciado',
-                      'downwind_iniciado'));
+                      'downwind_iniciado', 'downwind_novo'));
 END $$;
 
 -- ATENÇÃO a quem for adicionar um tipo novo de notificação: a lista aparece em

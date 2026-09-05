@@ -285,6 +285,7 @@ const MainContent: React.FC = () => {
         totalChatUnread={unreadChatCount + dmUnreadCount}
         onIrParaChat={() => setActiveTab('chat')}
         onAbrirDownwind={() => setActiveTab('mapa')}
+        onIrParaEventos={() => setActiveTab('alertas')}
       />
 
       {tokenConviteUrl && (
