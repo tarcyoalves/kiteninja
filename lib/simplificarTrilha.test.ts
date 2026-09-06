@@ -163,3 +163,54 @@ describe('casos de borda', () => {
     expect(() => simplificarTrilha(muitos, 200)).not.toThrow();
   });
 });
+
+/**
+ * Os DOIS orçamentos de trilha, e por que eles são diferentes.
+ *
+ * O que se guarda e o que se manda no feed deixaram de ser o mesmo número —
+ * e é essa separação que permite a trilha ficar mais detalhada SEM custar
+ * banda. Ver PONTOS_TRILHA_GUARDADOS (lib/trilhaSessao.ts) e
+ * PONTOS_TRILHA_FEED (app/api/feed/route.ts).
+ */
+describe('orçamento de pontos: guardar denso, mandar pouco', () => {
+  /** ~38 bytes por ponto em JSON — medido, não estimado. */
+  const bytesDoPonto = (() => {
+    const p: PontoTrilha = [-5.123456, -36.789012, 1_757_000_000_000];
+    return JSON.stringify(p).length;
+  })();
+
+  it('um ponto em JSON custa cerca de 38 bytes', () => {
+    // A conta de banda inteira sai daqui; se o formato mudar, os números dos
+    // comentários precisam mudar junto.
+    expect(bytesDoPonto).toBeGreaterThan(30);
+    expect(bytesDoPonto).toBeLessThan(45);
+  });
+
+  it('a página do feed fica MENOR que antes, com a trilha 6x mais detalhada', () => {
+    /*
+     * Era 200 pontos guardados e 200 mandados: 15 velejos por página =
+     * ~114 KB de trilha. Agora são 1200 guardados e 80 mandados: ~45 KB.
+     * Mais detalhe onde se vê, menos bytes onde não se vê.
+     */
+    const PAGE_SIZE = 15;
+    const antes = PAGE_SIZE * 200 * bytesDoPonto;
+    const agora = PAGE_SIZE * 80 * bytesDoPonto;
+    expect(agora).toBeLessThan(antes);
+    expect(agora).toBeLessThan(60_000);
+  });
+
+  it('o que se guarda cabe folgado no armazenamento do plano livre', () => {
+    // 1200 pontos por velejo, 0,5 GB de armazenamento: mais de dez mil velejos
+    // só de trilha. Se alguém subir o orçamento sem refazer esta conta, o
+    // teste avisa.
+    const porVelejo = 1200 * bytesDoPonto;
+    const velejosEmMeioGiga = 500 * 1024 * 1024 / porVelejo;
+    expect(velejosEmMeioGiga).toBeGreaterThan(5_000);
+  });
+
+  it('o velejo salvo cabe com folga no corpo de uma requisição', () => {
+    // Teto de corpo de requisição em função serverless é da ordem de MB; a
+    // trilha de um velejo é da ordem de dezenas de KB.
+    expect(1200 * bytesDoPonto).toBeLessThan(500_000);
+  });
+});

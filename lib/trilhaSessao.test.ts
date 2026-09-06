@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+﻿import { describe, expect, it } from 'vitest';
 import {
   AmostraGps,
   ESTADO_INICIAL_TRILHA,
@@ -9,6 +9,7 @@ import {
   TETO_PONTOS_BRUTOS,
   valePenaRegistrarSessao,
   validarTrilhaReduzida,
+  PONTOS_TRILHA_GUARDADOS,
 } from './trilhaSessao';
 
 /**
@@ -404,8 +405,14 @@ describe('paraPrefillLogbook', () => {
     expect(prefill.trilhaReduzida).toEqual([]);
   });
 
-  it('reduz a trilha a no máximo 200 pontos, sempre preservando o mais recente', () => {
-    const trilhaLonga: [number, number, number][] = Array.from({ length: 500 }, (_, i) => [
+  it('respeita o orçamento guardado, sempre preservando o mais recente', () => {
+    /*
+     * O número vem da constante, não escrito à mão: era 200 e passou a 1200
+     * quando o feed deixou de mandar a mesma trilha que se guarda (ver
+     * PONTOS_TRILHA_GUARDADOS). Um teste que fixa o valor solto quebra a cada
+     * ajuste de orçamento sem que nada esteja errado.
+     */
+    const trilhaLonga: [number, number, number][] = Array.from({ length: 3_000 }, (_, i) => [
       LAT_BASE,
       deslocarLng(i * 20),
       T0 + i * 5_000,
@@ -419,7 +426,7 @@ describe('paraPrefillLogbook', () => {
       },
       new Date('2026-01-05T09:00:00')
     );
-    expect(prefill.trilhaReduzida.length).toBeLessThanOrEqual(200);
+    expect(prefill.trilhaReduzida.length).toBeLessThanOrEqual(PONTOS_TRILHA_GUARDADOS);
     expect(prefill.trilhaReduzida[prefill.trilhaReduzida.length - 1]).toEqual(
       trilhaLonga[trilhaLonga.length - 1]
     );
@@ -474,15 +481,15 @@ describe('validarTrilhaReduzida', () => {
   });
 
   it('trilha maior que o limite é reamostrada no servidor, nunca gravada inteira', () => {
-    const trilha: [number, number, number][] = Array.from({ length: 500 }, (_, i) => [
+    const trilha: [number, number, number][] = Array.from({ length: 3_000 }, (_, i) => [
       -4.95,
       -36.88 - i * 0.001,
       T0 + i * 60_000,
     ]);
     const validada = validarTrilhaReduzida(trilha);
     expect(validada).not.toBeNull();
-    expect(validada!.length).toBeLessThanOrEqual(200);
-    // Preserva o ponto mais recente, mesmo critério de amostrarTrilha.
+    expect(validada!.length).toBeLessThanOrEqual(PONTOS_TRILHA_GUARDADOS);
+    // Preserva o ponto mais recente — Douglas-Peucker mantém as pontas.
     expect(validada![validada!.length - 1]).toEqual(trilha[trilha.length - 1]);
   });
 });

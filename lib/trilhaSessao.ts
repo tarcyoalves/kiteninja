@@ -449,7 +449,7 @@ export function paraPrefillLogbook(
      * reta". Mesmo orçamento de pontos, curvas de verdade — ver
      * lib/simplificarTrilha.ts.
      */
-    trilhaReduzida: simplificarTrilha(resumo.trilha ?? [], 200),
+    trilhaReduzida: simplificarTrilha(resumo.trilha ?? [], PONTOS_TRILHA_GUARDADOS),
   };
 }
 
@@ -461,10 +461,37 @@ export function paraPrefillLogbook(
 // ---------------------------------------------------------------------------
 
 /**
+ * Quantos pontos a trilha GUARDADA carrega.
+ *
+ * ORÇAMENTO SEPARADO DO QUE O FEED MANDA, e é essa separação que permite subir
+ * este número sem custo de banda.
+ *
+ * Antes eram 200 pontos, e o mesmo array servia a tudo: o mapa em tela cheia do
+ * detalhe do velejo E a miniatura de ~350px do card do feed. Como o feed manda
+ * a trilha de 15 sessões por página, o número tinha que ser pequeno pelo pior
+ * caso — e o mapa grande pagava o preço.
+ *
+ * Agora o feed reduz para a miniatura na saída (ver PONTOS_TRILHA_FEED em
+ * app/api/feed/route.ts) e aqui guarda-se o que o mapa grande merece.
+ *
+ * 1200 pontos numa travessia de 3h dá um ponto a cada 9 segundos — a ~40 km/h,
+ * cerca de 100 m entre pontos, e com Douglas-Peucker esses pontos se concentram
+ * nas curvas em vez de se espalharem pelas retas.
+ *
+ * CUSTO, medido e não estimado: um ponto em JSON (`[-5.123456,-36.789012,
+ * 1757000000000]`) ocupa ~38 bytes. 1200 pontos = ~46 KB por velejo na coluna
+ * `trilha_reduzida`. Com 0,5 GB de armazenamento no plano livre do Neon, são
+ * mais de dez mil velejos guardados só de trilha — anos de uso do app inteiro.
+ * No POST que salva o velejo, 46 KB estão muito abaixo do teto de corpo de
+ * requisição da Vercel.
+ */
+export const PONTOS_TRILHA_GUARDADOS = 1_200;
+
+/**
  * Teto de itens do array BRUTO aceito por `validarTrilhaReduzida`, antes de
  * qualquer validação ponto a ponto — um corte barato para nunca iterar um
  * array absurdamente grande vindo de um corpo de requisição adulterado. É
- * bem mais generoso que `limite` (a trilha reduzida de fato, 200 pontos):
+ * bem mais generoso que `limite` (a trilha reduzida de fato):
  * existe só para rejeitar rápido um payload de má-fé, não para validar o
  * caso normal.
  */
@@ -486,7 +513,10 @@ const TETO_ITENS_TRILHA_BRUTA = 20_000;
  * cliente já reduz para ~200 antes de enviar, mas o servidor reduz de novo
  * porque, como dito acima, não há como confiar que o cliente de fato o fez.
  */
-export function validarTrilhaReduzida(raw: unknown, limite = 200): PontoTrilha[] | null {
+export function validarTrilhaReduzida(
+  raw: unknown,
+  limite = PONTOS_TRILHA_GUARDADOS
+): PontoTrilha[] | null {
   if (!Array.isArray(raw) || raw.length === 0 || raw.length > TETO_ITENS_TRILHA_BRUTA) return null;
 
   const pontos: PontoTrilha[] = [];

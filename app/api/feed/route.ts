@@ -4,6 +4,8 @@ import { requireUser } from '@/lib/auth';
 import { podeVerSessao } from '@/lib/social';
 import { normalizarEscopo, podeVerNoFeed } from '@/lib/feedEscopo';
 import type { SessionFeedItem } from '@/types';
+import { simplificarTrilha } from '@/lib/simplificarTrilha';
+import type { PontoTrilha } from '@/lib/trilhaDownwind';
 
 /**
  * Feed de velejos (Fase 3 do plano de rede social) — sessões de quem eu sigo
@@ -19,6 +21,26 @@ import type { SessionFeedItem } from '@/types';
  * sair na resposta, em vez de confiar cegamente que o SQL acertou.
  */
 const PAGE_SIZE = 15;
+
+/**
+ * Pontos de trilha que o FEED manda por velejo.
+ *
+ * Muito menos que os ~1200 guardados, e de propósito: o card do feed desenha
+ * uma miniatura de ~350px de largura. Ali, oitenta pontos já saturam a
+ * resolução da tela — o pixel não tem como mostrar mais, e Douglas-Peucker
+ * gasta esses oitenta nas curvas, não nas retas.
+ *
+ * A CONTA QUE MOTIVA ISTO: a listagem devolve 15 velejos, cada um com a trilha
+ * embutida. Um ponto em JSON ocupa ~38 bytes. Com os 200 pontos de antes, eram
+ * ~114 KB de trilha por página de feed; com 1200 (o novo tamanho guardado)
+ * seriam ~680 KB — meio megabyte por rolagem, no 4G da praia, para desenhar
+ * miniaturas.
+ *
+ * Com 80, a página passa a carregar ~45 KB de trilha: MENOS que antes, com a
+ * trilha guardada seis vezes mais detalhada. O mapa em tela cheia do detalhe do
+ * velejo busca a sessão por id e recebe a trilha inteira.
+ */
+const PONTOS_TRILHA_FEED = 80;
 
 interface FeedRow {
   id: unknown;
@@ -159,7 +181,14 @@ export async function GET(request: Request) {
         distanceKm: r.distance_km !== null ? Number(r.distance_km) : undefined,
         maxSpeedKnots: r.max_speed_knots !== null ? Number(r.max_speed_knots) : undefined,
         highestJumpM: r.highest_jump_m !== null ? Number(r.highest_jump_m) : undefined,
-        trilhaReduzida: Array.isArray(r.trilha_reduzida) ? (r.trilha_reduzida as SessionFeedItem['trilhaReduzida']) : undefined,
+        // Reduzida para o tamanho da miniatura — ver PONTOS_TRILHA_FEED. O
+        // detalhe do velejo (GET /api/sessions/[id]) devolve a trilha inteira.
+        trilhaReduzida: Array.isArray(r.trilha_reduzida)
+          ? (simplificarTrilha(
+              r.trilha_reduzida as PontoTrilha[],
+              PONTOS_TRILHA_FEED
+            ) as SessionFeedItem['trilhaReduzida'])
+          : undefined,
         authorId: String(r.user_id),
         authorName: String(r.author_name),
         authorAvatarUrl: r.author_avatar_url ? String(r.author_avatar_url) : undefined,
