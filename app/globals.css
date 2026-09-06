@@ -647,3 +647,17 @@ html[data-modo='praia'] {
     animation: none;
   }
 }
+
+/* Flutuação leve da pipa na tela de boas-vindas (app/bem-vindo).
+   Amplitude pequena de propósito: é um sinal de "chegou", não uma animação
+   que compete com o texto. `prefers-reduced-motion` desliga. */
+@keyframes flutuar {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[flutuar_3s_ease-in-out_infinite\] {
+    animation: none;
+  }
+}

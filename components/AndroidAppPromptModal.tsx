@@ -112,9 +112,24 @@ export const AndroidAppPromptModal: React.FC<{
     }
   };
 
+  /**
+   * Existe APK publicado?
+   *
+   * A variável é inlinada no build, então isto não custa requisição nenhuma.
+   * Enquanto não houver APK, o modal NÃO oferece "baixar" — oferecer um
+   * download que não existe foi o que mandou um usuário para o 404 do GitHub
+   * (ver app/api/download/android/route.ts). Instalar pela tela inicial vira a
+   * ação principal, que é o que de fato funciona hoje.
+   */
+  const temApk = Boolean(process.env.NEXT_PUBLIC_ANDROID_APK_URL);
+
   const handleBaixarApk = () => {
     window.open('/api/download/android', '_blank');
     fechar();
+  };
+
+  const handleComoInstalar = () => {
+    window.location.href = '/instalar-android';
   };
 
   if (!aberto) return null;
@@ -187,18 +202,45 @@ export const AndroidAppPromptModal: React.FC<{
         </div>
 
         <div className="space-y-2">
-          {/* Opção 1: Download direto do APK */}
-          <button
-            type="button"
-            onClick={handleBaixarApk}
-            className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-cyan-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
-          >
-            <Download size={18} className="stroke-[2.5]" />
-            <span>Baixar Aplicativo Android (.APK)</span>
-          </button>
+          {/*
+            * A AÇÃO PRINCIPAL É A QUE FUNCIONA.
+            *
+            * Com APK publicado, baixar. Sem APK, instalar pela tela inicial —
+            * e quando nem o prompt nativo do Chrome está disponível, a página
+            * que ensina o passo a passo. Nunca um botão que promete um
+            * download inexistente.
+            */}
+          {temApk ? (
+            <button
+              type="button"
+              onClick={handleBaixarApk}
+              className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-cyan-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={18} className="stroke-[2.5]" />
+              <span>Baixar Aplicativo Android (.APK)</span>
+            </button>
+          ) : deferredPrompt ? (
+            <button
+              type="button"
+              onClick={handleInstalarPWA}
+              className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-cyan-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={18} className="stroke-[2.5]" />
+              <span>Instalar o KiteNinja</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleComoInstalar}
+              className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-cyan-400 via-cyan-500 to-blue-600 hover:from-cyan-300 hover:to-blue-500 text-slate-950 font-black text-xs sm:text-sm shadow-xl shadow-cyan-500/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+            >
+              <Download size={18} className="stroke-[2.5]" />
+              <span>Como instalar no seu celular</span>
+            </button>
+          )}
 
-          {/* Opção 2: PWA se disponível */}
-          {deferredPrompt && (
+          {/* Com APK publicado, instalar pela tela inicial vira a alternativa. */}
+          {temApk && deferredPrompt && (
             <button
               type="button"
               onClick={handleInstalarPWA}

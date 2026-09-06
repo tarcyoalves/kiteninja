@@ -804,7 +804,7 @@ export const SidebarDrawer: React.FC = () => {
                     className="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/30 hover:bg-cyan-500/30 text-cyan-300 font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md shadow-cyan-500/10 active:scale-95"
                   >
                     <Download size={14} className="stroke-[2.2]" />
-                    <span>Baixar App Android (.APK)</span>
+                    <span>{process.env.NEXT_PUBLIC_ANDROID_APK_URL ? 'Baixar App Android (.APK)' : 'Instalar o app no celular'}</span>
                   </a>
                 )}
               </div>

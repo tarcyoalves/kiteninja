@@ -74,7 +74,15 @@ export function AcceptInviteForm({
         return;
       }
 
-      router.push('/');
+      /*
+       * Boas-vindas, não a home.
+       *
+       * Cair direto na `/` põe quem acabou de entrar na mesma tela de quem usa
+       * o app há meses — sete abas, mapa, feed, e nada dizendo por onde
+       * começar. O convite é o momento em que a pessoa está mais disposta a
+       * entender o app, e era gasto num "pronto, se vire".
+       */
+      router.push('/bem-vindo');
       router.refresh();
     } catch {
       setError('Falha de conexão. Verifique a internet e tente de novo.');
