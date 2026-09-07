@@ -201,3 +201,4 @@ O estado antigo de `master` está preservado na branch
 | `PUSH-E-RASTREIO-NO-IPHONE.md` | Por que o push do chat chega e o do aviso não; e por que o iPhone para de rastrear com a tela apagada |
 | `TRILHA-COM-CURVAS-REAIS.md` | Por que as trilhas saíam retas (decimação uniforme) e o teste que quase mediu a coisa errada |
 | `ORCAMENTO-DA-TRILHA.md` | Quanto detalhe cabe nos planos livres; guardar denso e mandar pouco no feed |
+| `REDEFINIR-SENHA-PELO-ADMIN.md` | O botão "redefinir" que só exigia troca no próximo login; e o teste que passou com o bug de volta |

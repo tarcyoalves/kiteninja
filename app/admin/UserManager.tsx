@@ -7,6 +7,8 @@ import {
   UserCheck,
   UserX,
   KeyRound,
+  LockKeyhole,
+  Copy,
   Users,
   Loader2,
   Check,
@@ -113,6 +115,14 @@ export function UserManager() {
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  /*
+   * Link de redefinicao de senha gerado pelo admin. Fica no estado (e nao
+   * some sozinho como o `actionSuccess`) porque o admin precisa dele na tela
+   * o tempo que levar para colar no WhatsApp do velejador.
+   */
+  const [linkSenha, setLinkSenha] = useState<{ nome: string; url: string } | null>(null);
+  const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null);
+  const [linkCopiado, setLinkCopiado] = useState(false);
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -179,6 +189,49 @@ export function UserManager() {
       fetchUsers();
     } catch {
       setError('Falha de conexão.');
+    }
+  }
+
+  /**
+   * Redefinicao de senha de verdade: pede ao servidor um link de uso unico
+   * (2h) para o velejador escolher a nova senha.
+   *
+   * O botao antigo da chave so ligava `must_change_password` — ou seja,
+   * EXIGIA a troca no proximo login. Para quem esqueceu a senha isso nao
+   * resolve nada, porque a pessoa nao consegue chegar ao proximo login: ela
+   * continua batendo em "credencial invalida". Este e o botao que de fato
+   * devolve o acesso.
+   */
+  async function gerarLinkSenha(userId: string, nome: string) {
+    setError(null);
+    setActionSuccess(null);
+    setLinkSenha(null);
+    setLinkCopiado(false);
+    setGerandoLinkId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/senha`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Falha ao gerar o link de redefinição.');
+        return;
+      }
+      setLinkSenha({ nome: data.nome ?? nome, url: data.url });
+    } catch {
+      setError('Falha de conexão.');
+    } finally {
+      setGerandoLinkId(null);
+    }
+  }
+
+  async function copiarLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopiado(true);
+      setTimeout(() => setLinkCopiado(false), 2500);
+    } catch {
+      // Sem clipboard (http, permissao negada): o link continua visivel e
+      // selecionavel na tela, entao da para copiar na mao.
+      setError('Não consegui copiar automaticamente — selecione o link e copie.');
     }
   }
 
@@ -340,6 +393,51 @@ export function UserManager() {
         <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl flex items-center gap-2 text-xs text-emerald-300">
           <Check size={16} className="shrink-0" />
           <span>{actionSuccess}</span>
+        </div>
+      )}
+
+      {/* Link de redefinição de senha recém-gerado */}
+      {linkSenha && (
+        <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl space-y-2.5">
+          <div className="flex items-start gap-2 text-cyan-200">
+            <LockKeyhole size={16} className="shrink-0 mt-0.5" />
+            <div className="text-xs leading-relaxed">
+              <p className="font-bold text-white">
+                Link de nova senha para {linkSenha.nome}
+              </p>
+              <p className="text-cyan-300/90">
+                Envie este link para o velejador. Ele vale por 2 horas, serve uma
+                única vez, e é a própria pessoa quem escolhe a senha nova.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              readOnly
+              value={linkSenha.url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="flex-1 min-w-0 px-3 py-2 bg-[#0F172A] border border-slate-700 rounded-xl text-[11px] text-slate-200 font-mono focus:outline-hidden focus:border-cyan-500"
+            />
+            <button
+              onClick={() => copiarLink(linkSenha.url)}
+              className="shrink-0 px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 rounded-xl text-xs font-bold text-cyan-200 transition-all active:scale-95 flex items-center gap-1.5"
+            >
+              {linkCopiado ? <Check size={14} /> : <Copy size={14} />}
+              {linkCopiado ? 'Copiado' : 'Copiar'}
+            </button>
+            <button
+              onClick={() => setLinkSenha(null)}
+              className="shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all active:scale-95"
+            >
+              Fechar
+            </button>
+          </div>
+
+          <p className="text-[10px] text-slate-400">
+            As sessões abertas desse velejador foram encerradas. Se o link
+            expirar antes do uso, é só gerar outro.
+          </p>
         </div>
       )}
 
@@ -517,6 +615,24 @@ export function UserManager() {
                       {u.isActive ? <UserX size={15} /> : <UserCheck size={15} />}
                     </button>
 
+                    {/*
+                      Redefinir senha DE VERDADE. Separado do botao da chave
+                      logo abaixo, que so exige a troca no proximo login e nao
+                      serve para quem perdeu o acesso.
+                    */}
+                    <button
+                      onClick={() => gerarLinkSenha(u.id, u.name)}
+                      disabled={gerandoLinkId === u.id}
+                      className="p-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 rounded-xl text-xs text-cyan-300 transition-all active:scale-95 disabled:opacity-50"
+                      title="Redefinir senha: gera um link para o velejador criar uma nova"
+                    >
+                      {gerandoLinkId === u.id ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <LockKeyhole size={15} />
+                      )}
+                    </button>
+
                     {/* Force password change */}
                     <button
                       onClick={() =>
@@ -527,7 +643,7 @@ export function UserManager() {
                         )
                       }
                       className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-300 hover:text-white transition-all active:scale-95"
-                      title="Exigir troca de senha no próximo login"
+                      title="Exigir troca de senha no próximo login (não serve para quem esqueceu a senha)"
                     >
                       <KeyRound size={15} />
                     </button>
