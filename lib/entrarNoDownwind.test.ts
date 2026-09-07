@@ -2,11 +2,25 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mapaMostraDownwind, pedidoDeAberturaVale } from './activity';
 
+/**
+ * Tira comentários — os do TS e também os do SQL.
+ *
+ * Os do SQL importam aqui: a primeira versão deste teste afirmava que
+ * `previsto_para ASC` não aparecia mais no arquivo, e ela FALHOU contra o
+ * código já corrigido, porque a string sobrevivia dentro de um comentário
+ * `--` que explicava a ordenação antiga. Um teste que lê comentário não está
+ * lendo o código.
+ *
+ * Só linhas que COMEÇAM com `--`: no meio de uma linha de TypeScript, `--`
+ * pode ser o operador de decremento, e cortar dali para a frente apagaria
+ * código de verdade.
+ */
 const semComentarios = (texto: string) =>
   texto
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .split('\n')
     .map((linha) => linha.replace(/\/\/.*$/, ''))
+    .filter((linha) => !linha.trimStart().startsWith('--'))
     .join('\n');
 
 /**
@@ -68,6 +82,36 @@ describe('entrar num downwind agendado abre a tela do downwind', () => {
   it('entrarNoDownwind guarda o id que recebeu, não um booleano', () => {
     const src = contexto();
     expect(src).toContain('setPedidoAberturaId(downwindId)');
+  });
+
+  it('a rota do downwind ativo aceita QUAL downwind, em vez de adivinhar', () => {
+    /*
+     * A SEGUNDA CAUSA, encontrada depois que a primeira foi corrigida e o
+     * relato continuou: `/api/downwind/ativo` devolvia UM downwind escolhido
+     * por `ORDER BY ... LIMIT 1`. Quem está em mais de um — e quem cria
+     * downwinds de teste fica em vários, porque nada fecha os antigos —
+     * recebia sempre o mesmo, que não era o recém-aberto.
+     *
+     * O app então pedia a tela do downwind X e recebia o Y: o pedido não
+     * casava com o downwind ativo e era descartado em silêncio. Nenhum erro,
+     * nenhuma mensagem — a aba Mapa comum, de novo.
+     */
+    const rota = semComentarios(readFileSync('app/api/downwind/ativo/route.ts', 'utf8'));
+    expect(rota).toContain("searchParams.get('id')");
+    expect(rota).toContain('AND d.id = ${idPedido}');
+
+    // E o cliente precisa realmente MANDAR o id ao entrar.
+    expect(contexto()).toContain('await recarregar(downwindId)');
+  });
+
+  it('sem id pedido, a ordem prefere a travessia em andamento e a entrada mais recente', () => {
+    // A ordem antiga (`previsto_para ASC` entre agendados) elegia o downwind
+    // de data MAIS ANTIGA — o teste esquecido de duas semanas atrás ganhava
+    // do que a pessoa acabou de criar.
+    const rota = semComentarios(readFileSync('app/api/downwind/ativo/route.ts', 'utf8'));
+    expect(rota).toContain("(d.status = 'em_andamento') DESC");
+    expect(rota).toContain('dp.entrou_em DESC');
+    expect(rota).not.toContain('previsto_para ASC');
   });
 
   it('não existe mais zerador do pedido reagindo à troca de id', () => {

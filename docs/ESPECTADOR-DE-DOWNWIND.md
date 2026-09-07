@@ -33,6 +33,50 @@ booleano mais um zerador (`pedidoDeAberturaVale` em `lib/activity.ts`). Trocar
 de downwind deixa de casar sozinho: ninguém precisa desligar nada, e não há
 corrida entre quem liga e quem desliga. É o mesmo formato de `encerradoPorMimRef`.
 
+### A segunda causa, encontrada porque o relato voltou
+
+Corrigida a corrida, o dono testou de novo: **continuou não abrindo**. Havia um
+segundo defeito, independente, no mesmo caminho.
+
+`GET /api/downwind/ativo` devolvia **um** downwind, escolhido por
+`ORDER BY ... LIMIT 1`. Quem está em mais de um — e quem cria downwinds para
+testar fica em vários, porque nada fecha os antigos sozinho — recebia sempre o
+mesmo. E a ordem escolhia mal: `iniciado_em DESC NULLS LAST, previsto_para ASC`
+elege, entre agendados (todos com `iniciado_em` nulo), o de data **mais
+antiga** — o downwind de teste esquecido de duas semanas atrás ganhava do que a
+pessoa acabou de criar.
+
+O efeito é o mesmo sintoma por outro mecanismo: o app pedia a tela do downwind
+X, o servidor respondia com o Y, o pedido não casava com o downwind ativo e era
+descartado **em silêncio**. Nenhum erro, nenhuma mensagem, a aba Mapa comum.
+
+Duas correções:
+
+- a rota aceita `?id=`, e `entrarNoDownwind` manda o id em que acabou de
+  entrar. Quem entra num downwind sabe em qual entrou — não há por que
+  adivinhar;
+- sem id, a ordem passa a ser: travessia **em andamento** na frente de tudo
+  (tem gente na água agora, isso vence qualquer plano), depois o downwind em
+  que a pessoa entrou por último.
+
+### E o verificador que deixou passar
+
+Escrevendo o comentário dessa ordenação eu pus o nome das colunas entre crases,
+por hábito de Markdown — dentro de um comentário `--` de um template `` sql`` ``.
+A crase **encerra o template literal ali mesmo**. É a armadilha que este repo
+documenta, e o `verify-sql.ts` dizia cobrir as duas da família.
+
+Não cobria. Ele procurava a crase *dentro dos templates já extraídos*, e
+`extrairTemplatesBrutos` corta os templates exatamente na crase — a linha
+ofensora nunca chegava a fazer parte de "um template" para ser inspecionada. O
+verificador dava tudo certo enquanto o arquivo nem compilava. Agora a busca é
+no texto bruto do arquivo, e a contraprova (crase de volta) reprova.
+
+Um teste meu também leu comentário como se fosse código: afirmava que
+`previsto_para ASC` não aparecia mais, e falhava contra o código já corrigido
+porque a string sobrevivia no comentário `--` que explica a ordem antiga. O
+stripper do teste agora tira comentário SQL também.
+
 ## 2. "Quero opção de apenas visualizar os velejadores"
 
 Só existiam dois lugares para estar num downwind: na água (`velejador`) ou no

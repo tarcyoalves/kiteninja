@@ -549,7 +549,16 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [abrirLoggerComResumo, user?.id]
   );
 
-  const recarregar = useCallback(async () => {
+  /**
+   * @param preferidoId Qual downwind buscar. Sem ele o servidor escolhe, e
+   *   escolher é o que dava errado: quem está em mais de um downwind — e quem
+   *   cria downwinds de teste fica em vários, porque nada fecha os antigos —
+   *   recebia sempre o mesmo, que não era o recém-aberto. O app pedia a tela
+   *   do downwind X, o servidor devolvia o Y, o pedido não casava e era
+   *   descartado sem erro nenhum: a aba Mapa comum, como se nada tivesse
+   *   acontecido. Quem entra num downwind sabe em qual entrou; agora diz.
+   */
+  const recarregar = useCallback(async (preferidoId?: string) => {
     // Sem sessão não há o que buscar. O RESET de estado desse caso não mora
     // mais aqui: virou ajuste no render (`useAoMudar` de `isAuthenticated`),
     // porque como setState síncrono dentro desta função ele fazia qualquer
@@ -557,7 +566,11 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!isAuthenticated) return;
     const minhaVersao = ++versaoRef.current;
     try {
-      const data = await api<{ downwind: DownwindAtivo | null }>('/api/downwind/ativo');
+      const data = await api<{ downwind: DownwindAtivo | null }>(
+        preferidoId
+          ? `/api/downwind/ativo?id=${encodeURIComponent(preferidoId)}`
+          : '/api/downwind/ativo'
+      );
       if (minhaVersao !== versaoRef.current) return;
       /*
        * O downwind sumiu enquanto eu ainda estava NAVEGANDO?
@@ -694,7 +707,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // Busca o cabeçalho completo (nome, saída, chegada) em vez de montar
         // um objeto parcial aqui — evita duas fontes de verdade para o mesmo
         // formato de resposta.
-        await recarregar();
+        await recarregar(downwindId);
         // Entrar é um pedido explícito de ver ESTE downwind — sem isto, entrar
         // num downwind AGENDADO levaria a pessoa para a aba Mapa normal, já
         // que agendado não toma a tela sozinho. O id (e não um `true`) é o que

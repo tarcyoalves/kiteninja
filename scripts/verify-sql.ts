@@ -251,10 +251,38 @@ function varrerComentariosDosTemplates(): void {
         }
       }
     }
+
+    /*
+     * A CRASE precisa ser procurada no texto BRUTO do arquivo, não dentro dos
+     * templates já extraídos — e é por isso que ela escapava.
+     *
+     * `extrairTemplatesBrutos` corta os templates justamente na crase. Uma
+     * crase dentro de um comentário SQL encerra o template ali mesmo, então a
+     * linha ofensora nunca chega a fazer parte de "um template" para ser
+     * inspecionada. O verificador dizia que estava tudo certo enquanto o
+     * arquivo nem compilava.
+     *
+     * Aconteceu de novo em app/api/downwind/ativo/route.ts, escrevendo o nome
+     * de colunas entre crases num comentário por hábito de Markdown. O tsc
+     * pega, mas com um "',' expected" que não diz nada sobre a causa — e é
+     * exatamente esse tipo de erro que este script existe para nomear.
+     */
+    for (const linha of fonte.split('\n')) {
+      const enxuta = linha.trimStart();
+      // Linhas de comentário do JS/TS não são comentário SQL.
+      if (enxuta.startsWith('*') || enxuta.startsWith('//') || enxuta.startsWith('/*')) continue;
+      const corte = linha.indexOf('--');
+      if (corte === -1) continue;
+      if (linha.slice(corte).includes('`')) {
+        suspeitos.push(
+          `${nomeCurto}: crase em comentário SQL (encerra o template) -> ${linha.trim().slice(0, 70)}`
+        );
+      }
+    }
   }
 
   check(
-    'nenhum comentário SQL contém interpolação (vira parâmetro fantasma)',
+    'nenhum comentário SQL contém interpolação nem crase (parâmetro fantasma / template cortado)',
     suspeitos.length === 0,
     suspeitos.join(' | ')
   );
