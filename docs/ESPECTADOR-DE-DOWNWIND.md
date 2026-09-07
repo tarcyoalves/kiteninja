@@ -133,6 +133,48 @@ E de novo a asserção falsa: o teste "a rota aplica a regra" passou com o
 nesta base que um guarda de código-fonte passa vendo só o nome. A asserção
 agora exige a linha do `throw`.
 
+### A quarta causa — a armadilha de três portas
+
+O print resolveu de uma vez. No card do downwind "Guamare / saturno":
+`Downwind AO VIVO — entrar`, `0 riders confirmados`, e o aviso vermelho
+*"Este downwind está em andamento — encerre ou cancele a travessia antes de
+apagar o evento."*
+
+O dono tinha **encerrado a própria participação** naquele downwind. E aí três
+portas se fecharam ao mesmo tempo:
+
+1. `'encerrado'` era estado **terminal** (`encerrado: new Set([])`), e
+   `POST /entrar` só revivia `'desistiu'`. Tocar em "entrar" gravava **200** e
+   não mudava absolutamente nada.
+2. `GET /api/downwind/ativo` filtra `estado IN ('confirmado','navegando')` —
+   devolvia vazio, `downwindAtivo` ficava `null`, e a tela do downwind nunca
+   abria. **O app ia para o mapa comum**, que é o relato literal.
+3. Sem essa tela não há botão de encerrar a **travessia** — as ações de
+   encerrar/cancelar só existiam lá dentro. E apagar o evento é recusado
+   enquanto ela está `em_andamento`. **"Tentei apagar e não apagou."**
+
+Não havia saída: não dava para entrar, não dava para encerrar, não dava para
+apagar.
+
+**Correção 1 — `'encerrado'` volta para `'confirmado'`.** Não é só uma válvula
+de escape: é o que acontece na praia. A pessoa chega, encerra o velejo,
+descansa, e volta para a água enquanto o grupo ainda atravessa. O modelo antigo
+dizia que isso era impossível. Volta para `'confirmado'` e não para
+`'navegando'` — reentrar não é estar na água, para isso existe o botão Iniciar
+— e volta a contar no quórum, que é o comportamento seguro. `encerrou_em` é
+limpo junto, senão a linha diria que a pessoa terminou numa hora em que ela
+está de volta.
+
+Um teste existente afirmava que `'encerrado'` era terminal. Ele descrevia o
+desenho antigo com fidelidade; foi reescrito dizendo por que o desenho mudou —
+e mantendo o que continua valendo (`encerrado` não vai direto para `navegando`
+nem para `desistiu`).
+
+**Correção 2 — encerrar e cancelar a travessia direto do card**, para o
+organizador, quando o downwind está `em_andamento`. Essas ações não podem morar
+só numa tela que pode não abrir: é justamente quando ela não abre que elas
+fazem falta.
+
 ## 2. "Quero opção de apenas visualizar os velejadores"
 
 Só existiam dois lugares para estar num downwind: na água (`velejador`) ou no

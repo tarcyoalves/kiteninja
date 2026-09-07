@@ -330,10 +330,29 @@ describe('podeTransicionarParticipante', () => {
     expect(podeTransicionarParticipante('desistiu', 'confirmado')).toBe(true);
   });
 
-  it('encerrado é terminal: não pode ir para nenhum outro estado', () => {
-    for (const para of ['confirmado', 'navegando', 'encerrado', 'desistiu'] as const) {
-      expect(podeTransicionarParticipante('encerrado', para), para).toBe(false);
-    }
+  /*
+   * 'encerrado' DEIXOU DE SER TERMINAL — mudança de desenho, não regressão.
+   *
+   * O modelo antigo trancava a pessoa do lado de fora do próprio downwind:
+   * quem encerrava a participação não voltava por transição nenhuma, e
+   * `GET /downwind/ativo` só serve quem está em 'confirmado' ou 'navegando'.
+   * Resultado relatado com print: tocar em "Downwind AO VIVO — entrar"
+   * gravava 200 e levava para o mapa comum; sem a tela do downwind não havia
+   * botão para encerrar a travessia; e apagar o evento é recusado enquanto ela
+   * está em andamento. Nenhuma saída.
+   *
+   * A volta também é o que acontece na praia: encerrou, descansou, voltou para
+   * a água enquanto o grupo ainda atravessa.
+   */
+  it('encerrado volta para confirmado — reentrar no downwind', () => {
+    expect(podeTransicionarParticipante('encerrado', 'confirmado')).toBe(true);
+  });
+
+  it('encerrado NÃO vai direto para a água nem para desistiu', () => {
+    // Reentrar não é estar navegando: para isso existe o botão Iniciar. E
+    // 'desistiu' depois de ter completado a travessia não descreve nada.
+    expect(podeTransicionarParticipante('encerrado', 'navegando')).toBe(false);
+    expect(podeTransicionarParticipante('encerrado', 'desistiu')).toBe(false);
   });
 
   it('não pode pular direto de confirmado para encerrado', () => {

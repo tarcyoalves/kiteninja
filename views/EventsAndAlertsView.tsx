@@ -18,6 +18,8 @@ import {
   ChevronRight,
   Route,
   Eye,
+  Flag,
+  XCircle,
   Trophy,
   Waves,
   X,
@@ -52,9 +54,10 @@ export const EventsAndAlertsView: React.FC = () => {
     refreshEventsAndAlerts,
   } = useKiteData();
   const { user, openAuthModal, canModerateEvents } = useAuth();
-  const { entrarNoDownwind, assistirDownwind } = useDownwind();
+  const { entrarNoDownwind, assistirDownwind, mudarStatusDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
   const [assistindoEmId, setAssistindoEmId] = useState<string | null>(null);
+  const [mudandoStatusId, setMudandoStatusId] = useState<string | null>(null);
   const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   /** Downwind com geração de link de convite em voo — ver copiarLinkConvite. */
@@ -383,6 +386,39 @@ export const EventsAndAlertsView: React.FC = () => {
     }
     await refreshEventsAndAlerts();
     abrirDownwindAoVivo(downwindId);
+  };
+
+  /**
+   * Encerra ou cancela a travessia direto do card, sem passar pela tela do
+   * downwind.
+   *
+   * A TRANCA QUE ISTO ABRE: as ações de encerrar/cancelar só existiam dentro
+   * da tela do downwind ao vivo. Mas quem encerra a própria participação deixa
+   * de ter downwind ativo, e essa tela nunca mais abre — enquanto apagar o
+   * evento continua recusado porque a travessia está 'em_andamento'. O
+   * organizador ficava sem saída nenhuma, que foi o relato: "tentei apagar e
+   * não apagou".
+   */
+  const handleMudarStatusDw = async (
+    downwindId: string,
+    para: 'encerrado' | 'cancelado',
+    titulo: string
+  ) => {
+    const pergunta =
+      para === 'encerrado'
+        ? `Encerrar a travessia de "${titulo}"? Os velejos gravados são guardados no resumo.`
+        : `Cancelar "${titulo}"? A travessia é dada como não realizada.`;
+    if (!window.confirm(pergunta)) return;
+
+    setErroEntrar(null);
+    setMudandoStatusId(downwindId);
+    const res = await mudarStatusDownwind(downwindId, para);
+    setMudandoStatusId(null);
+    if (!res.ok) {
+      setErroEntrar(res.error ?? 'Não foi possível mudar o status do downwind.');
+      return;
+    }
+    await refreshEventsAndAlerts();
   };
 
   const handleEntrarDownwind = async (downwindId: string) => {
@@ -1176,6 +1212,56 @@ export const EventsAndAlertsView: React.FC = () => {
                           : 'Acompanhar de terra'}
                       </span>
                     </button>
+                  )}
+
+                {/*
+                  * ENCERRAR / CANCELAR A TRAVESSIA, direto do card.
+                  *
+                  * A TRANCA QUE ISTO ABRE — relatada com print: essas ações
+                  * só existiam dentro da tela do downwind ao vivo. Mas quem
+                  * encerra a própria participação deixa de ter downwind ativo
+                  * (`GET /downwind/ativo` só serve quem está em 'confirmado'
+                  * ou 'navegando'), então aquela tela nunca mais abre — e
+                  * apagar o evento continua recusado porque a travessia está
+                  * 'em_andamento'. O organizador ficava sem saída nenhuma:
+                  * não conseguia entrar, não conseguia encerrar, não
+                  * conseguia apagar.
+                  *
+                  * Fica no card, e não numa tela que pode não abrir, porque é
+                  * justamente quando a tela não abre que estas ações fazem
+                  * falta.
+                  */}
+                {event.downwindId &&
+                  event.downwindCriadoPorMim &&
+                  event.downwindStatus === 'em_andamento' && (
+                    <div className="flex gap-2 pt-2 border-t border-slate-800">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleMudarStatusDw(event.downwindId as string, 'encerrado', event.title)
+                        }
+                        disabled={mudandoStatusId === event.downwindId}
+                        className="flex-1 py-2 rounded-xl text-xs font-black bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-60"
+                      >
+                        {mudandoStatusId === event.downwindId ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Flag size={14} />
+                        )}
+                        <span>Encerrar travessia</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleMudarStatusDw(event.downwindId as string, 'cancelado', event.title)
+                        }
+                        disabled={mudandoStatusId === event.downwindId}
+                        className="flex-1 py-2 rounded-xl text-xs font-black bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center justify-center gap-1.5 active:scale-95 transition-all disabled:opacity-60"
+                      >
+                        <XCircle size={14} />
+                        <span>Cancelar</span>
+                      </button>
+                    </div>
                   )}
 
                 {/* Quem já escolheu só assistir vê o próprio estado — sem

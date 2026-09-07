@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { mapaMostraDownwind, pedidoDeAberturaVale } from './activity';
 import { podeEntrarEmOutroDownwind } from './downwindAcesso';
+import { podeTransicionarParticipante } from './downwind';
 
 /**
  * Tira comentários — os do TS e também os do SQL.
@@ -203,6 +204,56 @@ describe('entrar num downwind agendado abre a tela do downwind', () => {
       // E o pedido morre quando o downwind pedido deixa de valer, senão o app
       // ficaria presto num downwind que acabou.
       expect(ctx).toContain('pedidoAberturaRef.current = null');
+    });
+  });
+
+  /*
+   * A QUARTA CAUSA, e a que o print mostrou de uma vez: o dono tinha
+   * ENCERRADO a própria participação no downwind "Guamare / saturno".
+   *
+   * Três portas fechadas ao mesmo tempo:
+   *  1. 'encerrado' era estado terminal e `POST /entrar` só revivia
+   *     'desistiu' — o toque em "Downwind AO VIVO — entrar" gravava 200 e não
+   *     mudava nada;
+   *  2. `GET /downwind/ativo` filtra `estado IN ('confirmado','navegando')`,
+   *     então devolvia vazio e a tela do downwind nunca abria: o app ia para
+   *     o mapa comum, exatamente como foi relatado;
+   *  3. sem essa tela não há botão de encerrar a TRAVESSIA, e apagar o evento
+   *     é recusado enquanto ela está 'em_andamento' — "tentei apagar e não
+   *     apagou".
+   */
+  describe('encerrei minha participação e quero voltar', () => {
+    it('encerrado volta para confirmado', () => {
+      expect(podeTransicionarParticipante('encerrado', 'confirmado')).toBe(true);
+    });
+
+    it('a rota de entrar revive quem encerrou, e limpa o encerrou_em', () => {
+      const rota = semComentarios(
+        readFileSync('app/api/downwind/[id]/entrar/route.ts', 'utf8')
+      );
+      expect(rota).toContain("estado IN ('desistiu', 'encerrado')");
+      expect(rota).toContain('encerrou_em = CASE');
+    });
+
+    it('reentrar NÃO devolve ninguém para a água por decreto', () => {
+      // Volta para 'confirmado'; entrar de novo na água é o botão Iniciar.
+      const rota = semComentarios(
+        readFileSync('app/api/downwind/[id]/entrar/route.ts', 'utf8')
+      );
+      expect(rota).not.toMatch(/THEN 'navegando'/);
+    });
+
+    it('o organizador encerra a travessia pelo card, sem depender da tela', () => {
+      // As ações viviam só dentro da tela do downwind ao vivo — a mesma tela
+      // que não abre para quem encerrou. Ficar sem saída era o defeito.
+      const view = semComentarios(readFileSync('views/EventsAndAlertsView.tsx', 'utf8'));
+      expect(view).toMatch(
+        /handleMudarStatusDw\(event\.downwindId as string, 'encerrado', event\.title\)/
+      );
+      expect(view).toMatch(
+        /handleMudarStatusDw\(event\.downwindId as string, 'cancelado', event\.title\)/
+      );
+      expect(view).toContain("event.downwindStatus === 'em_andamento'");
     });
   });
 

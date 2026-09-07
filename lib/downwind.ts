@@ -297,7 +297,33 @@ export function podeTransicionarDownwind(de: DownwindStatus, para: DownwindStatu
 const TRANSICOES_PARTICIPANTE: Record<ParticipanteEstado, ReadonlySet<ParticipanteEstado>> = {
   confirmado: new Set(['navegando', 'desistiu']),
   navegando: new Set(['encerrado', 'desistiu']),
-  encerrado: new Set([]),
+  /*
+   * 'encerrado' VOLTA para 'confirmado' — deixou de ser terminal.
+   *
+   * O QUE ISSO CONSERTOU (relatado com print): o dono encerrou a própria
+   * participação num downwind e ficou trancado do lado de fora dele.
+   *
+   * A armadilha tinha três lados que se fechavam:
+   *  1. 'encerrado' não voltava para lugar nenhum, e `POST /entrar` só revive
+   *     'desistiu' — então tocar "Downwind AO VIVO — entrar" gravava 200 e não
+   *     mudava nada;
+   *  2. `GET /api/downwind/ativo` filtra `estado IN ('confirmado','navegando')`,
+   *     então a resposta vinha vazia e a tela do downwind nunca abria — o app
+   *     ia para o mapa comum, que foi exatamente o relato;
+   *  3. sem a tela do downwind não há botão de encerrar a TRAVESSIA, e apagar
+   *     o evento é recusado enquanto ela está 'em_andamento'. Sem saída.
+   *
+   * E a volta não é só uma saída de emergência: é o que acontece de verdade na
+   * praia. A pessoa chega, encerra o velejo, descansa, e volta para a água
+   * enquanto o resto do grupo ainda está atravessando. O modelo antigo dizia
+   * que isso era impossível.
+   *
+   * Volta para 'confirmado' (não para 'navegando'): reentrar no downwind não é
+   * a mesma coisa que estar na água — para isso existe o botão Iniciar. E ela
+   * volta a contar no quórum de encerramento, que é o comportamento seguro:
+   * quem voltou para a água não pode ser dado como chegado.
+   */
+  encerrado: new Set(['confirmado']),
   desistiu: new Set(['confirmado']),
 };
 

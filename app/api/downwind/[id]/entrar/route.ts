@@ -134,14 +134,31 @@ export async function POST(request: Request, ctx: Params) {
 
     let rows = inserted;
     if (rows.length === 0) {
-      // Já era participante: atualiza o papel e, se tinha desistido, volta
-      // para 'confirmado' — a única volta permitida por lib/downwind.ts.
-      // NUNCA rebaixa 'navegando' para 'confirmado': reabrir o card no meio
-      // da travessia não pode tirar ninguém da água por engano.
+      /*
+       * Já era participante: atualiza o papel e, se estava num estado final,
+       * volta para 'confirmado'.
+       *
+       * 'encerrado' entrou nessa lista depois de um relato com print: quem
+       * encerrava a própria participação ficava TRANCADO FORA do downwind.
+       * Tocar "entrar" gravava 200 e não mudava nada; `GET /downwind/ativo`
+       * filtra `estado IN ('confirmado','navegando')`, então a tela do
+       * downwind nunca abria e o app ia para o mapa comum. Sem essa tela não
+       * há como encerrar a travessia, e apagar o evento é recusado enquanto
+       * ela está em andamento — a pessoa não tinha saída nenhuma.
+       *
+       * Reentrar também é o que acontece na praia de verdade: encerrou,
+       * descansou, voltou para a água enquanto o grupo ainda atravessa.
+       *
+       * NUNCA rebaixa 'navegando' para 'confirmado': reabrir o card no meio da
+       * travessia não pode tirar ninguém da água por engano. E `encerrou_em`
+       * é limpo junto, senão a linha ficaria dizendo que a pessoa terminou
+       * numa hora em que ela está de volta ao downwind.
+       */
       rows = await sql`
         UPDATE downwind_participantes
         SET papel = ${papel},
-            estado = CASE WHEN estado = 'desistiu' THEN 'confirmado' ELSE estado END
+            estado = CASE WHEN estado IN ('desistiu', 'encerrado') THEN 'confirmado' ELSE estado END,
+            encerrou_em = CASE WHEN estado IN ('desistiu', 'encerrado') THEN NULL ELSE encerrou_em END
         WHERE downwind_id = ${id} AND user_id = ${user.id}
         RETURNING papel, estado, eh_organizador, apoio_user_id
       `;

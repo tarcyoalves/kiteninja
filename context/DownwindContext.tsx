@@ -124,6 +124,17 @@ interface DownwindContextType {
    * encerramento do próprio downwind, de casa.
    */
   assistirDownwind: (downwindId: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Encerra ou cancela um downwind pelo id, mesmo que ele não seja o ativo.
+   *
+   * Existe porque quem encerra a própria participação deixa de ter downwind
+   * ativo — e o organizador ficava sem caminho nenhum para fechar a travessia
+   * do grupo, nem para apagar o evento (que é recusado enquanto ela roda).
+   */
+  mudarStatusDownwind: (
+    downwindId: string,
+    para: 'encerrado' | 'cancelado'
+  ) => Promise<{ ok: boolean; error?: string }>;
   iniciarDownwind: () => Promise<{ ok: boolean; error?: string }>;
   encerrarMinhaParticipacao: (
     motivo: 'encerrado' | 'desistiu',
@@ -870,6 +881,35 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     [downwindAtivo, recarregar]
   );
 
+  /**
+   * Muda o status de UM downwind pelo id, sem depender de ele ser o ativo.
+   *
+   * POR QUE PRECISOU EXISTIR: `encerrarDownwind` e `cancelarDownwind` só
+   * funcionam sobre `downwindAtivo`, e `downwindAtivo` é null para quem já
+   * encerrou a própria participação. O organizador que encerrasse o próprio
+   * velejo ficava sem NENHUM caminho para encerrar a travessia do grupo — a
+   * tela do downwind não abre, e apagar o evento é recusado enquanto ele está
+   * em andamento. Relatado como "tentei apagar e não apagou".
+   */
+  const mudarStatusDownwind = useCallback(
+    async (downwindId: string, para: 'encerrado' | 'cancelado') => {
+      try {
+        await api(`/api/downwind/${downwindId}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ para }),
+        });
+        await recarregar();
+        return { ok: true };
+      } catch (err) {
+        return {
+          ok: false,
+          error: err instanceof Error ? err.message : 'Falha ao mudar o status do downwind.',
+        };
+      }
+    },
+    [recarregar]
+  );
+
   const cancelarDownwind = useCallback(async () => {
     if (!downwindAtivo) return { ok: false, error: 'Nenhum downwind ativo.' };
     try {
@@ -900,6 +940,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         fecharTelaDoDownwind,
         entrarNoDownwind,
         assistirDownwind,
+        mudarStatusDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,
         encerrarDownwind,
