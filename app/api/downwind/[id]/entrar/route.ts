@@ -37,7 +37,43 @@ export async function POST(request: Request, ctx: Params) {
     }
 
     const body = await readOptionalJson(request);
-    const papel = oneOf(body, 'papel', ['velejador', 'apoio_terra'] as const, 'velejador');
+    const papel = oneOf(
+      body,
+      'papel',
+      ['velejador', 'apoio_terra', 'espectador'] as const,
+      'velejador'
+    );
+
+    /*
+     * "Só assistir" NÃO tira ninguém da água.
+     *
+     * Quem já está 'navegando' está com o celular no colete, no meio da
+     * travessia. Se um toque em "só assistir" (dedo errado, tela no bolso,
+     * reabrir o card) rebaixasse o papel para 'espectador', a pessoa sairia
+     * do quórum de encerramento e pararia de transmitir posição — o grupo
+     * fecharia o downwind com ela ainda na água e o mapa deixaria de
+     * mostrá-la. É o pior desfecho possível deste arquivo, e é barato de
+     * impedir: quem está navegando primeiro encerra a própria participação.
+     *
+     * Mesmo espírito da linha logo abaixo, que nunca rebaixa 'navegando'
+     * para 'confirmado'.
+     */
+    if (papel === 'espectador') {
+      const atual = await sql`
+        SELECT estado FROM downwind_participantes
+        WHERE downwind_id = ${id} AND user_id = ${user.id}
+        LIMIT 1
+      `;
+      if (
+        atual.length > 0 &&
+        String((atual[0] as Record<string, unknown>).estado) === 'navegando'
+      ) {
+        throw new HttpError(
+          409,
+          'Você está navegando neste downwind. Encerre seu velejo antes de passar a só assistir.'
+        );
+      }
+    }
 
     // Duas etapas em vez de um único ON CONFLICT com ação de escrita embutida:
     // o downwind já tem organizador inserido na criação (app/api/events/

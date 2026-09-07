@@ -1054,6 +1054,41 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS downwind_guest_of UUID
 ALTER TABLE downwind_participantes
   ADD COLUMN IF NOT EXISTS apoio_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 
+-- Terceiro papel: 'espectador' — quem acompanha a travessia sem ir.
+--
+-- PEDIDO DO DONO: "criei um dw porem quero opcao de apenas visualizar os
+-- velejadores, no caso de eu nao poder ir ao evento". Ate aqui so existiam
+-- dois lugares para estar: na agua ('velejador') ou no carro de apoio
+-- ('apoio_terra'). Quem criou o downwind entra como 'velejador'
+-- (app/api/events/route.ts), entao o organizador que nao pode ir ficava
+-- contado como gente na agua — e o quorum de encerramento espera por ele.
+-- O grupo inteiro chegava na praia e nao conseguia fechar o downwind porque
+-- o organizador estava em casa.
+--
+-- POR QUE NAO REAPROVEITAR 'apoio_terra': apoio em terra e o CARRO. Qualquer
+-- participante com esse papel pode ser escolhido como carro de apoio de um
+-- velejador (ver apoioValido em lib/downwindAcesso.ts). Colocar quem so
+-- assiste nessa lista prometeria um carro na praia que nao existe — e essa
+-- promessa e justamente a que ninguem pode quebrar num downwind.
+--
+-- O QUE O ESPECTADOR NAO FAZ, e onde cada trava mora:
+--   * nao entra no quorum de encerramento — velejadores() em lib/downwind.ts
+--     ja filtra papel = 'velejador', entao isto vale de graca;
+--   * nao transmite posicao — podeReportarPosicao em lib/downwindAcesso.ts;
+--   * nao aparece como marcador no mapa dos outros — as rotas de posicoes,
+--     live e resumo o omitem da lista;
+--   * nao e candidato a socorro no SOS — lib/sosCandidates.ts;
+--   * nao pode iniciar a travessia — podeIniciarDownwind exige 'velejador'.
+--
+-- DROP + ADD em vez de CREATE TABLE: a tabela ja existe em producao com o
+-- CHECK antigo, e CREATE TABLE IF NOT EXISTS nao altera constraint de tabela
+-- existente. Mesmo padrao ja usado por users_role_check e
+-- notifications_type_check neste arquivo.
+ALTER TABLE downwind_participantes DROP CONSTRAINT IF EXISTS downwind_participantes_papel_check;
+ALTER TABLE downwind_participantes
+  ADD CONSTRAINT downwind_participantes_papel_check
+  CHECK (papel IN ('velejador', 'apoio_terra', 'espectador'));
+
 -- Resumo da travessia, gravado NO ENCERRAMENTO da participação, para a trilha
 -- bruta poder ser apagada depois sem destruir o que o velejador quer rever.
 -- A trilha virou informação visível no mapa (o rastro de cada um), então

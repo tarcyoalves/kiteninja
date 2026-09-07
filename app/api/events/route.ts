@@ -64,6 +64,7 @@ export async function GET(request: Request) {
         d.visibilidade AS downwind_visibilidade,
         d.notificado_em AS downwind_notificado_em,
         (d.criado_por = ${user.id}) AS downwind_criado_por_mim,
+        meu_dp.papel AS downwind_meu_papel,
         (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = e.id) AS participants_count,
         CASE WHEN EXISTS (
           SELECT 1 FROM event_registrations er
@@ -71,6 +72,8 @@ export async function GET(request: Request) {
         ) THEN true ELSE false END AS is_registered
       FROM events e
       LEFT JOIN downwinds d ON d.event_id = e.id
+      LEFT JOIN downwind_participantes meu_dp
+        ON meu_dp.downwind_id = d.id AND meu_dp.user_id = ${user.id}
       WHERE (
         d.id IS NULL OR d.visibilidade = 'comunidade' OR d.criado_por = ${user.id} OR EXISTS (
           SELECT 1 FROM downwind_participantes dp WHERE dp.downwind_id = d.id AND dp.user_id = ${user.id}
@@ -117,6 +120,9 @@ export async function GET(request: Request) {
         downwindId: r.downwind_id ? String(r.downwind_id) : null,
         downwindStatus: r.downwind_status ? String(r.downwind_status) as KiteEvent['downwindStatus'] : null,
         downwindCriadoPorMim: Boolean(r.downwind_criado_por_mim),
+        downwindMeuPapel: r.downwind_meu_papel
+          ? (String(r.downwind_meu_papel) as 'velejador' | 'apoio_terra' | 'espectador')
+          : null,
         downwindVisibilidade: r.downwind_visibilidade
           ? (String(r.downwind_visibilidade) as 'privado' | 'comunidade')
           : null,

@@ -30,7 +30,32 @@ export type DownwindStatus = 'aberto' | 'em_andamento' | 'encerrado' | 'cancelad
  * resolve isso na raiz: estar na água sempre conta, seja você organizador ou
  * não.
  */
-export type ParticipantePapel = 'velejador' | 'apoio_terra';
+/**
+ * Onde a pessoa está durante a travessia.
+ *
+ * 'espectador' foi o terceiro a chegar, a pedido do dono: "quero opção de
+ * apenas visualizar os velejadores, no caso de eu não poder ir ao evento".
+ * Quem cria o downwind entra como 'velejador', então o organizador que não
+ * podia ir ficava contado como gente na água e o grupo não conseguia encerrar
+ * a travessia esperando por alguém que estava em casa.
+ *
+ * Espectador não foi encaixado em 'apoio_terra' de propósito: apoio em terra
+ * é o CARRO, e todo apoio_terra pode ser escolhido como carro de apoio de um
+ * velejador (ver `apoioValido`). Quem só assiste na lista de carros seria uma
+ * promessa de socorro que não existe.
+ */
+export type ParticipantePapel = 'velejador' | 'apoio_terra' | 'espectador';
+
+/**
+ * Quem transmite posição — e, por consequência, quem vira marcador no mapa
+ * dos outros.
+ *
+ * Espectador fica de fora: ele está em casa, e mandar a localização de casa
+ * para o grupo é o oposto do que ele pediu ao escolher só assistir.
+ */
+export function transmitePosicao(papel: ParticipantePapel): boolean {
+  return papel !== 'espectador';
+}
 export type ParticipanteEstado = 'confirmado' | 'navegando' | 'encerrado' | 'desistiu';
 
 export interface DownwindParticipante {

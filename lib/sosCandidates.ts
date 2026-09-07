@@ -228,6 +228,14 @@ async function candidatosPorProximidade(
  * `apoio_terra`, que nunca navega e por isso permanece elegível enquanto o
  * downwind estiver em andamento.
  *
+ * `espectador` fica DE FORA, dos dois lados. Ele nem está no lugar: escolheu
+ * acompanhar de casa. Uma lista de socorro inflada com gente que não pode
+ * chegar é pior que uma lista curta e verdadeira — ela faz parecer que muita
+ * gente foi avisada e está a caminho, que é exatamente a ilusão que mata numa
+ * emergência. Quem só assiste continua vendo o mapa ao vivo e pode acionar
+ * salvamento por fora; o que ele não faz é ocupar uma vaga na lista de quem
+ * vai buscar.
+ *
  * A distância é calculada quando dá: se o pedinte tem GPS e o companheiro tem
  * posição recente na trilha do downwind, o socorrista vê "a 12 km". Quando não
  * dá, `dist` é null e a UI mostra "no seu downwind" — sem inventar número, que
@@ -252,6 +260,7 @@ async function candidatosPorDownwind(
     JOIN downwind_participantes p
       ON p.downwind_id = eu.downwind_id
      AND p.user_id != ${excludeUserId}
+     AND p.papel != 'espectador'
      AND (p.papel = 'apoio_terra' OR p.estado IN ('confirmado', 'navegando'))
     LEFT JOIN LATERAL (
       SELECT dp.lat, dp.lng
@@ -263,6 +272,7 @@ async function candidatosPorDownwind(
       LIMIT 1
     ) pos ON TRUE
     WHERE eu.user_id = ${excludeUserId}
+      AND eu.papel != 'espectador'
       AND (eu.papel = 'apoio_terra' OR eu.estado IN ('confirmado', 'navegando'))
   `;
 

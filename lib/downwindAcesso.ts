@@ -16,6 +16,7 @@ import {
   podeEncerrarDownwind,
   podeTransicionarDownwind,
   podeTransicionarParticipante,
+  transmitePosicao,
   velejadoresPendentes,
   type DownwindParticipante,
   type DownwindStatus,
@@ -118,6 +119,24 @@ export function posicaoVisivel(estado: ParticipanteEstado): boolean {
   return estado !== 'encerrado' && estado !== 'desistiu';
 }
 
+/**
+ * Este participante deve aparecer como MARCADOR no mapa dos outros?
+ *
+ * Duas condições, por motivos diferentes: `posicaoVisivel` fecha a posição de
+ * quem já saiu da água (não se vigia ninguém no caminho de casa), e
+ * `transmitePosicao` fecha a de quem nunca entrou — o espectador.
+ *
+ * Existe como função própria porque as três rotas que desenham o mapa
+ * (`posicoes`, `live`, `resumo`) precisam da MESMA resposta. Repetir a
+ * condição em três lugares é como uma delas fica para trás.
+ */
+export function apareceNoMapa(
+  papel: ParticipantePapel,
+  estado: ParticipanteEstado
+): boolean {
+  return transmitePosicao(papel) && posicaoVisivel(estado);
+}
+
 // ---------------------------------------------------------------------------
 // 2. Reportar posição.
 // ---------------------------------------------------------------------------
@@ -134,6 +153,19 @@ export function podeReportarPosicao(args: {
   const { statusDownwind, participacao } = args;
   if (statusDownwind === null || participacao === null) {
     return negar(404, MSG_DOWNWIND_NAO_ENCONTRADO);
+  }
+  /*
+   * Espectador NUNCA reporta posição. Ele escolheu só assistir — está em
+   * casa, no trabalho, num bar — e a localização dele não tem nada a ver com
+   * a travessia. Sem esta linha o beacon web mandaria a posição da sala dele
+   * para o grupo inteiro, que é o contrário exato do que ele pediu ao tocar
+   * "só assistir".
+   *
+   * A trava mora AQUI, no servidor, e não só no cliente: o cliente é quem eu
+   * consigo consertar, mas não é quem eu controlo.
+   */
+  if (!transmitePosicao(participacao.papel)) {
+    return negar(403, 'Quem está só assistindo não envia posição.');
   }
   if (!posicaoVisivel(participacao.estado)) {
     return negar(409, 'Sua participação neste downwind já foi encerrada.');
@@ -390,6 +422,10 @@ export function apoioValido(args: {
 
   if (alvoPapel === 'apoio_terra') {
     return negar(400, 'Quem está no apoio em terra não tem carro de apoio.');
+  }
+  // Nem quem só assiste: carro de apoio é para quem vai entrar na água.
+  if (alvoPapel === 'espectador') {
+    return negar(400, 'Quem está só assistindo não tem carro de apoio.');
   }
   if (apoioUserId === alvoUserId) {
     return negar(400, 'Ninguém pode ser o próprio apoio.');

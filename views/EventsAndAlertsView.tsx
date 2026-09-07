@@ -17,6 +17,7 @@ import {
   Info,
   ChevronRight,
   Route,
+  Eye,
   Trophy,
   Waves,
   X,
@@ -51,8 +52,9 @@ export const EventsAndAlertsView: React.FC = () => {
     refreshEventsAndAlerts,
   } = useKiteData();
   const { user, openAuthModal, canModerateEvents } = useAuth();
-  const { entrarNoDownwind } = useDownwind();
+  const { entrarNoDownwind, assistirDownwind } = useDownwind();
   const [entrandoEmId, setEntrandoEmId] = useState<string | null>(null);
+  const [assistindoEmId, setAssistindoEmId] = useState<string | null>(null);
   const [linkCopiadoId, setLinkCopiadoId] = useState<string | null>(null);
   const [erroEntrar, setErroEntrar] = useState<string | null>(null);
   /** Downwind com geração de link de convite em voo — ver copiarLinkConvite. */
@@ -357,6 +359,32 @@ export const EventsAndAlertsView: React.FC = () => {
    * substitui somente o mapa comum; o menu flutuante e as demais abas continuam
    * acessíveis durante toda a travessia.
    */
+  /**
+   * "Só assistir": entra no downwind como espectador e abre o mapa ao vivo.
+   *
+   * NÃO é o mesmo que "Entrar no Downwind". Entrar te põe na água — na
+   * contagem de velejadores e no quórum que segura o encerramento até todos
+   * saírem. Quem não vai ao evento e entra como velejador trava o grupo
+   * inteiro de casa, que é exatamente o que acontecia com quem CRIAVA o
+   * downwind (o criador entra como velejador, ver app/api/events/route.ts).
+   */
+  const handleAssistirDownwind = async (downwindId: string) => {
+    if (!user) {
+      openAuthModal();
+      return;
+    }
+    setErroEntrar(null);
+    setAssistindoEmId(downwindId);
+    const res = await assistirDownwind(downwindId);
+    setAssistindoEmId(null);
+    if (!res.ok) {
+      setErroEntrar(res.error ?? 'Não foi possível entrar como espectador.');
+      return;
+    }
+    await refreshEventsAndAlerts();
+    abrirDownwindAoVivo(downwindId);
+  };
+
   const handleEntrarDownwind = async (downwindId: string) => {
     if (!user) {
       openAuthModal();
@@ -1085,29 +1113,80 @@ export const EventsAndAlertsView: React.FC = () => {
                   )}
 
                 {/*
-                  * ACOMPANHAR SEM ENTRAR — capacidade que a <ListaDownwinds>
-                  * removida oferecia e que se perderia sem isto.
+                  * SÓ ASSISTIR — entra no downwind como espectador.
                   *
-                  * "Entrar no Downwind" acima faz de você PARTICIPANTE, o que
-                  * é outra coisa: quem está em terra querendo ver o grupo
-                  * atravessar não quer entrar na contagem de quem está na
-                  * água — nem no quórum de encerramento.
+                  * "Entrar no Downwind" acima te põe NA ÁGUA: na contagem de
+                  * velejadores e no quórum que segura o encerramento até
+                  * todos saírem. Quem não vai ao evento e entra por ali trava
+                  * o grupo de casa — e era o que acontecia justamente com
+                  * quem CRIAVA o downwind, porque o criador entra como
+                  * velejador (app/api/events/route.ts).
                   *
-                  * Só em downwind de comunidade em andamento, que é
-                  * exatamente o que `podeVerReplayAoVivo` libera para não
-                  * participante (lib/downwindAcesso.ts). Oferecer o botão num
-                  * downwind fechado levaria a pessoa a um 404.
+                  * Pedido do dono, textual: "criei um dw porém quero opção de
+                  * apenas visualizar os velejadores, no caso de eu não poder
+                  * ir ao evento".
+                  *
+                  * Espectador não transmite posição, não aparece no mapa dos
+                  * outros, não entra no quórum e não é oferecido como carro
+                  * de apoio nem como socorrista no SOS — ver
+                  * lib/downwindAcesso.ts e lib/sosCandidates.ts.
+                  */}
+                {event.downwindId &&
+                  (event.downwindStatus === 'aberto' ||
+                    event.downwindStatus === 'em_andamento') &&
+                  event.downwindMeuPapel !== 'espectador' && (
+                    <button
+                      onClick={() => handleAssistirDownwind(event.downwindId as string)}
+                      disabled={assistindoEmId === event.downwindId}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all disabled:opacity-60"
+                    >
+                      {assistindoEmId === event.downwindId ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Eye size={14} className="text-cyan-400" />
+                      )}
+                      <span>Só assistir (não vou velejar)</span>
+                    </button>
+                  )}
+
+                {/*
+                  * MAPA AO VIVO.
+                  *
+                  * A trava antiga exigia `visibilidade === 'comunidade'`, e
+                  * com isso escondia o botão de quem PARTICIPA de um downwind
+                  * privado — inclusive de quem o criou. Essas pessoas podem
+                  * ver o mapa (`podeVerReplayAoVivo` libera participante e
+                  * moderador), só não tinham por onde chegar nele. Quem não
+                  * pode ver continua sem o botão, porque a rota devolve 404 e
+                  * mandar alguém para um 404 é pior que não oferecer.
                   */}
                 {event.downwindId &&
                   event.downwindStatus === 'em_andamento' &&
-                  event.downwindVisibilidade === 'comunidade' && (
+                  (event.downwindVisibilidade === 'comunidade' ||
+                    event.downwindCriadoPorMim ||
+                    event.downwindMeuPapel != null) && (
                     <button
                       onClick={() => abrirDownwindAoVivo(event.downwindId as string)}
                       className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all"
                     >
                       <Route size={14} className="text-cyan-400" />
-                      <span>Acompanhar de terra</span>
+                      <span>
+                        {event.downwindMeuPapel === 'espectador'
+                          ? 'Ver os velejadores ao vivo'
+                          : 'Acompanhar de terra'}
+                      </span>
                     </button>
+                  )}
+
+                {/* Quem já escolheu só assistir vê o próprio estado — sem
+                    isso o botão some e a pessoa não sabe se funcionou. */}
+                {event.downwindMeuPapel === 'espectador' &&
+                  event.downwindStatus !== 'encerrado' &&
+                  event.downwindStatus !== 'cancelado' && (
+                    <p className="flex items-center justify-center gap-1.5 text-[11px] text-cyan-300/90 font-bold">
+                      <Eye size={12} />
+                      Você está só assistindo este downwind
+                    </p>
                   )}
 
                 {/* Resumo estilo Strava: só depois que o downwind terminou —

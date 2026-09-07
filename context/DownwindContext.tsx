@@ -14,7 +14,7 @@ import {
   type TrackingStatus,
 } from '../lib/downwindTracker';
 import { useAoMudar } from '../lib/useAoMudar';
-import { mapaMostraDownwind } from '../lib/activity';
+import { mapaMostraDownwind, pedidoDeAberturaVale } from '../lib/activity';
 import { useKiteData } from './KiteDataContext';
 import { DISTANCIA_MINIMA_PARA_REGISTRO_KM } from '../lib/trilhaSessao';
 
@@ -34,7 +34,7 @@ import { DISTANCIA_MINIMA_PARA_REGISTRO_KM } from '../lib/trilhaSessao';
  * não interrompe o envio de posição durante a travessia.
  */
 
-export type DownwindPapel = 'velejador' | 'apoio_terra';
+export type DownwindPapel = 'velejador' | 'apoio_terra' | 'espectador';
 export type DownwindParticipanteEstado = 'confirmado' | 'navegando' | 'encerrado' | 'desistiu';
 export type DownwindStatus = 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado';
 
@@ -115,6 +115,15 @@ interface DownwindContextType {
     downwindId: string,
     papel?: DownwindPapel
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Entrar SÓ PARA ASSISTIR — sem entrar na contagem de quem está na água.
+   *
+   * Pedido do dono: "criei um dw porém quero opção de apenas visualizar os
+   * velejadores, no caso de eu não poder ir ao evento". Quem cria entra como
+   * velejador, então o organizador que não ia ficava travando o quórum de
+   * encerramento do próprio downwind, de casa.
+   */
+  assistirDownwind: (downwindId: string) => Promise<{ ok: boolean; error?: string }>;
   iniciarDownwind: () => Promise<{ ok: boolean; error?: string }>;
   encerrarMinhaParticipacao: (
     motivo: 'encerrado' | 'desistiu',
@@ -206,26 +215,45 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
    * tomava a aba Mapa, inclusive um marcado para daqui a três dias. Agora
    * `aberto` só toma a tela quando alguém pediu — e o pedido é este booleano.
    */
-  const [abertoDeliberadamente, setAbertoDeliberadamente] = useState(false);
+  /*
+   * PARA QUAL downwind a pessoa pediu a tela — não um booleano.
+   *
+   * Era `useState(false)` mais um `useAoMudar` que zerava a cada troca de id.
+   * Os dois se atropelavam justamente na entrada: `entrarNoDownwind` recarrega
+   * o downwind ativo (id vai de null para o novo) e liga o pedido na mesma
+   * continuação; o zerador, que roda durante o render seguinte, via a troca de
+   * id e desligava o pedido recém-ligado. Quem tocava "Entrar no Downwind"
+   * caía na aba Mapa comum, sem sinal do downwind — foi relatado assim
+   * ("tentei entrar num dw e não prestou").
+   *
+   * Guardando o id, trocar de downwind deixa de casar sozinho: ninguém precisa
+   * desligar nada, e não há corrida entre quem liga e quem desliga. Ver
+   * `pedidoDeAberturaVale` em lib/activity.ts.
+   */
+  const [pedidoAberturaId, setPedidoAberturaId] = useState<string | null>(null);
   const mostrarTelaDoDownwind = mapaMostraDownwind({
     downwind: downwindAtivo,
-    abertoDeliberadamente,
+    abertoDeliberadamente: pedidoDeAberturaVale(pedidoAberturaId, downwindAtivo?.id ?? null),
   });
-  const abrirTelaDoDownwind = useCallback(() => setAbertoDeliberadamente(true), []);
-  const fecharTelaDoDownwind = useCallback(() => setAbertoDeliberadamente(false), []);
-
-  /*
-   * Trocar de downwind (ou ficar sem nenhum) zera o pedido de abertura: o
-   * "sim, quero ver" foi dado para AQUELE downwind, e herdá-lo traria de volta
-   * o sequestro da aba que esta correção elimina. Chave primitiva (o id), como
-   * exige lib/useAoMudar.ts — objeto ali entra em laço infinito.
-   */
-  useAoMudar(downwindAtivo?.id ?? null, () => {
-    setAbertoDeliberadamente(false);
-  });
+  const abrirTelaDoDownwind = useCallback(() => {
+    // Roda num clique, nunca no render: ler o downwind ativo aqui é legítimo.
+    setPedidoAberturaId(downwindAtivo?.id ?? null);
+  }, [downwindAtivo]);
+  const fecharTelaDoDownwind = useCallback(() => setPedidoAberturaId(null), []);
 
   const emAndamento = downwindAtivo?.status === 'em_andamento';
-  const beacon = useDownwindBeacon(downwindAtivo?.id ?? null, emAndamento);
+  /*
+   * O beacon web só liga para quem TRANSMITE. Espectador escolheu acompanhar
+   * de casa — mandar a posição da sala dele para o grupo é o contrário exato
+   * do que ele pediu. O servidor também recusa (podeReportarPosicao), mas
+   * deixar o aparelho ligar o GPS para nada gastaria bateria e ainda pediria
+   * uma permissão que não se justifica.
+   */
+  const souEspectador = downwindAtivo?.minhaParticipacao.papel === 'espectador';
+  const beacon = useDownwindBeacon(
+    downwindAtivo?.id ?? null,
+    emAndamento && !souEspectador
+  );
 
   /*
    * Wake Lock durante TODA a travessia, não só dentro do Modo Navegação.
@@ -667,16 +695,26 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // um objeto parcial aqui — evita duas fontes de verdade para o mesmo
         // formato de resposta.
         await recarregar();
-        // Entrar é um pedido explícito de ver o downwind — sem isto, entrar
+        // Entrar é um pedido explícito de ver ESTE downwind — sem isto, entrar
         // num downwind AGENDADO levaria a pessoa para a aba Mapa normal, já
-        // que agendado não toma a tela sozinho.
-        setAbertoDeliberadamente(true);
+        // que agendado não toma a tela sozinho. O id (e não um `true`) é o que
+        // sobrevive ao recarregamento que acabou de trocar o downwind ativo.
+        setPedidoAberturaId(downwindId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Falha ao entrar no downwind.' };
       }
     },
     [recarregar]
+  );
+
+  /**
+   * Só assistir. Um atalho de `entrarNoDownwind` com o papel de espectador —
+   * e não uma segunda implementação, para as duas não divergirem depois.
+   */
+  const assistirDownwind = useCallback(
+    (downwindId: string) => entrarNoDownwind(downwindId, 'espectador'),
+    [entrarNoDownwind]
   );
 
   const iniciarDownwind = useCallback(async () => {
@@ -799,6 +837,7 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         abrirTelaDoDownwind,
         fecharTelaDoDownwind,
         entrarNoDownwind,
+        assistirDownwind,
         iniciarDownwind,
         encerrarMinhaParticipacao,
         encerrarDownwind,

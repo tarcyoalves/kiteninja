@@ -58,7 +58,11 @@ export async function GET(request: Request, ctx: Params) {
              dp.distancia_km, dp.velocidade_max_nos, dp.trilha_reduzida
       FROM downwind_participantes dp
       JOIN users u ON u.id = dp.user_id
-      WHERE dp.downwind_id = ${id}
+      -- Espectador fora do resumo: ele nao velejou, entao nao tem distancia,
+      -- velocidade nem trilha para comparar. Aparecer com tudo zerado no
+      -- ranking do grupo seria ruido, e pior, pareceria um velejador que foi
+      -- muito mal.
+      WHERE dp.downwind_id = ${id} AND dp.papel != 'espectador'
       ORDER BY dp.distancia_km DESC NULLS LAST, u.name ASC
     `;
 

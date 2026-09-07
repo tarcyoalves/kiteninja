@@ -14,7 +14,7 @@ export interface ContextoAtividade {
     nome: string;
     status: 'aberto' | 'em_andamento' | 'encerrado' | 'cancelado';
     /** Ver `aindaEstouNaTravessia`. Ausente = trata como ainda participando. */
-    minhaParticipacao?: { estado?: string | null } | null;
+    minhaParticipacao?: { estado?: string | null; papel?: string | null } | null;
   } | null;
 }
 
@@ -45,6 +45,31 @@ export interface ContextoAtividade {
  */
 export function aindaEstouNaTravessia(estado: string | null | undefined): boolean {
   return estado !== 'encerrado' && estado !== 'desistiu';
+}
+
+/**
+ * EU estou nesta travessia como quem VAI PARA A ÁGUA?
+ *
+ * `aindaEstouNaTravessia` pergunta só pelo estado, e por isso responde "sim"
+ * para o espectador — que tem estado 'confirmado' e nunca sai de casa. As duas
+ * consequências disso eram visíveis:
+ *
+ *  - a aba Mapa era tomada pelo mapa ao vivo assim que o grupo começava, com
+ *    os botões de "Iniciar" e "Encerrar meu velejo" para alguém que não está
+ *    velejando;
+ *  - o botão PLAY recusava iniciar um velejo solo dizendo "você está na água
+ *    no downwind X" para quem estava, literalmente, em casa assistindo.
+ *
+ * Papel ausente conta como participante da água: resposta antiga do servidor
+ * sem o campo não pode liberar duas navegações ao mesmo tempo, que é a
+ * invariante do produto no topo deste arquivo.
+ */
+export function souParticipanteDaAgua(
+  papel: string | null | undefined,
+  estado: string | null | undefined
+): boolean {
+  if (papel === 'espectador') return false;
+  return aindaEstouNaTravessia(estado);
 }
 
 export interface EstadoAtividadeAtual {
@@ -105,7 +130,13 @@ export function travessiaEmAndamento(
  * própria (o resumo), e o mapa principal não é lugar de travessia que acabou.
  */
 export function mapaMostraDownwind(args: {
-  downwind: { status: string; minhaParticipacao?: { estado?: string | null } | null } | null | undefined;
+  downwind:
+    | {
+        status: string;
+        minhaParticipacao?: { estado?: string | null; papel?: string | null } | null;
+      }
+    | null
+    | undefined;
   /** A pessoa tocou em "Abrir downwind" / "Entrar no Downwind". */
   abertoDeliberadamente: boolean;
 }): boolean {
@@ -122,9 +153,50 @@ export function mapaMostraDownwind(args: {
      * a mesma porta do agendado, a pedido ("Voltar ao downwind"), em vez de
      * imposição.
      */
-    return aindaEstouNaTravessia(downwind.minhaParticipacao?.estado) || abertoDeliberadamente;
+    return (
+      souParticipanteDaAgua(
+        downwind.minhaParticipacao?.papel,
+        downwind.minhaParticipacao?.estado
+      ) || abertoDeliberadamente
+    );
   }
   return abertoDeliberadamente && downwind.status === 'aberto';
+}
+
+/**
+ * O pedido de "abrir o downwind" vale para o downwind que está na tela agora?
+ *
+ * O BUG QUE ISTO CORRIGE — relatado como "tentei entrar num dw e não prestou".
+ *
+ * `abertoDeliberadamente` era um booleano, e o contexto o zerava sempre que o
+ * id do downwind ativo mudava (para o "sim, quero ver" de um downwind não ser
+ * herdado por outro). A intenção estava certa; a implementação se atropelava.
+ *
+ * Entrar num downwind faz DUAS coisas na mesma continuação assíncrona:
+ * recarrega o downwind ativo (o id vai de `null` para o novo) e liga o pedido
+ * de abertura. O zerador roda DURANTE O RENDER (ver lib/useAoMudar.ts), ou
+ * seja, DEPOIS que o React já juntou as duas mudanças — então ele via o id
+ * mudando de `null` para o novo, concluía "trocou de downwind" e desligava o
+ * pedido que acabara de ser ligado.
+ *
+ * Resultado para quem usa: você toca em "Entrar no Downwind", o servidor
+ * grava sua entrada certinho, o app te leva para a aba Mapa — e o mapa é o
+ * normal, sem sinal nenhum do downwind. Só acontece com downwind AGENDADO
+ * ('aberto'), porque travessia em andamento toma a tela por outro caminho; e
+ * só na primeira entrada, porque quem já era participante não tem troca de id
+ * para o zerador reagir. É por isso que passava despercebido no teste.
+ *
+ * A CORREÇÃO: guardar PARA QUAL downwind o pedido foi feito, em vez de um
+ * booleano mais um zerador. Trocar de downwind deixa de casar sozinho — sem
+ * ninguém precisar desligar nada, e sem corrida possível entre quem liga e
+ * quem desliga. Mesmo formato já usado em `encerradoPorMimRef`.
+ */
+export function pedidoDeAberturaVale(
+  pedidoParaId: string | null,
+  downwindId: string | null | undefined
+): boolean {
+  if (pedidoParaId === null) return false;
+  return pedidoParaId === (downwindId ?? null);
 }
 
 export function determinarAtividadeAtual(contexto: ContextoAtividade): EstadoAtividadeAtual {
@@ -138,7 +210,13 @@ export function determinarAtividadeAtual(contexto: ContextoAtividade): EstadoAti
   // Só bloqueia quem AINDA está na travessia: dizer "encerre a sua
   // participação" para quem acabou de encerrá-la é o app discordando do que a
   // pessoa acabou de fazer, e ainda impedia iniciar qualquer outra coisa.
-  if (travessiaEmAndamento(downwindAtivo) && aindaEstouNaTravessia(downwindAtivo?.minhaParticipacao?.estado)) {
+  if (
+    travessiaEmAndamento(downwindAtivo) &&
+    souParticipanteDaAgua(
+      downwindAtivo?.minhaParticipacao?.papel,
+      downwindAtivo?.minhaParticipacao?.estado
+    )
+  ) {
     return {
       tipo: 'downwind',
       emAndamento: true,

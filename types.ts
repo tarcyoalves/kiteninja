@@ -416,6 +416,15 @@ export interface KiteEvent {
    * além da moderação. Calculado no servidor (GET /api/events), nunca no
    * cliente — evita mostrar um botão que a rota de apagar recusaria. */
   downwindCriadoPorMim?: boolean;
+  /**
+   * Meu papel neste downwind, ou `null` se não entrei.
+   *
+   * A tela precisa disto para duas coisas que ela não conseguia decidir:
+   * oferecer "só assistir" a quem ainda não entrou, e mostrar o link do mapa
+   * ao vivo a quem PARTICIPA de um downwind privado — que podia ver o mapa
+   * (`podeVerReplayAoVivo`) mas não tinha botão nenhum para chegar lá.
+   */
+  downwindMeuPapel?: 'velejador' | 'apoio_terra' | 'espectador' | null;
   /** Visibilidade do downwind vinculado. Mostrada no card de propósito: "criei
    * e não apareceu para ninguém" foi um relato real, e a resposta estava
    * escondida nesta escolha. Ver lib/downwindVisibilidade.ts. */

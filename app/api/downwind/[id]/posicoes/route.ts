@@ -7,6 +7,7 @@ import {
   MSG_DOWNWIND_NAO_ENCONTRADO,
   podeReportarPosicao,
   podeVerPosicoes,
+  apareceNoMapa,
   posicaoVisivel,
 } from '@/lib/downwindAcesso';
 import { buscarContexto, ehUuid } from '@/lib/downwindDb';
@@ -136,7 +137,11 @@ export async function GET(request: Request, ctx: Params) {
           LIMIT ${PONTOS_PARA_MOVIMENTO}
         ) x
       ) r ON TRUE
-      WHERE dp.downwind_id = ${id}
+      -- Espectador nao entra: ele nao esta na travessia, escolheu so
+      -- acompanhar. Filtrar aqui, na origem, e o que impede que ele apareca
+      -- como marcador, entre na faixa de "quem esta mais atras" ou seja
+      -- oferecido como carro de apoio nas telas que consomem esta lista.
+      WHERE dp.downwind_id = ${id} AND dp.papel != 'espectador'
     `;
 
     const meuApoioId = participacao?.apoioUserId ?? null;
@@ -145,12 +150,13 @@ export async function GET(request: Request, ctx: Params) {
       const r = row as Record<string, unknown>;
       const userId = String(r.user_id);
       const estado = String(r.estado) as 'confirmado' | 'navegando' | 'encerrado' | 'desistiu';
-      const visivel = posicaoVisivel(estado);
+      const papel = r.papel as 'velejador' | 'apoio_terra';
+      const visivel = apareceNoMapa(papel, estado);
       return {
         userId,
         nome: String(r.name),
         avatarUrl: r.avatar_url ? String(r.avatar_url) : null,
-        papel: r.papel as 'velejador' | 'apoio_terra',
+        papel,
         ehOrganizador: Boolean(r.eh_organizador),
         estado,
         // Posição de quem já saiu da água não é servida a ninguém — nem à
@@ -184,7 +190,7 @@ export async function GET(request: Request, ctx: Params) {
     let trilha: PontoTrilha[] = [];
     let cursor: string | null = null;
 
-    if (posicaoVisivel(participacao!.estado)) {
+    if (apareceNoMapa(participacao!.papel, participacao!.estado)) {
       if (desde) {
         const delta = await sql`
           SELECT lat, lng, registrado_em

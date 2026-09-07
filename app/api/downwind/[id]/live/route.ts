@@ -145,7 +145,9 @@ export async function GET(request: Request, ctx: Params) {
         u.name AS user_name, u.avatar_url AS user_avatar_url
       FROM downwind_participantes dp
       JOIN users u ON u.id = dp.user_id
-      WHERE dp.downwind_id = ${dwId}
+      -- Espectador fora: quem so acompanha nao e um dos velejadores que a
+      -- tela esta seguindo. Ele e publico desta tela, nao conteudo dela.
+      WHERE dp.downwind_id = ${dwId} AND dp.papel != 'espectador'
       ORDER BY dp.entrou_em ASC
     `;
 
