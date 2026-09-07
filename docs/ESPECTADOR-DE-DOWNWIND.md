@@ -77,6 +77,62 @@ Um teste meu também leu comentário como se fosse código: afirmava que
 porque a string sobrevivia no comentário `--` que explica a ordem antiga. O
 stripper do teste agora tira comentário SQL também.
 
+### A terceira causa — e a lição de método
+
+O relato voltou uma terceira vez. As duas primeiras causas eu deduzi **lendo o
+código**, e as duas eram defeitos reais — mas nenhuma era a que o dono estava
+vivendo. Deduzir de novo teria sido o terceiro chute.
+
+Fui aos **logs de produção**. Eles contaram a história inteira em dez linhas:
+
+```
+20:30:14  POST /downwind/fa41cc2d.../entrar   200
+20:30:28  POST /downwind/fa41cc2d.../entrar   200
+20:30:45  POST /downwind/2f0348d5.../posicoes 200   <- OUTRO downwind
+20:31:32  POST /downwind/2f0348d5.../posicoes 200   ... a cada 47s, sem parar
+20:48:52  POST /downwind/fa41cc2d.../entrar   200
+20:49:12  POST /downwind/fa41cc2d.../entrar   200
+20:49:32  POST /downwind/fa41cc2d.../entrar   200
+20:49:36  POST /downwind/fa41cc2d.../entrar   200
+20:50:10  POST /downwind/fa41cc2d.../entrar   200
+```
+
+**Sete toques em "Entrar", todos 200.** E entre eles, o beacon de um downwind
+*diferente* transmitindo posição sem parar — um downwind antigo, de um teste
+que nunca foi encerrado, ainda `em_andamento`.
+
+O app só sabe segurar **um** downwind ativo, e sempre prefere o que está em
+andamento. Então a entrada acontecia de verdade, a tela pedia o novo, e a
+revalidação seguinte — `recarregar()` sem id, disparado por `focus` ou
+`visibilitychange` — trazia o velho de volta. Sete vezes, com zero mensagem na
+tela. O servidor respondia "deu certo" e a pessoa via que não deu.
+
+Duas correções, e a segunda importa mais que a primeira:
+
+1. **O pedido passou a sobreviver.** `recarregar()` sem argumento consulta o
+   último downwind pedido, em vez de aceitar o palpite do servidor. Se o
+   downwind pedido deixar de valer (encerrado, cancelado, saí dele), o pedido
+   morre e a escolha volta a ser do servidor.
+
+2. **Entrar em outro downwind com um em andamento passou a RECUSAR, dizendo o
+   nome do que está travando** (`podeEntrarEmOutroDownwind`, 409):
+
+   > Você ainda está no downwind "Teste de terça", que está em andamento.
+   > Encerre sua participação nele antes de entrar em outro.
+
+   Deixar trocar seria pior: trocaria o beacon de downwind e abandonaria a
+   gravação de uma travessia possivelmente real. A invariante do produto é uma
+   navegação por vez — mas ela só vale alguma coisa se a pessoa **souber** qual
+   é a que está em curso. Era isso que faltava, e é a diferença entre um app
+   que recusa e um app que ignora.
+
+Espectador não bloqueia: quem só assiste não está em travessia nenhuma.
+
+E de novo a asserção falsa: o teste "a rota aplica a regra" passou com o
+`throw` removido, porque o nome da função continuava no arquivo. Terceira vez
+nesta base que um guarda de código-fonte passa vendo só o nome. A asserção
+agora exige a linha do `throw`.
+
 ## 2. "Quero opção de apenas visualizar os velejadores"
 
 Só existiam dois lugares para estar num downwind: na água (`velejador`) ou no

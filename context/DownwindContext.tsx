@@ -231,15 +231,38 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
    * `pedidoDeAberturaVale` em lib/activity.ts.
    */
   const [pedidoAberturaId, setPedidoAberturaId] = useState<string | null>(null);
+  /*
+   * O MESMO id, num ref, para `recarregar()` poder lê-lo sem virar dependência.
+   *
+   * Sem isto o pedido não sobrevivia à primeira revalidação. `recarregar()` é
+   * chamado sem argumento em três lugares (montagem, `visibilitychange`,
+   * `focus`), e sem id o servidor escolhe — preferindo o downwind
+   * `em_andamento`. Quem tinha um downwind antigo ainda rolando entrava no
+   * novo, via a tela por um instante e era devolvido ao velho no primeiro
+   * toque na tela. Foi o que os logs de produção mostraram: sete "Entrar"
+   * seguidos, todos 200, sem nada mudar.
+   *
+   * A escolha da pessoa não pode valer menos que o palpite do servidor: uma
+   * vez pedido, o downwind pedido é o que se recarrega.
+   */
+  const pedidoAberturaRef = useRef<string | null>(null);
   const mostrarTelaDoDownwind = mapaMostraDownwind({
     downwind: downwindAtivo,
     abertoDeliberadamente: pedidoDeAberturaVale(pedidoAberturaId, downwindAtivo?.id ?? null),
   });
+  /** Único lugar que muda o pedido — estado e ref andam sempre juntos. */
+  const definirPedidoAbertura = useCallback((id: string | null) => {
+    pedidoAberturaRef.current = id;
+    setPedidoAberturaId(id);
+  }, []);
   const abrirTelaDoDownwind = useCallback(() => {
     // Roda num clique, nunca no render: ler o downwind ativo aqui é legítimo.
-    setPedidoAberturaId(downwindAtivo?.id ?? null);
-  }, [downwindAtivo]);
-  const fecharTelaDoDownwind = useCallback(() => setPedidoAberturaId(null), []);
+    definirPedidoAbertura(downwindAtivo?.id ?? null);
+  }, [downwindAtivo, definirPedidoAbertura]);
+  const fecharTelaDoDownwind = useCallback(
+    () => definirPedidoAbertura(null),
+    [definirPedidoAbertura]
+  );
 
   const emAndamento = downwindAtivo?.status === 'em_andamento';
   /*
@@ -566,11 +589,25 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (!isAuthenticated) return;
     const minhaVersao = ++versaoRef.current;
     try {
+      /*
+       * Sem id explícito, vale o último pedido da pessoa. É o que impede a
+       * revalidação de foco/visibilidade de trocar o downwind escolhido pelo
+       * palpite do servidor.
+       */
+      const alvo = preferidoId ?? pedidoAberturaRef.current;
       const data = await api<{ downwind: DownwindAtivo | null }>(
-        preferidoId
-          ? `/api/downwind/ativo?id=${encodeURIComponent(preferidoId)}`
-          : '/api/downwind/ativo'
+        alvo ? `/api/downwind/ativo?id=${encodeURIComponent(alvo)}` : '/api/downwind/ativo'
       );
+
+      /*
+       * O downwind pedido não existe mais para esta pessoa (encerrado,
+       * cancelado, ou ela saiu): o pedido morre junto e a próxima
+       * revalidação volta a perguntar "qual é o meu downwind ativo?". Sem
+       * isto, um pedido órfão prenderia o app num downwind vazio para sempre.
+       */
+      if (alvo && data.downwind === null) {
+        pedidoAberturaRef.current = null;
+      }
       if (minhaVersao !== versaoRef.current) return;
       /*
        * O downwind sumiu enquanto eu ainda estava NAVEGANDO?
@@ -666,8 +703,11 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
      * mudança dessas, ele passa a mentir — confira a função antes de confiar.
      * (Foi exatamente esse o caso de `recarregar`, que tinha um reset síncrono
      * no ramo sem sessão e foi movido para o render.)
+     *
+     * A regra deixou de acusar aqui — o `eslint-disable` que existia nesta
+     * linha virou diretiva sem uso e saiu. O raciocínio acima continua sendo
+     * a razão de a chamada ser segura, então fica.
      */
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- ver acima
     recarregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -704,21 +744,30 @@ export const DownwindProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           method: 'POST',
           body: JSON.stringify({ papel }),
         });
+        /*
+         * O pedido é registrado ANTES do recarregamento, não depois.
+         *
+         * Entrar é um pedido explícito de ver ESTE downwind — sem ele, entrar
+         * num downwind agendado levaria a pessoa para a aba Mapa normal, já
+         * que agendado não toma a tela sozinho. Guardar o id (e não um `true`)
+         * é o que sobrevive ao recarregamento que troca o downwind ativo.
+         *
+         * E vem antes porque uma revalidação de foco disparada no meio do
+         * `await` leria o ref: se ele ainda estivesse vazio, ela traria o
+         * downwind que o servidor prefere e desfaria a escolha — que é
+         * exatamente o defeito relatado três vezes.
+         */
+        definirPedidoAbertura(downwindId);
         // Busca o cabeçalho completo (nome, saída, chegada) em vez de montar
         // um objeto parcial aqui — evita duas fontes de verdade para o mesmo
         // formato de resposta.
         await recarregar(downwindId);
-        // Entrar é um pedido explícito de ver ESTE downwind — sem isto, entrar
-        // num downwind AGENDADO levaria a pessoa para a aba Mapa normal, já
-        // que agendado não toma a tela sozinho. O id (e não um `true`) é o que
-        // sobrevive ao recarregamento que acabou de trocar o downwind ativo.
-        setPedidoAberturaId(downwindId);
         return { ok: true };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : 'Falha ao entrar no downwind.' };
       }
     },
-    [recarregar]
+    [recarregar, definirPedidoAbertura]
   );
 
   /**

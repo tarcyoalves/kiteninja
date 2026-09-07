@@ -4,6 +4,7 @@ import { requireUser, HttpError } from '@/lib/auth';
 import { oneOf } from '@/lib/validation';
 import { rateLimiters } from '@/lib/rateLimit';
 import { ehUuid } from '@/lib/downwindDb';
+import { podeEntrarEmOutroDownwind } from '@/lib/downwindAcesso';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,44 @@ export async function POST(request: Request, ctx: Params) {
     const status = String((downwinds[0] as Record<string, unknown>).status);
     if (status !== 'aberto' && status !== 'em_andamento') {
       throw new HttpError(409, 'Este downwind já foi encerrado ou cancelado.');
+    }
+
+    /*
+     * UMA TRAVESSIA POR VEZ — e, sobretudo, DIZER quando não dá.
+     *
+     * Sem esta checagem, entrar num segundo downwind respondia 200 e não
+     * acontecia nada: o app só segura um downwind ativo e sempre prefere o que
+     * está `em_andamento`, então a tela voltava para o antigo na revalidação
+     * seguinte. Os logs de produção mostraram sete toques em "Entrar", todos
+     * 200, com o beacon de OUTRO downwind transmitindo no meio deles. Nenhuma
+     * mensagem, nenhuma pista — foi relatado três vezes como "não prestou".
+     *
+     * Recusar e NOMEAR o downwind que está travando é o que devolve o
+     * controle: a pessoa sabe onde está presa e o que precisa encerrar.
+     */
+    const emCurso = await sql`
+      SELECT d.id, d.nome, dp.papel, dp.estado
+      FROM downwind_participantes dp
+      JOIN downwinds d ON d.id = dp.downwind_id
+      WHERE dp.user_id = ${user.id}
+        AND d.status = 'em_andamento'
+        AND d.id != ${id}
+      ORDER BY d.iniciado_em DESC NULLS LAST
+      LIMIT 1
+    `;
+
+    if (emCurso.length > 0) {
+      const t = emCurso[0] as Record<string, unknown>;
+      const veredito = podeEntrarEmOutroDownwind({
+        travessiaEmCurso: {
+          id: String(t.id),
+          nome: String(t.nome),
+          papel: t.papel as 'velejador' | 'apoio_terra' | 'espectador',
+          estado: t.estado as 'confirmado' | 'navegando' | 'encerrado' | 'desistiu',
+        },
+        downwindAlvoId: id,
+      });
+      if (!veredito.permitido) throw new HttpError(veredito.status, veredito.mensagem);
     }
 
     const body = await readOptionalJson(request);

@@ -176,6 +176,52 @@ export function podeReportarPosicao(args: {
   return OK;
 }
 
+/**
+ * Posso entrar NESTE downwind, tendo outro em andamento?
+ *
+ * O DEFEITO QUE ISTO CORRIGE — relatado três vezes seguidas como "tentei
+ * entrar no dw e não prestou", e as três sem nenhuma mensagem na tela.
+ *
+ * Os logs de produção contaram a história inteira: sete toques em
+ * `POST /downwind/<novo>/entrar`, todos respondendo **200**, e no meio deles
+ * `POST /downwind/<outro>/posicoes` disparando a cada 47 segundos sem parar.
+ * A pessoa tinha um downwind ANTIGO ainda `em_andamento` — de um teste que
+ * nunca foi encerrado — e o app só sabe segurar UM downwind ativo, sempre
+ * preferindo o que está em andamento. Então: entrava no novo (200 de
+ * verdade), a tela pedia o novo, e a revalidação seguinte trazia o velho de
+ * volta. Silêncio absoluto, sete vezes.
+ *
+ * A regra certa não é "deixa trocar": trocar mudaria o beacon de downwind e
+ * abandonaria a gravação de uma travessia possivelmente real. É **recusar
+ * dizendo o nome do que está travando** — a invariante do produto é uma
+ * navegação por vez (ver o topo de lib/activity.ts), e ela só vale alguma
+ * coisa se a pessoa souber qual é a que está em curso e como sair dela.
+ *
+ * Espectador não bloqueia: quem está só assistindo não está em travessia
+ * nenhuma, e não faria sentido impedi-lo de entrar num downwind de verdade.
+ */
+export function podeEntrarEmOutroDownwind(args: {
+  /** Travessia em que já estou, se houver — só `em_andamento` conta. */
+  travessiaEmCurso: {
+    id: string;
+    nome: string;
+    papel: ParticipantePapel;
+    estado: ParticipanteEstado;
+  } | null;
+  downwindAlvoId: string;
+}): Veredito {
+  const { travessiaEmCurso: atual, downwindAlvoId } = args;
+  if (atual === null) return OK;
+  if (atual.id === downwindAlvoId) return OK;
+  if (atual.papel === 'espectador') return OK;
+  if (!posicaoVisivel(atual.estado)) return OK;
+
+  return negar(
+    409,
+    `Você ainda está no downwind "${atual.nome}", que está em andamento. Encerre sua participação nele antes de entrar em outro.`
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 3. Iniciar a travessia.
 // ---------------------------------------------------------------------------
