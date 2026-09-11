@@ -179,6 +179,24 @@ describe('espectador de downwind', () => {
     expect(ctx).toContain('emAndamento && !souEspectador');
   });
 
+  it('não é chamado de "Apoio em terra" na tela do downwind', () => {
+    // O rótulo era um ternário de dois braços: qualquer coisa que não fosse
+    // 'velejador' virava "Apoio em terra". Chamar o espectador assim é
+    // exatamente a confusão que este papel existe para evitar — apoio em
+    // terra é o CARRO, e quem só assiste não prometeu carro a ninguém.
+    const view = semComentarios(readFileSync('views/DownwindAoVivoView.tsx', 'utf8'));
+    expect(view).toContain("'Só assistindo'");
+    expect(view).toMatch(/papel === 'apoio_terra'\s*\?\s*'Apoio em terra'/);
+  });
+
+  it('tem como abrir o chat do grupo', () => {
+    // Ele ficava sem os dois caminhos: o botão era exclusivo do velejador e o
+    // split fixo é exclusivo do apoio_terra. Acompanhar a travessia sem poder
+    // falar com quem está na água é metade do que a tela promete.
+    const view = semComentarios(readFileSync('views/DownwindAoVivoView.tsx', 'utf8'));
+    expect(view).toMatch(/papel !== 'apoio_terra' && \(\s*<button/);
+  });
+
   it('participante de downwind PRIVADO enxerga o botão do mapa ao vivo', () => {
     // A trava antiga exigia visibilidade 'comunidade' e escondia o botão de
     // quem participa — inclusive de quem criou o downwind.

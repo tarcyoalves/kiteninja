@@ -472,7 +472,17 @@ export const DownwindAoVivoView: React.FC = () => {
           <h2 className="font-black text-sm text-white truncate">{downwindAtivo.nome}</h2>
           <p className="text-[11px] text-slate-400">
             {downwindAtivo.status === 'aberto' ? 'Ainda não começou' : 'Downwind em andamento'} ·{' '}
-            {minhaParticipacao.papel === 'velejador' ? 'Velejador' : 'Apoio em terra'}
+            {/*
+              Três papéis, três rótulos. O ternário antigo só conhecia dois e
+              chamava o ESPECTADOR de "Apoio em terra" — justamente a confusão
+              que o papel novo existe para evitar: apoio em terra é o carro,
+              e quem só assiste não prometeu carro nenhum a ninguém.
+            */}
+            {minhaParticipacao.papel === 'velejador'
+              ? 'Velejador'
+              : minhaParticipacao.papel === 'apoio_terra'
+                ? 'Apoio em terra'
+                : 'Só assistindo'}
             {souOrganizador ? ' · Organizador' : ''}
           </p>
         </div>
@@ -490,9 +500,16 @@ export const DownwindAoVivoView: React.FC = () => {
           </a>
 
           {/* Apoio em terra não abre/fecha chat — ele já fica sempre visível
-              na metade de baixo da tela (ver o split abaixo). Este botão só
-              existe para o velejador. */}
-          {minhaParticipacao.papel === 'velejador' && (
+              na metade de baixo da tela (ver o split abaixo). O botão existe
+              para todo mundo que NÃO tem esse split: o velejador e o
+              espectador.
+
+              O espectador ficava sem os dois — o botão era exclusivo do
+              velejador e o split é exclusivo do apoio_terra — então quem
+              escolhia "só assistir" não tinha caminho nenhum até o chat do
+              grupo. Acompanhar a travessia sem poder falar com quem está na
+              água é metade do que a tela promete. */}
+          {minhaParticipacao.papel !== 'apoio_terra' && (
             <button
               type="button"
               onClick={() => setChatAberto(true)}

@@ -290,9 +290,10 @@ export function podeTransicionarDownwind(de: DownwindStatus, para: DownwindStatu
  * (mesmo que automática) antes de a pessoa poder ir para 'navegando' de novo,
  * o que dá ao organizador/sistema um ponto de checagem no meio.
  *
- * 'encerrado' é terminal pelo mesmo motivo de segurança do downwind como um
- * todo: quem já terminou o percurso não "volta a navegar" dentro do mesmo
- * downwind.
+ * 'encerrado' NÃO é terminal (ver o comentário na própria entrada abaixo):
+ * ele volta para 'confirmado'. O que continua proibido é a volta DIRETA para
+ * 'navegando' — quem terminou o percurso não reaparece na água sem uma nova
+ * confirmação explícita, exatamente como em 'desistiu'.
  */
 const TRANSICOES_PARTICIPANTE: Record<ParticipanteEstado, ReadonlySet<ParticipanteEstado>> = {
   confirmado: new Set(['navegando', 'desistiu']),
@@ -354,11 +355,18 @@ export function podeTransicionarParticipante(
  * já um estado terminal) significa que ela nunca chegou a navegar, então
  * 'desistiu' ("não vou mais") é a única transição válida.
  *
- * 'encerrado' e 'desistiu' já são ambos terminais em TRANSICOES_PARTICIPANTE
- * (sem transição de saída), então chamar esta função de novo sobre o
- * resultado anterior é inofensivo — devolve 'desistiu', e a rota trata
- * `estadoAtual === novoEstado` como idempotente (ver
- * lib/downwindAcesso.ts, `podeMudarEstadoDeParticipante`).
+ * ATENÇÃO — ESTA FUNÇÃO NÃO É IDEMPOTENTE SOBRE O PRÓPRIO RESULTADO, e o
+ * comentário que antes dizia o contrário estava errado. Verificado à mão:
+ * `estadoDeSaidaVelejo('encerrado')` devolve 'desistiu', e
+ * `podeTransicionarParticipante('encerrado', 'desistiu')` é FALSE — a rota
+ * responde 409 "Transição inválida", não um no-op. A idempotência de
+ * `podeMudarEstadoDeParticipante` só cobre `estadoAtual === novoEstado`, e
+ * 'encerrado' não é 'desistiu'.
+ *
+ * Na prática isso não é alcançável pela tela: quem encerra deixa de ter
+ * downwind ativo (`GET /downwind/ativo` só serve 'confirmado' e 'navegando'),
+ * então o botão some junto. Mas quem chamar esta função de outro lugar
+ * precisa saber que o segundo disparo é erro, não silêncio.
  */
 export function estadoDeSaidaVelejo(estadoAtual: ParticipanteEstado): 'encerrado' | 'desistiu' {
   return estadoAtual === 'navegando' ? 'encerrado' : 'desistiu';
