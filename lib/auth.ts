@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { sql } from './db';
 import { HttpError } from './errors';
 import { canOrganizeDownwind } from './authz';
+import { expurgarSessoesExpiradasSePreciso } from './expurgos';
 
 
 export const SESSION_COOKIE = 'kiteninja_session';
@@ -100,6 +101,11 @@ export async function createSession(
     INSERT INTO auth_sessions (user_id, token_hash, user_agent, expires_at)
     VALUES (${userId}, ${hashToken(token)}, ${userAgent ?? null}, ${expiresAt.toISOString()})
   `;
+
+  // Sessões que venceram sozinhas nunca eram apagadas. A limpeza pega carona
+  // aqui, que é onde a tabela ganha linhas: no máximo uma vez por hora por
+  // instância, em segundo plano, sem atrasar o login. Ver lib/expurgos.ts.
+  expurgarSessoesExpiradasSePreciso();
 
   // Atualiza métricas de monitoramento de acesso do velejador
   try {

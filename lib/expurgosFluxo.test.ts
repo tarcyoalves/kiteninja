@@ -146,3 +146,63 @@ describe('T04 — posições do link de apoio', () => {
     expect(await contar(tardia)).toBe(0);
   });
 });
+
+describe('T12 — sessões de login vencidas', () => {
+  /** Sessão de login com a validade relativa a agora, em minutos. */
+  async function sessaoLogin(userId: string, expiraMin: number) {
+    seqToken += 1;
+    const r = await db.query<{ id: string }>(
+      `INSERT INTO auth_sessions (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + $3::int * INTERVAL '1 minute') RETURNING id`,
+      [userId, `sessao-de-teste-${seqToken}`, expiraMin]
+    );
+    return r.rows[0].id;
+  }
+
+  async function existe(id: string) {
+    const r = await db.query(`SELECT 1 FROM auth_sessions WHERE id = $1`, [id]);
+    return r.rows.length === 1;
+  }
+
+  it('no login, apaga a sessão vencida e mantém a válida', async () => {
+    const pessoa = await criarUsuario();
+    const venceuAgora = await sessaoLogin(pessoa.id, -1);
+    const venceuHaQuarentaDias = await sessaoLogin(pessoa.id, -40 * 24 * 60);
+    const validaPorUmaHora = await sessaoLogin(pessoa.id, 60);
+    const validaPorTrintaDias = await sessaoLogin(pessoa.id, 30 * 24 * 60);
+
+    (await expurgos()).reiniciarExpurgos();
+    const entrada = await logarComo(pessoa);
+    expect(entrada.status).toBe(200);
+    await (await expurgos()).aguardarExpurgos();
+
+    expect(await existe(venceuAgora), 'venceu há 1 minuto').toBe(false);
+    expect(await existe(venceuHaQuarentaDias), 'venceu há 40 dias').toBe(false);
+    expect(await existe(validaPorUmaHora), 'ainda vale por 1 hora: é outro aparelho da mesma pessoa').toBe(true);
+    expect(await existe(validaPorTrintaDias), 'ainda vale por 30 dias').toBe(true);
+
+    // A sessão que o próprio login acabou de criar segue de pé: o expurgo roda
+    // depois do INSERT e não pode derrubar quem acabou de entrar.
+    const { GET } = await import('@/app/api/auth/me/route');
+    const eu = await ler(await GET());
+    expect(eu.status).toBe(200);
+    expect(eu.body.user, 'quem acabou de entrar continua logado').not.toBeNull();
+  });
+
+  it('no máximo uma vez por hora por instância', async () => {
+    const pessoa = await criarUsuario();
+    (await expurgos()).reiniciarExpurgos();
+    await logarComo(pessoa);
+    await (await expurgos()).aguardarExpurgos();
+
+    const venceuDepois = await sessaoLogin(pessoa.id, -5);
+    await logarComo(pessoa);
+    await (await expurgos()).aguardarExpurgos();
+    expect(await existe(venceuDepois), 'dentro da mesma hora não vai ao banco de novo').toBe(true);
+
+    (await expurgos()).reiniciarExpurgos();
+    await logarComo(pessoa);
+    await (await expurgos()).aguardarExpurgos();
+    expect(await existe(venceuDepois)).toBe(false);
+  });
+});

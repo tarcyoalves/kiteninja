@@ -3,10 +3,15 @@
  *
  * POR QUE ESTE ARQUIVO EXISTE
  *
- * `velejo_apoio_posicoes` só crescia, porque nada no código a apagava: uma
- * posição de GPS a cada 45 s de quem ligou o link de apoio em terra. O link
- * vale 12 h, mas o rastro de por onde a pessoa andou ficava para sempre. É dado
- * de localização de gente real, e o Neon gratuito tem 0,5 GB.
+ * Duas tabelas só cresciam, porque nada no código as apagava:
+ *
+ *  - `velejo_apoio_posicoes` (T04): uma posição de GPS a cada 45 s de quem
+ *    ligou o link de apoio em terra. O link vale 12 h, mas o rastro de por onde
+ *    a pessoa andou ficava para sempre. É dado de localização de gente real, e
+ *    o Neon gratuito tem 0,5 GB.
+ *  - `auth_sessions` (T12): a sessão que vence sozinha (30 dias, ou 12 h na do
+ *    convidado) deixa de valer em `getSessionUser`, mas a linha continuava lá.
+ *    Só logout, troca de senha e invalidação explícita apagavam.
  *
  * COMO: o mesmo padrão do "Expurgo preguiçoso" de `enforceRateLimitCompartilhado`
  * (lib/rateLimit.ts). A Vercel Hobby só tem cron diário e o plano do Neon é
@@ -80,6 +85,15 @@ export async function apagarPosicoesApoioVencidas(): Promise<void> {
   `;
 }
 
+/**
+ * Apaga as sessões de login que já venceram. `getSessionUser` já as recusa
+ * (`expires_at > NOW()`), então apagar não muda comportamento nenhum: só devolve
+ * espaço e tira da lista de aparelhos conectados o que já não conecta.
+ */
+export async function apagarSessoesExpiradas(): Promise<void> {
+  await sql`DELETE FROM auth_sessions WHERE expires_at < NOW()`;
+}
+
 function agendar(nome: string, executar: () => Promise<void>): void {
   const agora = Date.now();
   if (agora - (ultimaExecucao.get(nome) ?? 0) < INTERVALO_EXPURGO_MS) return;
@@ -109,4 +123,16 @@ function agendar(nome: string, executar: () => Promise<void>): void {
 /** Pega carona numa requisição de posição/abertura do link de apoio (T04). */
 export function expurgarPosicoesApoioSePreciso(): void {
   agendar('posicoes_apoio', apagarPosicoesApoioVencidas);
+}
+
+/**
+ * Pega carona num login (T12). Escolhido de propósito: login é onde a tabela
+ * GANHA linhas, então a limpeza anda na mesma proporção do crescimento, e é uma
+ * rota esporádica que já faz várias idas ao banco (usuário, hash, sessão). Não
+ * vai em getSessionUser, que roda a cada requisição de cada usuário: mesmo com
+ * a trava de uma hora seria código no caminho mais quente do app só para uma
+ * limpeza que acontece de qualquer jeito no próximo login.
+ */
+export function expurgarSessoesExpiradasSePreciso(): void {
+  agendar('auth_sessions', apagarSessoesExpiradas);
 }
