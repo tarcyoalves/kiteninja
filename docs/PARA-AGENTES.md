@@ -205,3 +205,4 @@ O estado antigo de `master` está preservado na branch
 | `ESPECTADOR-DE-DOWNWIND.md` | O papel de quem só assiste; e a corrida que fazia "Entrar no Downwind" cair no mapa comum |
 | `REDEFINIR-SENHA-NAO-PRESTOU.md` | Cinco defeitos do fluxo de senha, provados rodando as rotas reais contra PGlite |
 | `PLANO-AGENTES-2026-10.md` | **Comece aqui.** Auditoria de 05/10 e 17 tarefas autocontidas, com regras, aceite e contraprova |
+| `DIARIO-DE-PROGRESSO.md` | **Registre aqui ao terminar qualquer trabalho.** Histórico cronológico do que foi feito |

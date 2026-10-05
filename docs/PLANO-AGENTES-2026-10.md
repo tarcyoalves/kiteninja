@@ -141,7 +141,34 @@ O build imprime `NeonDbError ... ECONNREFUSED` na coleta de páginas estáticas
 - Mudar comportamento fora do escopo da tarefa sem dizer. Regra do dono:
   *"Cuidado para não quebrar outras funcionalidades ao mexer em algo."*
 
-### 0.6 Entrega
+### 0.6 Planos gratuitos — Neon, Vercel, GitHub
+
+O app roda inteiro em plano gratuito. Toda mudança respeita isto:
+
+- **Vercel Hobby.** Cada push vira deploy — hoje **seis por commit** (dois
+  projetos × três branches, ver T03). Agente **não faz push**: commita no
+  próprio worktree e quem orquestra junta tudo num push só. Crons do
+  `vercel.json` só rodam uma vez por dia neste plano; não crie cron novo lá.
+- **Neon Free.** 0,5 GB de armazenamento e computação limitada; o banco
+  hiberna quando ninguém o usa. Então: nenhum polling novo; consulta nova em
+  rota chamada com frequência tem que ser barata e usar índice; tabela nova que
+  cresce precisa nascer com expurgo; nada de manter o banco acordado. Agente
+  não tem acesso ao banco de produção e não pede.
+- **GitHub Free.** O CI roda em push na `main`, e os minutos de Actions são
+  contados. Não dispare workflow à mão, não crie workflow agendado novo, não
+  encurte o intervalo dos que existem.
+- **Nenhum serviço pago novo, nenhuma dependência nova** sem necessidade
+  provada. Se a tarefa parecer exigir, pare e registre para o dono decidir.
+
+### 0.7 Diário
+
+Toda tarefa termina com uma entrada de diário — ver
+`docs/DIARIO-DE-PROGRESSO.md`. Agente em paralelo cria
+`docs/diario/AAAA-MM-DD-<tarefa>.md` e **não** edita o diário principal, este
+plano nem `docs/PARA-AGENTES.md` (quem orquestra consolida; três agentes no
+mesmo arquivo geram conflito).
+
+### 0.8 Entrega
 
 Um commit por tarefa, mensagem em português dizendo **por quê** (o defeito, a
 evidência, a correção, a contraprova). Atualize `docs/PARA-AGENTES.md` quando
