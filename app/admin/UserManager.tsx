@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Search,
   Shield,
@@ -105,6 +105,18 @@ function parseUserAgent(ua: string | null): { device: string; icon: 'phone' | 'l
   return { device: 'Navegador Web', icon: 'phone' };
 }
 
+/**
+ * De quanto em quanto tempo a lista se atualiza sozinha (com a aba visível).
+ *
+ * Eram 12 s. Cada recarga roda 3 consultas no Neon, incluindo COUNT(*) em
+ * `chat_messages`, `posts` e `sessions_log` inteiras e contagens por usuário.
+ * No plano gratuito o banco só hiberna quando ninguém o consulta: um painel
+ * esquecido aberto numa aba a 12 s o mantinha acordado (e gastando as horas de
+ * computação do mês) o dia inteiro. Quem precisa de dado fresco já tem o botão
+ * de atualizar.
+ */
+const INTERVALO_ATUALIZACAO_MS = 60_000;
+
 export function UserManager() {
   const [users, setUsers] = useState<UserData[]>([]);
   const [stats, setStats] = useState<StatsData | null>(null);
@@ -113,9 +125,25 @@ export function UserManager() {
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'today' | 'inactive'>('all');
   const [loading, setLoading] = useState(true);
+  /*
+   * `error` é só o erro de CARREGAR a lista. O erro de uma AÇÃO do admin (mudar
+   * papel, suspender, gerar link) mora em `erroLinha`, dentro da linha tocada.
+   *
+   * Eram a mesma coisa, e `fetchUsers` começava com `setError(null)`: a
+   * recarga automática apagava a mensagem de uma ação que falhou em até 12 s,
+   * antes de o admin conseguir ler. Separados, a recarga de fundo não tem como
+   * mexer no erro de ação.
+   */
   const [error, setError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  /*
+   * Quando a última carga deu certo (ms). Serve só para decidir, ao voltar para
+   * a aba, se vale recarregar já. É escrito dentro de `fetchUsers` (callback) e
+   * lido dentro de um handler de evento — nunca durante o render, que é o que o
+   * React Compiler proíbe para `ref.current`.
+   */
+  const ultimaCargaRef = useRef(0);
   /*
    * Link de redefinicao de senha gerado pelo admin. Fica no estado (e nao
    * some sozinho como o `actionSuccess`) porque o admin precisa dele na tela
@@ -131,13 +159,19 @@ export function UserManager() {
    * do admin, "redefinir senha não prestou".
    */
   const [linkSenha, setLinkSenha] = useState<{ userId: string; nome: string; url: string } | null>(null);
-  const [erroLinkSenha, setErroLinkSenha] = useState<{ userId: string; msg: string } | null>(null);
+  const [erroLinha, setErroLinha] = useState<{ userId: string; msg: string } | null>(null);
   const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null);
   const [linkCopiado, setLinkCopiado] = useState(false);
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  /**
+   * `silencioso` é a recarga de fundo (o relógio de 60 s): não liga o spinner
+   * nem mexe em mensagem nenhuma da tela, só troca os dados. Falhar, ela falha
+   * como qualquer carga — via `error`, o erro da lista —, mas nunca apaga o
+   * erro de uma ação (ver `erroLinha`).
+   */
+  const fetchUsers = useCallback(async (opts?: { silencioso?: boolean }) => {
+    const silencioso = opts?.silencioso === true;
+    if (!silencioso) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (search) params.set('q', search);
@@ -152,27 +186,66 @@ export function UserManager() {
       setUsers(data.users ?? []);
       setStats(data.stats ?? null);
       setTotal(data.total ?? 0);
+      setError(null);
+      ultimaCargaRef.current = Date.now();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao buscar usuários.');
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   }, [search, roleFilter, statusFilter]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchUsers();
+      void fetchUsers();
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchUsers]);
 
-  // Atualização em tempo real das presenças a cada 12s
+  /*
+   * Atualização automática das presenças — e só enquanto alguém está olhando.
+   *
+   * Pausa com a aba oculta (`document.hidden`), o mesmo padrão de
+   * `components/UpdateNotificationBanner.tsx` e do chat. Sem isso o painel
+   * esquecido num fundo de navegador seguia consultando o Neon de 12 em 12 s
+   * para ninguém, e o banco gratuito nunca hibernava.
+   *
+   * Ao voltar para a aba, recarrega na hora se a última carga já passou do
+   * intervalo (quem volta depois de uma hora não deve ver dado de uma hora
+   * atrás por mais 60 s); se foi há pouco, só religa o relógio.
+   */
   useEffect(() => {
     if (!autoRefresh) return;
-    const interval = setInterval(() => {
-      fetchUsers();
-    }, 12000);
-    return () => clearInterval(interval);
+
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const ligar = () => {
+      if (timer !== null) return;
+      timer = setInterval(() => {
+        void fetchUsers({ silencioso: true });
+      }, INTERVALO_ATUALIZACAO_MS);
+    };
+    const desligar = () => {
+      if (timer === null) return;
+      clearInterval(timer);
+      timer = null;
+    };
+    const aoMudarVisibilidade = () => {
+      if (document.hidden) {
+        desligar();
+        return;
+      }
+      if (Date.now() - ultimaCargaRef.current >= INTERVALO_ATUALIZACAO_MS) {
+        void fetchUsers({ silencioso: true });
+      }
+      ligar();
+    };
+
+    if (!document.hidden) ligar();
+    document.addEventListener('visibilitychange', aoMudarVisibilidade);
+    return () => {
+      desligar();
+      document.removeEventListener('visibilitychange', aoMudarVisibilidade);
+    };
   }, [autoRefresh, fetchUsers]);
 
   async function updateUser(
@@ -180,7 +253,7 @@ export function UserManager() {
     patch: Partial<{ role: string; isActive: boolean; mustChangePassword: boolean }>,
     feedbackMsg: string
   ) {
-    setError(null);
+    setErroLinha(null);
     setActionSuccess(null);
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
@@ -189,17 +262,20 @@ export function UserManager() {
         body: JSON.stringify(patch),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error ?? 'Falha ao atualizar usuário.');
+        // Na linha de quem foi tocado: no topo, com a lista rolada no
+        // celular, a falha de "suspender" ficava fora da tela e o admin achava
+        // que tinha funcionado (mesma lição de `gerarLinkSenha`).
+        setErroLinha({ userId, msg: data.error ?? 'Falha ao atualizar usuário.' });
         return;
       }
 
       setActionSuccess(feedbackMsg);
       setTimeout(() => setActionSuccess(null), 3000);
-      fetchUsers();
+      void fetchUsers();
     } catch {
-      setError('Falha de conexão.');
+      setErroLinha({ userId, msg: 'Falha de conexão.' });
     }
   }
 
@@ -214,22 +290,21 @@ export function UserManager() {
    * devolve o acesso.
    */
   async function gerarLinkSenha(userId: string, nome: string) {
-    setError(null);
     setActionSuccess(null);
     setLinkSenha(null);
-    setErroLinkSenha(null);
+    setErroLinha(null);
     setLinkCopiado(false);
     setGerandoLinkId(userId);
     try {
       const res = await fetch(`/api/admin/users/${userId}/senha`, { method: 'POST' });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setErroLinkSenha({ userId, msg: data.error ?? 'Falha ao gerar o link de redefinição.' });
+        setErroLinha({ userId, msg: data.error ?? 'Falha ao gerar o link de redefinição.' });
         return;
       }
       setLinkSenha({ userId, nome: data.nome ?? nome, url: data.url });
     } catch {
-      setErroLinkSenha({ userId, msg: 'Falha de conexão.' });
+      setErroLinha({ userId, msg: 'Falha de conexão.' });
     } finally {
       setGerandoLinkId(null);
     }
@@ -248,7 +323,7 @@ export function UserManager() {
     } catch {
       // Sem clipboard (http, permissão negada, WebView): o link continua
       // visível e selecionável na linha, então dá para copiar na mão.
-      setErroLinkSenha({ userId, msg: 'Não consegui copiar automaticamente — toque no link e copie.' });
+      setErroLinha({ userId, msg: 'Não consegui copiar automaticamente — toque no link e copie.' });
     }
   }
 
@@ -399,7 +474,7 @@ export function UserManager() {
             </select>
 
             <button
-              onClick={fetchUsers}
+              onClick={() => void fetchUsers()}
               disabled={loading}
               className="p-2 bg-[#0F172A] border border-slate-700 hover:border-slate-600 rounded-xl text-slate-300 hover:text-white active:scale-95 transition-all disabled:opacity-50"
               title="Atualizar dados agora"
@@ -407,6 +482,33 @@ export function UserManager() {
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             </button>
           </div>
+        </div>
+
+        {/* Atualização automática: rótulo VISÍVEL (no celular `title` não
+            aparece) e estado dito por extenso, para o admin saber se o painel
+            está consultando o banco sozinho. */}
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] text-slate-400 min-w-0">
+            {autoRefresh
+              ? `Atualiza sozinho a cada ${INTERVALO_ATUALIZACAO_MS / 1000} s, só com esta aba aberta.`
+              : 'Atualização automática desligada. Use o botão de atualizar.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => setAutoRefresh((v) => !v)}
+            aria-pressed={autoRefresh}
+            className={`shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all active:scale-95 flex items-center gap-1.5 ${
+              autoRefresh
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-[#0F172A] border-slate-700 text-slate-400 hover:text-white'
+            }`}
+            title="Liga ou desliga a atualização automática da lista"
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${autoRefresh ? 'bg-emerald-400' : 'bg-slate-600'}`}
+            />
+            {autoRefresh ? 'Auto: ligado' : 'Auto: desligado'}
+          </button>
         </div>
       </div>
 
@@ -642,11 +744,15 @@ export function UserManager() {
                   </div>
                 </div>
 
-                {/* Erro da redefinição, na linha de quem foi tocado. */}
-                {erroLinkSenha?.userId === u.id && (
-                  <div className="mt-3 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-xs text-rose-300">
+                {/* Erro de qualquer ação (papel, suspensão, link de senha), na
+                    linha de quem foi tocado. */}
+                {erroLinha?.userId === u.id && (
+                  <div
+                    role="alert"
+                    className="mt-3 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-xs text-rose-300"
+                  >
                     <AlertTriangle size={14} className="shrink-0" />
-                    <span>{erroLinkSenha.msg}</span>
+                    <span>{erroLinha.msg}</span>
                   </div>
                 )}
 
