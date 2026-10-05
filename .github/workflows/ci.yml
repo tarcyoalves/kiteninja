@@ -19,13 +19,17 @@ env:
   # "error: invalid source release: 21".
   JAVA_VERSION: '21'
 
+# Runner FIXO em ubuntu-24.04, não ubuntu-latest: o GitHub avisou que o
+# ubuntu-latest migra para Ubuntu 26 a partir de 19/10/2026. Trocar de imagem
+# sem aviso foi exatamente o que derrubou o job Android em 05/10; a próxima
+# troca deve ser uma decisão, num commit, e não uma surpresa num build.
 jobs:
   # -----------------------------------------------------------------------
   # 1. Instalação e dependências
   # -----------------------------------------------------------------------
   setup:
     name: Setup
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       node_version: ${{ steps.setup.outputs.node_version }}
     steps:
@@ -55,7 +59,7 @@ jobs:
   # -----------------------------------------------------------------------
   typecheck:
     name: TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: setup
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +81,7 @@ jobs:
   # -----------------------------------------------------------------------
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: setup
     steps:
       - uses: actions/checkout@v4
@@ -99,7 +103,7 @@ jobs:
   # -----------------------------------------------------------------------
   test-sql:
     name: SQL validation
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: setup
     steps:
       - uses: actions/checkout@v4
@@ -121,7 +125,7 @@ jobs:
   # -----------------------------------------------------------------------
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: setup
     steps:
       - uses: actions/checkout@v4
@@ -143,7 +147,7 @@ jobs:
   # -----------------------------------------------------------------------
   build:
     name: Build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [typecheck, test, test-sql]
     steps:
       - uses: actions/checkout@v4
@@ -181,7 +185,7 @@ jobs:
   # -----------------------------------------------------------------------
   android:
     name: Android Debug
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [typecheck, test, test-sql]
     steps:
       - uses: actions/checkout@v4
@@ -198,14 +202,32 @@ jobs:
       # -------------------------------------------------------------------
       # Setup Java & Android SDK
       # -------------------------------------------------------------------
+      # setup-java v5: o próprio GitHub anotou o run de 05/10/2026 com
+      # "setup-java v4 is deprecated ... migrate to actions/setup-java@v5".
       - name: Set up JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: 'temurin'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
+      # SEM `android-actions/setup-android`. Ela quebrou o CI em 05/10/2026
+      # (etapa "Setup Android SDK" falhando, todas as etapas de código verdes)
+      # quando o GitHub passou a forçar Node 24 nas actions de Node 20 — o
+      # último verde tinha sido em 11/09, antes da mudança de runner.
+      #
+      # A imagem ubuntu-24.04 do GitHub já traz o Android SDK instalado, com
+      # licenças aceitas e ANDROID_HOME definido; a action só reinstalava o
+      # que já está lá. Uma dependência de terceiro a menos para quebrar
+      # sozinha. Se um dia a imagem deixar de trazer o SDK, esta etapa falha
+      # dizendo exatamente isso, em vez de o Gradle reclamar de sdk.dir vazio.
+      - name: Conferir Android SDK do runner
+        run: |
+          if [ -z "$ANDROID_HOME" ] || [ ! -d "$ANDROID_HOME" ]; then
+            echo "::error::ANDROID_HOME ausente no runner. Volte a instalar o SDK com uma action mantida."
+            exit 1
+          fi
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" || true
 
       - name: Create local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
@@ -240,7 +262,7 @@ jobs:
   # -----------------------------------------------------------------------
   summary:
     name: Summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [typecheck, test, test-sql, lint, build, android]
     if: always()
     steps:
