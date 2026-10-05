@@ -30,7 +30,9 @@ describe('cabeçalhos de segurança', () => {
 
   it('desliga câmera e microfone, mas mantém a geolocalização do próprio app', async () => {
     const h = await cabecalhos();
-    expect(h.get('Permissions-Policy')).toBe('camera=(), microphone=(), geolocation=(self)');
+    // Só geolocalização: camera/microphone saíram na integração por não terem
+    // sido verificados no WebView do Android (ver next.config.ts).
+    expect(h.get('Permissions-Policy')).toBe('geolocation=(self)');
   });
 
   it('a CSP é só frame-ancestors: script-src/img-src/default-src quebrariam mapa, fontes e o WebView', async () => {

@@ -119,6 +119,11 @@ const recuarTrava = (segundos: number) =>
 describe('T01a — o polling de /api/sos/active puxa a varredura, no máximo 1x por minuto', () => {
   it('SOS de 3 min sem resposta: o polling de quem não tem nada com ele escala o raio UMA vez', async () => {
     await logarComo(rider);
+    // O LOGIN também agenda trabalho para depois da resposta: o expurgo de
+    // sessões vencidas (lib/expurgos.ts, T12), uma vez por hora por processo.
+    // Esvaziar aqui separa o que é do login do que é do polling — sem isto a
+    // contagem abaixo mede as duas coisas juntas. Apareceu ao juntar T01 e T12.
+    await esvaziarDepoisDaResposta();
 
     // Resposta primeiro, varredura depois: o raio ainda é 5 quando o polling responde.
     const r1 = await poll();

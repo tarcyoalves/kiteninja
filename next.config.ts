@@ -34,10 +34,17 @@ const nextConfig: NextConfig = {
    * carrega, só quem pode enquadrá-la. `X-Frame-Options` fica junto para
    * navegador antigo que não entende `frame-ancestors`.
    *
-   * `Permissions-Policy`: câmera e microfone desligados (o app não usa
-   * getUserMedia; o envio de foto passa pelo seletor de arquivo do sistema, que
-   * não depende desta política). Geolocalização liberada só para a própria
-   * origem, porque é o coração do app (beacon de posição, SOS, mapa).
+   * `Permissions-Policy`: geolocalização liberada só para a própria origem,
+   * porque é o coração do app (beacon de posição, SOS, mapa).
+   *
+   * `camera=()` e `microphone=()` foram propostos e TIRADOS na integração. O
+   * app não usa getUserMedia, e o seletor de arquivo das fotos não deveria
+   * depender desta política — mas isso não foi verificado num aparelho
+   * Android, dentro do WebView do Capacitor. O ganho de bloquear uma câmera
+   * que o app nunca pede é quase nenhum; o custo de errar seria o velejador
+   * não conseguir anexar foto ao velejo. Regra do dono: não quebrar nada.
+   * Se alguém confirmar no aparelho que o envio de foto segue funcionando,
+   * pode voltar com as duas diretivas.
    */
   async headers() {
     return [
@@ -50,7 +57,7 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           {
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=(self)",
+            value: "geolocation=(self)",
           },
         ],
       },
