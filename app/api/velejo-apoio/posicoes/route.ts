@@ -4,6 +4,7 @@ import { requireUser, HttpError } from '@/lib/auth';
 import { num } from '@/lib/validation';
 import { rateLimiters } from '@/lib/rateLimit';
 import { acompanhamentoAtivo } from '@/lib/apoioSolo';
+import { expurgarPosicoesApoioSePreciso } from '@/lib/expurgos';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
       INSERT INTO velejo_apoio_posicoes (sessao_id, lat, lng, accuracy_m)
       VALUES (${String(s.id)}, ${lat}, ${lng}, ${accuracyM ?? null})
     `;
+
+    // Limpeza das posições de links que venceram há mais de 24 h. Pega carona
+    // aqui porque esta rota já foi ao banco e é a única que escreve nessa
+    // tabela; no máximo uma vez por hora por instância, em segundo plano, sem
+    // atrasar a resposta de quem está na água. Ver lib/expurgos.ts.
+    expurgarPosicoesApoioSePreciso();
 
     return { ok: true };
   });

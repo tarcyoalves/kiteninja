@@ -3,6 +3,7 @@ import { handle } from '@/lib/api';
 import { requireUser, newToken, hashToken } from '@/lib/auth';
 import { rateLimiters } from '@/lib/rateLimit';
 import { VALIDADE_APOIO_HORAS, devoReaproveitar } from '@/lib/apoioSolo';
+import { expurgarPosicoesApoioSePreciso } from '@/lib/expurgos';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,14 @@ export async function POST() {
   return handle(async () => {
     const user = await requireUser();
     rateLimiters.downwindCriar(user.id);
+
+    // Limpeza das posições de links vencidos há mais de 24 h. Abrir um link é
+    // raro (uma vez por velejo, no máximo), então o custo é desprezível, e a
+    // limpeza também acontece quando ninguém está mandando posição no momento.
+    // Uma vez por hora por instância, em segundo plano. Ver lib/expurgos.ts.
+    // Fica ANTES dos retornos antecipados: a rota que reaproveita a sessão
+    // aberta (o caso comum) também vai ao banco e não pode deixar a limpeza de fora.
+    expurgarPosicoesApoioSePreciso();
 
     const abertas = await sql`
       SELECT id, expira_em, encerrado_em
