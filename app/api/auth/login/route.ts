@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     }
 
     const rows = await sql`
-      SELECT id, password_hash, name, role, must_change_password
+      SELECT id, password_hash, name, role, must_change_password, is_active
       FROM users WHERE LOWER(email) = ${email} LIMIT 1
     `;
 
@@ -44,6 +44,22 @@ export async function POST(request: Request) {
 
     // Entrou: as falhas de antes deixam de significar ataque.
     await limparFalhasLogin(email);
+
+    /*
+     * CONTA SUSPENSA NÃO ENTRA — e ouve o porquê.
+     *
+     * Antes o login respondia 200 e criava sessão para conta suspensa. Não
+     * era brecha (getSessionUser filtra is_active, então a sessão nascia
+     * inútil), mas era pior para quem usa: o app mostrava a pessoa logada e
+     * na primeira ação tudo virava 401, sem explicação nenhuma. Achado
+     * rodando o painel admin contra Postgres (lib/painelAdminFluxo.test.ts).
+     *
+     * Só depois de a senha conferir: dizer "suspensa" para quem não provou
+     * a senha revelaria que o e-mail existe.
+     */
+    if (!row.is_active) {
+      throw new HttpError(403, 'Sua conta está suspensa. Fale com o administrador do KiteNinja.');
+    }
 
     await createSession(String(row.id), request.headers.get('user-agent') ?? undefined);
 

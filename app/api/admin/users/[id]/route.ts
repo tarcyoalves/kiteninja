@@ -18,7 +18,10 @@ export async function PATCH(
     const admin = await requireAdmin();
     const { id } = await ctx.params;
 
-    if (!id) {
+    // Formato validado aqui: um id que não é UUID chegava ao Postgres, que
+    // estourava "invalid input syntax for type uuid" — 500 para o admin e uma
+    // entrada falsa no próprio painel de Erros. Mesma checagem da rota /senha.
+    if (!id || !/^[0-9a-f-]{36}$/i.test(id)) {
       throw new HttpError(400, 'ID de usuário inválido.');
     }
 
