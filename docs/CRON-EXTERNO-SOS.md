@@ -1,7 +1,10 @@
 # A escalada de SOS precisa de um scheduler externo
 
-**Estado:** o cron do GitHub Actions funciona, mas roda a cada **~4,3 horas**
-em vez dos 5 minutos configurados. Para emergência isso é insuficiente.
+**Estado:** o cron do GitHub Actions funciona, mas roda a cada **3 a 6 horas**
+(medido de novo em 05/10/2026) em vez dos 5 minutos configurados. Para
+emergência isso é insuficiente. Desde a T01 o polling dos clientes também
+puxa a varredura (ver "O que mudou na T01"), e o painel admin mostra se ela
+está viva; o agendador externo abaixo cobre a madrugada.
 
 ## A medição
 
@@ -50,47 +53,109 @@ Não é o código que está errado. Foi tudo verificado por execução real:
 
 O que falta é **frequência**, e ela não depende do nosso código.
 
-## A solução: cron-job.org (grátis, ~5 minutos para configurar)
+## O que mudou na T01 (05/10/2026): duas camadas, e o painel mostra se estão vivas
 
-Roda no minuto certo, sem depender do GitHub.
+1. **Carona no polling (já no código, sem serviço externo).** Todo cliente com o
+   app aberto chama `GET /api/sos/active` a cada 12 s. Essa rota agora dispara a
+   varredura **global** (`varrerEscaladas`, todos os SOS abertos, não só os do
+   usuário que fez a chamada) **no máximo uma vez por minuto no app inteiro**.
+   Duas travas: memória da instância (não toca o banco se esta instância tentou
+   há menos de 60 s) e uma linha em `app_settings` com UPSERT condicionado
+   (decide entre instâncias). Código: `lib/sosVarredura.ts`. Sem ninguém com o
+   app aberto, esta camada não roda — por isso existe a de baixo.
+2. **Agendador externo (você cria, abaixo).** Cobre o caso "SOS no meio da
+   madrugada, ninguém com o app aberto".
 
-1. Criar conta em https://cron-job.org (grátis, sem cartão).
-2. **Create cronjob** → aba *Common*:
+As duas escrevem o "último sinal de vida" na mesma linha. No painel admin
+(`/admin`), o indicador **"Última varredura do SOS: há X min"** fica **vermelho
+acima de 10 min**. Esse é o jeito de saber se o agendador parou.
+
+## ⚠️ Leia antes: custo no Neon gratuito
+
+Chamar o banco a cada minuto **o impede de hibernar**. O Neon Free hiberna
+após 5 min sem uso e dá **100 CU-horas por mês** (a página de planos do Neon,
+consultada em 05/10/2026, diz que isso equivale a ~400 h de uma computação de
+0,25 CU). Um banco acordado 24 h por dia gasta ~180 CU-h por mês: **o limite
+acabaria por volta do dia 17, e com ele o banco inteiro — o app e o SOS —
+suspende até o mês virar.**
+
+Nenhum intervalo menor que 5 min deixa o banco dormir (e um intervalo maior só
+troca "acordado sempre" por "acordado 5 min a cada chamada"). Por isso:
+
+- **Não ligue o agendador 24 h por dia sem decidir isto antes.** Opções:
+  - **A) Só nas horas de kite**, por exemplo 06:00 às 18:59 (horário de
+    Brasília, 13 h/dia ≈ 98 CU-h/mês — quase todo o limite, **sem folga** para
+    o uso real do app). Se escolher esta, confira o consumo no console do Neon
+    (Billing / Usage) na primeira semana.
+  - **B) Só a carona no polling** (camada 1): não custa nada extra, porque o
+    banco já está acordado quando há alguém usando o app. Não cobre a madrugada.
+  - **C) Plano pago do Neon**, se a escalada 24 h for requisito.
+- Esta é uma decisão **sua**. O agente que escreveu este passo a passo não tem
+  acesso ao console do Neon e **não mediu** o consumo real; os números acima
+  são da documentação do Neon, não de medição no seu projeto.
+
+## Passo a passo no cron-job.org (grátis)
+
+> Os nomes dos campos abaixo são os que o cron-job.org usa hoje; se a tela
+> tiver mudado, o que importa são estes itens: **URL**, **método GET**,
+> **intervalo**, **cabeçalho `Authorization`** e **alerta de falha**.
+
+**Antes de começar:** você precisa do valor do `CRON_SECRET` (Vercel → projeto
+`kiteninja` → Settings → Environment Variables). **Só você vê e cola esse valor.**
+Ninguém — nem o agente que ajuda você — deve pedir, ler ou escrever o valor em
+chat, commit, documento ou URL.
+
+1. Crie a conta em https://cron-job.org (grátis, sem cartão) e confirme o e-mail.
+2. **Create cronjob** → aba **Common**:
    - **Title:** `KiteNinja — escalada de SOS`
    - **URL:** `https://kiteninja.vercel.app/api/cron/sos-escalada`
-   - **Schedule:** *Every 2 minutes* (ou "Custom" → `*/2 * * * *`)
-3. Aba **Advanced** → *Headers* → adicionar:
-   - **Name:** `Authorization`
-   - **Value:** `Bearer <o mesmo CRON_SECRET que está na Vercel>`
-4. **Create**.
-5. Repetir para o segundo job:
+   - **Execution schedule:** *Every 1 minute* (ou *User-defined* com todos os
+     minutos). Se escolheu a opção A do aviso acima, restrinja as **horas**
+     (06 a 18) e deixe os minutos todos marcados. Confira o **fuso horário** da
+     conta (Settings → Timezone) para as horas valerem em Brasília.
+3. Aba **Advanced**:
+   - **Request method:** `GET`
+   - **Headers** → *Add header*:
+     - **Key:** `Authorization`
+     - **Value:** `Bearer ` (a palavra Bearer, **um espaço**) seguida do valor do
+       `CRON_SECRET`. Cole o valor só neste campo.
+   - **Timeout:** 30 s.
+4. Aba **Notifications:** ligue o aviso por e-mail quando a execução **falhar**
+   (e quando voltar ao normal), para saber sem abrir o painel.
+5. **Create.**
+6. Repita para o segundo job (mesmo cabeçalho, mesmo intervalo e janela):
    - **Title:** `KiteNinja — silêncio de downwind`
    - **URL:** `https://kiteninja.vercel.app/api/cron/downwind-silencio`
-   - Mesmo header, mesma frequência.
 
-**Como conferir que ficou certo:** o painel do cron-job.org mostra o
-histórico de execuções com o status HTTP. Tem que ser **200**. Se aparecer
-**401**, o header está errado (confira o prefixo `Bearer ` com espaço). Se
-aparecer **503**, o `CRON_SECRET` não chegou àquele deploy da Vercel.
+**Como conferir que ficou certo:**
 
-> ⚠️ O `CRON_SECRET` dá acesso às rotas de varredura. Cole-o só no campo de
-> header do cron-job.org, nunca na URL — URL vai para log de servidor e para
-> o histórico do painel.
+- No histórico do cron-job.org cada execução mostra o status HTTP: tem que ser
+  **200**. **401** = cabeçalho errado (confira `Bearer` + espaço + valor).
+  **503** = o `CRON_SECRET` não chegou àquele deploy da Vercel (faça redeploy).
+- No painel `/admin`, clique em atualizar no indicador "Última varredura do
+  SOS": deve mostrar "há menos de 1 min" / "há 1 min" e "pelo agendador
+  externo". Se ficar vermelho (acima de 10 min), o agendador parou **e** ninguém
+  tem o app aberto.
+
+> ⚠️ O `CRON_SECRET` dá acesso às rotas de varredura, que disparam push. Cole-o
+> só no campo de cabeçalho, nunca na URL — URL vai para log de servidor e para
+> o histórico do painel. Se suspeitar que vazou, troque o valor na Vercel **e**
+> no cron-job.org (e nos Secrets do GitHub, enquanto o workflow existir).
 
 ### Alternativas
 
 - **Upstash QStash** — mesma ideia, camada gratuita generosa, com retry
-  automático em falha. Melhor se você já usa Upstash.
+  automático em falha. O custo no Neon é o mesmo (o banco acorda igual).
 - **Vercel Pro** — libera cron `* * * * *` nativo, e aí `vercel.json` resolve
   sozinho, sem serviço externo. É a opção mais limpa, e é paga.
 
 ## O que fazer com o workflow do GitHub
 
 **Deixar ligado.** Ele não atrapalha e serve de rede de última instância se o
-scheduler externo cair. As duas vias chamam a mesma função idempotente (o
-`UPDATE` é condicionado ao raio lido), então rodar as duas ao mesmo tempo
-**não escala em dobro** — isso está provado em `scripts/verify-sos.ts`,
-seção 3.
+scheduler externo cair. As vias chamam a mesma função idempotente (o `UPDATE` é
+condicionado ao raio lido), então rodar várias ao mesmo tempo **não escala em
+dobro** — isso está provado em `scripts/verify-sos.ts`, seção 3, e a janela de
+60 s entre varreduras do polling está provada em `lib/sosVarreduraFluxo.test.ts`.
 
 ## Para o próximo agente
 

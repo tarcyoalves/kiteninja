@@ -8,6 +8,7 @@ import { UserManager } from './UserManager';
 import { IntroVideoManager } from './IntroVideoManager';
 import { ChamadosManager } from './ChamadosManager';
 import { ErrosManager } from './ErrosManager';
+import { SaudeSos } from './SaudeSos';
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
   const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados' | 'erros'>('convites');
@@ -139,6 +140,8 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
             </div>
           </div>
         </div>
+
+        <SaudeSos />
 
         {/* Content Body */}
         {tab === 'convites' && <InviteManager />}

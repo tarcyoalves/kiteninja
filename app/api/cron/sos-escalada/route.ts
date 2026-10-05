@@ -1,6 +1,7 @@
 import { handle } from '@/lib/api';
 import { HttpError } from '@/lib/auth';
 import { varrerEscaladas } from '@/lib/sosEscalada';
+import { registrarVarreduraDoCron } from '@/lib/sosVarredura';
 import { logSos } from '@/lib/sosLog';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +33,11 @@ export const dynamic = 'force-dynamic';
  * dobro. Para escalada confiável em minutos é preciso plano Pro (cron por
  * minuto) ou um acionador externo batendo nesta rota. Está registrado em
  * docs/OPERACAO-SOS.md.
+ *
+ * Desde a T01 (plano de 05/10/2026) o polling de /api/sos/active também puxa a
+ * varredura GLOBAL, no máximo uma vez por minuto (lib/sosVarredura.ts), e esta
+ * rota anota o último sinal de vida na mesma linha que o polling. O passo a
+ * passo do agendador externo está em docs/CRON-EXTERNO-SOS.md.
  */
 export async function GET(request: Request) {
   return handle(async () => {
@@ -51,6 +57,11 @@ export async function GET(request: Request) {
 
     const inicio = Date.now();
     const resumo = await varrerEscaladas();
+
+    // Anota o "último sinal de vida" no mesmo lugar em que a varredura do
+    // polling anota (lib/sosVarredura.ts): o painel admin mostra há quantos
+    // minutos o SOS foi varrido por QUALQUER das duas fontes. Não lança.
+    await registrarVarreduraDoCron(resumo);
 
     logSos({
       etapa: resumo.erros > 0 ? 'erro' : 'escalada',

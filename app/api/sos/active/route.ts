@@ -3,6 +3,8 @@ import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { touchPresenceKeepingSpot } from '@/lib/presence';
 import { escalarUmSos } from '@/lib/sosEscalada';
+import { varrerSeForHora } from '@/lib/sosVarredura';
+import { after } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +18,37 @@ export async function GET() {
       await touchPresenceKeepingSpot(user.id);
     } catch (err) {
       console.error('[sos] presença não gravada ao listar ativos', err);
+    }
+
+    /**
+     * Carona do polling na varredura global (T01a do plano de 05/10/2026).
+     *
+     * O cron da Vercel Hobby roda 1x por dia e o do GitHub Actions, medido, a
+     * cada 3 a 6 horas — um SOS parado em 5 km por horas. Todo cliente com o
+     * app aberto passa por aqui a cada 12 s, então esta rota puxa
+     * `varrerEscaladas()`, que escala TODOS os SOS abertos (não só os que este
+     * usuário enxerga), no máximo uma vez por minuto no app inteiro. As duas
+     * travas (memória da instância e linha no banco) vivem em
+     * lib/sosVarredura.ts.
+     *
+     * `after()` e não `void promessa`: na Vercel a função pode ser congelada
+     * assim que a resposta sai, e uma promessa solta morreria no meio da
+     * varredura. `after` mantém a função viva até terminar, sem atrasar a
+     * resposta. `varrerSeForHora` nunca lança — erro vai para o painel de erros
+     * e o polling segue devolvendo os SOS.
+     *
+     * A escalada preguiçosa por alerta, mais abaixo, continua: o UPDATE do
+     * motor é condicionado ao raio lido, então as duas vias não escalam em
+     * dobro (scripts/verify-sos.ts, seção 3).
+     */
+    try {
+      after(() => varrerSeForHora());
+    } catch (err) {
+      // Fora de um contexto de requisição o `after` recusa. Cair para a
+      // promessa solta é melhor que não varrer; o erro, se houver, já é
+      // registrado dentro de varrerSeForHora.
+      void varrerSeForHora();
+      console.error('[sos] after() indisponível, varredura em promessa solta', err);
     }
 
     /**
