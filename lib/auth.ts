@@ -366,13 +366,23 @@ export async function createPasswordResetToken(email: string): Promise<string | 
   const token = newToken();
   const expiresAt = new Date(Date.now() + RESET_TOKEN_HOURS * 3600_000);
 
-  // Invalida tokens anteriores não usados
-  await sql`
-    UPDATE password_reset_tokens
-    SET used_at = NOW()
-    WHERE user_id = ${userId} AND used_at IS NULL
-  `;
-
+  /*
+   * NÃO invalida os links anteriores ao CRIAR um novo — invalida todos ao
+   * USAR um (ver `consumePasswordReset`).
+   *
+   * O BUG QUE ISTO CORRIGE, reproduzido com as rotas reais
+   * (lib/redefinirSenhaFluxo.test.ts, cenário D): o admin gerava o link e
+   * mandava pelo WhatsApp; a pessoa, sem saber que ele já tinha chegado,
+   * tocava em "Esqueci minha senha". Esse autoatendimento criava um token que
+   * NUNCA é entregue (não há envio de e-mail no projeto) — e, ao criar,
+   * matava o link do admin. A pessoa abria o link certo e lia "Link de
+   * recuperação inválido, expirado ou já utilizado". Foi o "não prestou".
+   *
+   * A garantia de segurança que o UPDATE dava continua de pé, só mudou de
+   * lugar: no instante em que UM link é usado, todos os outros morrem. Antes
+   * disso, ter dois links válidos ao mesmo tempo não dá acesso a ninguém que
+   * já não tivesse um.
+   */
   await sql`
     INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
     VALUES (${userId}, ${hashToken(token)}, ${expiresAt.toISOString()})
@@ -416,6 +426,14 @@ export async function consumePasswordReset(token: string, newPasswordHash: strin
   `;
   if (updated.length === 0) return false;
 
+  // Usou um, morrem todos: nenhum outro link antigo dessa conta (um repassado
+  // por engano, um gerado pelo autoatendimento) pode trocar a senha de novo.
+  await sql`
+    UPDATE password_reset_tokens
+    SET used_at = NOW()
+    WHERE user_id = ${reset.userId} AND used_at IS NULL
+  `;
+
   await sql`
     UPDATE users
     SET password_hash = ${newPasswordHash}, must_change_password = FALSE, updated_at = NOW()
@@ -423,6 +441,17 @@ export async function consumePasswordReset(token: string, newPasswordHash: strin
   `;
 
   await invalidateAllUserSessions(reset.userId);
+
+  /*
+   * Zera as tentativas de login erradas. Sem isto, quem errou a senha algumas
+   * vezes antes de pedir ajuda redefinia com sucesso e via a senha NOVA ser
+   * recusada com "Muitas tentativas de login incorretas" (cenário B de
+   * lib/redefinirSenhaFluxo.test.ts). Import sob demanda pelo mesmo motivo
+   * de lib/rateLimit.ts: manter este módulo livre de dependência de carga.
+   */
+  const { limparFalhasLogin } = await import('./rateLimit');
+  await limparFalhasLogin(reset.email);
+
   return true;
 }
 

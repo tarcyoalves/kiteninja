@@ -1,7 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, createSession, verifyPassword } from '@/lib/auth';
-import { rateLimiters } from '@/lib/rateLimit';
+import { limparFalhasLogin, registrarFalhaLogin, verificarBloqueioLogin } from '@/lib/rateLimit';
 import { email as parseEmail } from '@/lib/validation';
 
 // Hash descartável de uma senha inexistente. Se o email não existe, ainda
@@ -14,7 +14,10 @@ export async function POST(request: Request) {
     const body = await readJson(request);
     const email = parseEmail(body);
 
-    await rateLimiters.login(email);
+    // Só confere o bloqueio; NÃO conta esta tentativa. Contar acontece mais
+    // abaixo, e só se a senha errar — ver o comentário de
+    // `verificarBloqueioLogin` em lib/rateLimit.ts.
+    await verificarBloqueioLogin(email);
 
     const rawPassword = (body as Record<string, unknown>)?.password;
 
@@ -32,7 +35,15 @@ export async function POST(request: Request) {
     const ok = await verifyPassword(rawPassword, row ? String(row.password_hash) : DUMMY_HASH);
 
     // Mensagem idêntica nos dois casos: não dizemos se foi o email ou a senha.
-    if (!row || !ok) throw new HttpError(401, 'Email ou senha incorretos.');
+    // A falha é registrada nos dois casos também — senão a contagem de
+    // bloqueio revelaria quais emails existem.
+    if (!row || !ok) {
+      await registrarFalhaLogin(email);
+      throw new HttpError(401, 'Email ou senha incorretos.');
+    }
+
+    // Entrou: as falhas de antes deixam de significar ataque.
+    await limparFalhasLogin(email);
 
     await createSession(String(row.id), request.headers.get('user-agent') ?? undefined);
 

@@ -4,6 +4,7 @@ import React, { use, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { KeyRound, Lock, CheckCircle2, AlertTriangle, Loader2, ArrowLeft } from 'lucide-react';
+import { MSG_SENHA_CURTA, SENHA_MINIMA } from '@/lib/senhaRegras';
 
 export default function RedefinirSenhaPage({
   params,
@@ -21,8 +22,11 @@ export default function RedefinirSenhaPage({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 6) {
-      setError('A nova senha deve ter no mínimo 6 caracteres.');
+    // Mesma regra do servidor (lib/senhaRegras.ts). Esta tela dizia "mínimo
+    // 6" enquanto o servidor exigia 10, e quem seguia a instrução daqui
+    // recebia erro ao enviar.
+    if (password.length < SENHA_MINIMA) {
+      setError(MSG_SENHA_CURTA);
       return;
     }
 
@@ -109,7 +113,7 @@ export default function RedefinirSenhaPage({
             )}
 
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-300">Nova Senha (mín. 6 caracteres)</label>
+              <label className="block text-xs font-bold text-slate-300">Nova Senha (mín. {SENHA_MINIMA} caracteres)</label>
               <div className="relative">
                 <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input
@@ -118,7 +122,7 @@ export default function RedefinirSenhaPage({
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  minLength={6}
+                  minLength={SENHA_MINIMA}
                   className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
                 />
               </div>
@@ -134,7 +138,7 @@ export default function RedefinirSenhaPage({
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  minLength={6}
+                  minLength={SENHA_MINIMA}
                   className="w-full pl-9 pr-3 py-2.5 bg-[#0F172A] border border-slate-700 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500"
                 />
               </div>

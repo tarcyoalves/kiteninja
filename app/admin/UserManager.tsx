@@ -8,6 +8,7 @@ import {
   UserX,
   KeyRound,
   LockKeyhole,
+  Share2,
   Copy,
   Users,
   Loader2,
@@ -120,7 +121,17 @@ export function UserManager() {
    * some sozinho como o `actionSuccess`) porque o admin precisa dele na tela
    * o tempo que levar para colar no WhatsApp do velejador.
    */
-  const [linkSenha, setLinkSenha] = useState<{ nome: string; url: string } | null>(null);
+  /*
+   * O link e o erro guardam DE QUEM são (`userId`), porque passaram a ser
+   * mostrados dentro da linha do próprio velejador, e não no topo da página.
+   *
+   * No topo, quem tocava o botão numa linha mais abaixo — o caso normal no
+   * celular, com a lista rolada — não via nada acontecer: o link nascia fora
+   * da tela. O mesmo valia para o erro (conta suspensa, por exemplo). Do lado
+   * do admin, "redefinir senha não prestou".
+   */
+  const [linkSenha, setLinkSenha] = useState<{ userId: string; nome: string; url: string } | null>(null);
+  const [erroLinkSenha, setErroLinkSenha] = useState<{ userId: string; msg: string } | null>(null);
   const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null);
   const [linkCopiado, setLinkCopiado] = useState(false);
 
@@ -206,32 +217,50 @@ export function UserManager() {
     setError(null);
     setActionSuccess(null);
     setLinkSenha(null);
+    setErroLinkSenha(null);
     setLinkCopiado(false);
     setGerandoLinkId(userId);
     try {
       const res = await fetch(`/api/admin/users/${userId}/senha`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error ?? 'Falha ao gerar o link de redefinição.');
+        setErroLinkSenha({ userId, msg: data.error ?? 'Falha ao gerar o link de redefinição.' });
         return;
       }
-      setLinkSenha({ nome: data.nome ?? nome, url: data.url });
+      setLinkSenha({ userId, nome: data.nome ?? nome, url: data.url });
     } catch {
-      setError('Falha de conexão.');
+      setErroLinkSenha({ userId, msg: 'Falha de conexão.' });
     } finally {
       setGerandoLinkId(null);
     }
   }
 
-  async function copiarLink(url: string) {
+  /** Texto pronto para colar no WhatsApp — o caminho real de entrega. */
+  const textoDoLink = (nome: string, url: string) =>
+    `Oi, ${nome}! Aqui está o link para criar sua nova senha no KiteNinja ` +
+    `(vale por 2 horas e serve uma vez):\n${url}`;
+
+  async function copiarLink(userId: string, nome: string, url: string) {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(textoDoLink(nome, url));
       setLinkCopiado(true);
       setTimeout(() => setLinkCopiado(false), 2500);
     } catch {
-      // Sem clipboard (http, permissao negada): o link continua visivel e
-      // selecionavel na tela, entao da para copiar na mao.
-      setError('Não consegui copiar automaticamente — selecione o link e copie.');
+      // Sem clipboard (http, permissão negada, WebView): o link continua
+      // visível e selecionável na linha, então dá para copiar na mão.
+      setErroLinkSenha({ userId, msg: 'Não consegui copiar automaticamente — toque no link e copie.' });
+    }
+  }
+
+  /**
+   * Abre a folha de compartilhar do celular (WhatsApp incluso). Só aparece
+   * onde o navegador oferece `navigator.share`; em computador, fica o Copiar.
+   */
+  async function compartilharLink(nome: string, url: string) {
+    try {
+      await navigator.share({ title: 'KiteNinja — nova senha', text: textoDoLink(nome, url) });
+    } catch {
+      // Cancelar a folha de compartilhar também cai aqui; não é erro.
     }
   }
 
@@ -396,51 +425,6 @@ export function UserManager() {
         </div>
       )}
 
-      {/* Link de redefinição de senha recém-gerado */}
-      {linkSenha && (
-        <div className="p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl space-y-2.5">
-          <div className="flex items-start gap-2 text-cyan-200">
-            <LockKeyhole size={16} className="shrink-0 mt-0.5" />
-            <div className="text-xs leading-relaxed">
-              <p className="font-bold text-white">
-                Link de nova senha para {linkSenha.nome}
-              </p>
-              <p className="text-cyan-300/90">
-                Envie este link para o velejador. Ele vale por 2 horas, serve uma
-                única vez, e é a própria pessoa quem escolhe a senha nova.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              readOnly
-              value={linkSenha.url}
-              onFocus={(e) => e.currentTarget.select()}
-              className="flex-1 min-w-0 px-3 py-2 bg-[#0F172A] border border-slate-700 rounded-xl text-[11px] text-slate-200 font-mono focus:outline-hidden focus:border-cyan-500"
-            />
-            <button
-              onClick={() => copiarLink(linkSenha.url)}
-              className="shrink-0 px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 rounded-xl text-xs font-bold text-cyan-200 transition-all active:scale-95 flex items-center gap-1.5"
-            >
-              {linkCopiado ? <Check size={14} /> : <Copy size={14} />}
-              {linkCopiado ? 'Copiado' : 'Copiar'}
-            </button>
-            <button
-              onClick={() => setLinkSenha(null)}
-              className="shrink-0 px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all active:scale-95"
-            >
-              Fechar
-            </button>
-          </div>
-
-          <p className="text-[10px] text-slate-400">
-            As sessões abertas desse velejador foram encerradas. Se o link
-            expirar antes do uso, é só gerar outro.
-          </p>
-        </div>
-      )}
-
       {/* 3. Lista Detalhada de Monitoramento dos Velejadores */}
       <div className="space-y-3">
         {loading && users.length === 0 ? (
@@ -575,7 +559,7 @@ export function UserManager() {
                   </div>
 
                   {/* Ações Administrativas */}
-                  <div className="flex items-center gap-2 shrink-0 md:self-center pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
+                  <div className="flex flex-wrap items-center gap-2 shrink-0 md:self-center pt-2 md:pt-0 border-t md:border-t-0 border-slate-800">
                     {/* Role selector */}
                     <select
                       value={u.role}
@@ -620,17 +604,24 @@ export function UserManager() {
                       logo abaixo, que so exige a troca no proximo login e nao
                       serve para quem perdeu o acesso.
                     */}
+                    {/*
+                      Rótulo VISÍVEL, não só `title`: no celular não existe
+                      "passar o mouse", então dois ícones parecidos (cadeado e
+                      chave) lado a lado eram indistinguíveis — e o da chave
+                      não serve para quem esqueceu a senha.
+                    */}
                     <button
                       onClick={() => gerarLinkSenha(u.id, u.name)}
                       disabled={gerandoLinkId === u.id}
-                      className="p-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 rounded-xl text-xs text-cyan-300 transition-all active:scale-95 disabled:opacity-50"
-                      title="Redefinir senha: gera um link para o velejador criar uma nova"
+                      className="px-2.5 py-2 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 rounded-xl text-xs font-bold text-cyan-300 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                      title="Gera um link para o velejador criar uma senha nova"
                     >
                       {gerandoLinkId === u.id ? (
                         <Loader2 size={15} className="animate-spin" />
                       ) : (
                         <LockKeyhole size={15} />
                       )}
+                      <span>Nova senha</span>
                     </button>
 
                     {/* Force password change */}
@@ -642,13 +633,63 @@ export function UserManager() {
                           `Foi exigida a troca de senha para ${u.name} no próximo login.`
                         )
                       }
-                      className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-300 hover:text-white transition-all active:scale-95"
+                      className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all active:scale-95 flex items-center gap-1.5"
                       title="Exigir troca de senha no próximo login (não serve para quem esqueceu a senha)"
                     >
                       <KeyRound size={15} />
+                      <span>Exigir troca</span>
                     </button>
                   </div>
                 </div>
+
+                {/* Erro da redefinição, na linha de quem foi tocado. */}
+                {erroLinkSenha?.userId === u.id && (
+                  <div className="mt-3 p-2.5 bg-rose-500/10 border border-rose-500/30 rounded-xl flex items-center gap-2 text-xs text-rose-300">
+                    <AlertTriangle size={14} className="shrink-0" />
+                    <span>{erroLinkSenha.msg}</span>
+                  </div>
+                )}
+
+                {/* Link de nova senha, na linha de quem foi tocado. */}
+                {linkSenha?.userId === u.id && (
+                  <div className="mt-3 p-3.5 bg-cyan-500/10 border border-cyan-500/30 rounded-2xl space-y-2.5">
+                    <p className="text-xs leading-relaxed text-cyan-200">
+                      <strong className="text-white">Link de nova senha para {linkSenha.nome}.</strong>{' '}
+                      Envie para o velejador: vale por 2 horas, serve uma vez, e é ele quem
+                      escolhe a senha nova. As sessões abertas dele foram encerradas.
+                    </p>
+                    <input
+                      readOnly
+                      value={linkSenha.url}
+                      onFocus={(e) => e.currentTarget.select()}
+                      className="w-full px-3 py-2 bg-[#0F172A] border border-slate-700 rounded-xl text-[11px] text-slate-200 font-mono focus:outline-hidden focus:border-cyan-500"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      {typeof navigator !== 'undefined' && 'share' in navigator && (
+                        <button
+                          onClick={() => compartilharLink(linkSenha.nome, linkSenha.url)}
+                          className="flex-1 px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                        >
+                          <Share2 size={14} />
+                          Enviar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => copiarLink(u.id, linkSenha.nome, linkSenha.url)}
+                        className="flex-1 px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/40 rounded-xl text-xs font-bold text-cyan-200 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                      >
+                        {linkCopiado ? <Check size={14} /> : <Copy size={14} />}
+                        {linkCopiado ? 'Copiado' : 'Copiar'}
+                      </button>
+                      <button
+                        onClick={() => setLinkSenha(null)}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all active:scale-95"
+                      >
+                        Fechar
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })

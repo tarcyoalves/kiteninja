@@ -177,18 +177,110 @@ export async function enforceRateLimitCompartilhado(
 
 let ultimoExpurgoCompartilhado = 0;
 
+// ---------------------------------------------------------------------------
+// Login: conta só as tentativas ERRADAS.
+// ---------------------------------------------------------------------------
+
+/*
+ * POR QUE O LOGIN SAIU DE `rateLimiters`
+ *
+ * Ele usava `enforceRateLimitCompartilhado`, que registra TODA chamada antes
+ * de a senha ser conferida. Dois defeitos saíam disso, ambos reproduzidos
+ * rodando as rotas reais contra Postgres (lib/redefinirSenhaFluxo.test.ts):
+ *
+ *  1. Cinco logins CORRETOS em 15 minutos bloqueavam o sexto, com a mensagem
+ *     "Muitas tentativas de login incorretas" — falsa. Basta a pessoa entrar
+ *     no celular, no tablet e no computador e sair e entrar de novo.
+ *
+ *  2. O caso que fazia a redefinição de senha "não prestar": a pessoa esquece
+ *     a senha, erra algumas vezes, pede ajuda ao admin, recebe o link,
+ *     redefine COM SUCESSO — e a senha nova é recusada com 429, porque as
+ *     tentativas erradas de antes continuavam contando. Do lado de quem usa,
+ *     a redefinição simplesmente não funcionou.
+ *
+ * Agora são três passos separados: conferir se já está bloqueado (sem
+ * registrar nada), registrar só quando a senha erra, e limpar o histórico
+ * quando a pessoa entra ou redefine a senha.
+ *
+ * A defesa contra força bruta não muda: quem chuta senha erra, e cada erro
+ * conta. O que muda é que acertar deixou de ser punido.
+ */
+export const LOGIN_MAX_FALHAS = 5;
+export const LOGIN_JANELA_MS = 15 * 60 * 1000;
+export const MSG_LOGIN_BLOQUEADO =
+  'Muitas tentativas de login incorretas. Conta temporariamente bloqueada por 15 minutos para sua segurança.';
+
+const chaveLogin = (email: string) => `login:${email.trim().toLowerCase()}`;
+
+/**
+ * Plano B em memória, usado só se o banco falhar — mesma política de FALHA
+ * ABERTA de `enforceRateLimitCompartilhado`: um erro transitório no banco não
+ * pode impedir todo mundo de entrar, e proteção por instância ainda é melhor
+ * que nenhuma.
+ */
+const falhasEmMemoria = new Map<string, number[]>();
+
+function falhasVivasEmMemoria(chave: string): number[] {
+  const agora = Date.now();
+  const vivas = (falhasEmMemoria.get(chave) ?? []).filter((t) => t > agora);
+  if (vivas.length) falhasEmMemoria.set(chave, vivas);
+  else falhasEmMemoria.delete(chave);
+  return vivas;
+}
+
+/** Recusa com 429 se a conta já acumulou falhas demais. NÃO registra nada. */
+export async function verificarBloqueioLogin(email: string): Promise<void> {
+  const chave = chaveLogin(email);
+  let falhas: number;
+  try {
+    const { sql } = await import('./db');
+    const linhas = await sql`
+      SELECT COUNT(*)::int AS n
+      FROM rate_limit_tentativas
+      WHERE chave = ${chave} AND expira_em > NOW()
+    `;
+    falhas = Number((linhas[0] as Record<string, unknown> | undefined)?.n ?? 0);
+  } catch {
+    falhas = falhasVivasEmMemoria(chave).length;
+  }
+  if (falhas >= LOGIN_MAX_FALHAS) throw new HttpError(429, MSG_LOGIN_BLOQUEADO);
+}
+
+/** Registra UMA tentativa errada. Chamar só depois de a senha não conferir. */
+export async function registrarFalhaLogin(email: string): Promise<void> {
+  const chave = chaveLogin(email);
+  const expiraEm = Date.now() + LOGIN_JANELA_MS;
+  try {
+    const { sql } = await import('./db');
+    await sql`
+      INSERT INTO rate_limit_tentativas (chave, expira_em)
+      VALUES (${chave}, ${new Date(expiraEm).toISOString()})
+    `;
+  } catch {
+    falhasEmMemoria.set(chave, [...falhasVivasEmMemoria(chave), expiraEm]);
+  }
+}
+
+/**
+ * Zera as falhas da conta. Chamado quando a pessoa ENTRA e quando ela
+ * REDEFINE A SENHA — nos dois casos ela provou ser quem diz, e as tentativas
+ * erradas de antes deixam de significar ataque.
+ */
+export async function limparFalhasLogin(email: string): Promise<void> {
+  const chave = chaveLogin(email);
+  falhasEmMemoria.delete(chave);
+  try {
+    const { sql } = await import('./db');
+    await sql`DELETE FROM rate_limit_tentativas WHERE chave = ${chave}`;
+  } catch {
+    // Sem banco não há o que limpar lá; as falhas expiram sozinhas em 15 min.
+  }
+}
+
 /** Helpers semânticos para as rotas sensíveis do KiteNinja */
 export const rateLimiters = {
   // Os três primeiros são de porta aberta (sem sessão) e por isso usam o teto
   // compartilhado no banco: é neles que força bruta acontece.
-  login: (identifier: string) =>
-    enforceRateLimitCompartilhado(
-      `login:${identifier.toLowerCase()}`,
-      5,
-      15 * 60 * 1000,
-      'Muitas tentativas de login incorretas. Conta temporariamente bloqueada por 15 minutos para sua segurança.'
-    ),
-
   invite: (ipOrToken: string) =>
     enforceRateLimitCompartilhado(
       `invite:${ipOrToken}`,

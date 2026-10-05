@@ -2,6 +2,7 @@
 // DATABASE_URL no carregamento do módulo — isso quebrava qualquer teste
 // unitário das funções puras deste arquivo mesmo sem tocar o banco.
 import { HttpError } from './errors';
+import { MSG_SENHA_CURTA, SENHA_MAXIMA, SENHA_MINIMA } from './senhaRegras';
 
 /** Extrai um campo string obrigatório, com limite de tamanho. */
 export function str(
@@ -117,10 +118,11 @@ export function email(body: unknown, field = 'email'): string {
 /** Exigimos 10+ caracteres em vez de regras de símbolo: comprimento vale mais. */
 export function password(body: unknown, field = 'password'): string {
   const raw = (body as Record<string, unknown> | null)?.[field];
-  if (typeof raw !== 'string' || raw.length < 10) {
-    throw new HttpError(400, 'A senha precisa ter no mínimo 10 caracteres.');
+  // Regra em lib/senhaRegras.ts — a mesma que as telas mostram.
+  if (typeof raw !== 'string' || raw.length < SENHA_MINIMA) {
+    throw new HttpError(400, MSG_SENHA_CURTA);
   }
-  if (raw.length > 200) throw new HttpError(400, 'Senha muito longa.');
+  if (raw.length > SENHA_MAXIMA) throw new HttpError(400, 'Senha muito longa.');
   return raw;
 }
 

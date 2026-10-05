@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { KeyRound, Lock, LogOut, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { SENHA_MINIMA } from '@/lib/senhaRegras';
 
 /**
  * Bloqueio de "precisa trocar a senha", mostrado no lugar do app inteiro
@@ -27,7 +28,8 @@ export const ForcePasswordChangeModal: React.FC = () => {
   // Mesmo mínimo usado pelo servidor (lib/validation.ts:password) — validar
   // com um número diferente aqui só criaria uma tela que aceita e um back-end
   // que rejeita.
-  const MIN_LEN = 10;
+  // Regra única em lib/senhaRegras.ts — a mesma do servidor.
+  const MIN_LEN = SENHA_MINIMA;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

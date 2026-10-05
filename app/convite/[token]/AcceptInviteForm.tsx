@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Compass, LifeBuoy, Scale, ShieldCheck, UserPlus } from 'lucide-react';
 import type { Discipline, RiderLevel } from '@/types';
+import { MSG_SENHA_CURTA, SENHA_MINIMA } from '@/lib/senhaRegras';
 
 const LEVELS: RiderLevel[] = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'];
 const DISCIPLINES: Discipline[] = ['Kitesurf Twintip', 'Hydrofoil', 'Wingfoil', 'Big Air'];
@@ -44,8 +45,8 @@ export function AcceptInviteForm({
       setError('As senhas não conferem.');
       return;
     }
-    if (password.length < 10) {
-      setError('A senha precisa ter no mínimo 10 caracteres.');
+    if (password.length < SENHA_MINIMA) {
+      setError(MSG_SENHA_CURTA);
       return;
     }
 
@@ -171,7 +172,7 @@ export function AcceptInviteForm({
               onChange={(e) => setPassword(e.target.value)}
               className={inputClass}
               autoComplete="new-password"
-              minLength={10}
+              minLength={SENHA_MINIMA}
               required
             />
             <p className="text-[11px] text-slate-500 mt-1">Mínimo de 10 caracteres.</p>
