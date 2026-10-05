@@ -28,6 +28,19 @@ export function InviteManager() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /*
+   * Falha de carregar/atualizar o HISTÓRICO, mostrada na própria seção do
+   * histórico. Antes `if (!res.ok) return;` deixava a lista vazia com o texto
+   * "Nenhum convite gerado ainda." — o painel afirmava que não havia convite
+   * quando, na verdade, não tinha conseguido ler.
+   */
+  const [erroLista, setErroLista] = useState<string | null>(null);
+  /*
+   * Falha de revogar, com o id do convite: aparece DENTRO do cartão tocado.
+   * Numa lista longa, o `error` do topo (acima do histórico) fica fora da tela
+   * e o admin achava que o convite tinha sido revogado.
+   */
+  const [erroRevogar, setErroRevogar] = useState<{ id: string; msg: string } | null>(null);
 
   // Carrega lista de convites
   useEffect(() => {
@@ -36,11 +49,15 @@ export function InviteManager() {
     (async () => {
       try {
         const res = await fetch('/api/admin/invites', { signal: controller.signal });
-        if (!res.ok) return;
+        if (!res.ok) throw new Error('lista');
         const data = await res.json();
         setInvites(data.invites ?? []);
+        setErroLista(null);
       } catch {
-        // aborted
+        // Abortar (sair da aba) não é falha; qualquer outra coisa é.
+        if (!controller.signal.aborted) {
+          setErroLista('Não foi possível carregar o histórico de convites.');
+        }
       }
     })();
 
@@ -48,6 +65,20 @@ export function InviteManager() {
       controller.abort();
     };
   }, []);
+
+  /** Relê o histórico depois de uma ação. Devolve se conseguiu. */
+  async function recarregarLista(): Promise<boolean> {
+    try {
+      const listRes = await fetch('/api/admin/invites');
+      if (!listRes.ok) throw new Error('lista');
+      const listData = await listRes.json();
+      setInvites(listData.invites ?? []);
+      setErroLista(null);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
@@ -61,7 +92,7 @@ export function InviteManager() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email || undefined, note: note || undefined }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
         setError(data.error ?? 'Não foi possível gerar o convite.');
@@ -71,11 +102,11 @@ export function InviteManager() {
       setFreshLink(data.inviteUrl);
       setEmail('');
       setNote('');
-      // Recarrega lista de convites
-      const listRes = await fetch('/api/admin/invites');
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        setInvites(listData.invites ?? []);
+      // O convite JÁ existe e o link está na tela; se só a releitura do
+      // histórico falhar, é isto que precisa ser dito (e não "falha de
+      // conexão", que faria o admin gerar um segundo convite).
+      if (!(await recarregarLista())) {
+        setErroLista('Convite criado, mas não consegui atualizar o histórico. Recarregue a aba para vê-lo.');
       }
     } catch {
       setError('Falha de conexão.');
@@ -108,22 +139,23 @@ export function InviteManager() {
     if (!confirm(`Revogar o convite de ${identificacao}? O link para de funcionar na hora e não dá para desfazer.`)) {
       return;
     }
-    setError(null);
+    setErroRevogar(null);
     try {
       const res = await fetch(`/api/admin/invites/${id}`, { method: 'DELETE' });
       if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? 'Não foi possível revogar.');
+        const data = await res.json().catch(() => ({}));
+        setErroRevogar({ id, msg: data.error ?? 'Não foi possível revogar.' });
         return;
       }
-      // Recarrega lista de convites
-      const listRes = await fetch('/api/admin/invites');
-      if (listRes.ok) {
-        const listData = await listRes.json();
-        setInvites(listData.invites ?? []);
+      // Revogou, mas o cartão ainda diz "aberto" se a releitura falhar: dizer.
+      if (!(await recarregarLista())) {
+        setErroRevogar({
+          id,
+          msg: 'Convite revogado, mas não consegui atualizar o histórico. Recarregue a aba.',
+        });
       }
     } catch {
-      setError('Falha de conexão.');
+      setErroRevogar({ id, msg: 'Falha de conexão. O convite pode não ter sido revogado.' });
     }
   }
 
@@ -216,14 +248,20 @@ export function InviteManager() {
         <section className="space-y-2">
           <h2 className="font-bold text-sm px-1">Histórico</h2>
 
-          {invites.length === 0 && (
+          {erroLista && (
+            <p role="alert" className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-300 text-sm font-semibold">
+              {erroLista}
+            </p>
+          )}
+
+          {invites.length === 0 && !erroLista && (
             <p className="text-sm text-slate-500 px-1 py-4">Nenhum convite gerado ainda.</p>
           )}
 
           {invites.map((inv) => (
             <article
               key={inv.id}
-              className="p-3.5 rounded-2xl bg-[#0B132B] border border-slate-800 flex items-start gap-3"
+              className="p-3.5 rounded-2xl bg-[#0B132B] border border-slate-800 flex flex-wrap items-start gap-3"
             >
               <div className="flex-1 min-w-0 space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -258,6 +296,15 @@ export function InviteManager() {
                 >
                   <Trash2 size={15} aria-hidden="true" />
                 </button>
+              )}
+
+              {erroRevogar?.id === inv.id && (
+                <p
+                  role="alert"
+                  className="basis-full p-2 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold"
+                >
+                  {erroRevogar.msg}
+                </p>
               )}
             </article>
           ))}

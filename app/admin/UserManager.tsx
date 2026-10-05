@@ -331,11 +331,15 @@ export function UserManager() {
    * Abre a folha de compartilhar do celular (WhatsApp incluso). Só aparece
    * onde o navegador oferece `navigator.share`; em computador, fica o Copiar.
    */
-  async function compartilharLink(nome: string, url: string) {
+  async function compartilharLink(userId: string, nome: string, url: string) {
     try {
       await navigator.share({ title: 'KiteNinja — nova senha', text: textoDoLink(nome, url) });
-    } catch {
-      // Cancelar a folha de compartilhar também cai aqui; não é erro.
+    } catch (e) {
+      // Cancelar a folha de compartilhar também cai aqui (AbortError); isso
+      // não é erro. Qualquer outra falha é: o admin tocou "Enviar" e nada
+      // abriu — o link continua na linha para copiar na mão.
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setErroLinha({ userId, msg: 'Não consegui abrir o compartilhamento — use Copiar.' });
     }
   }
 
@@ -773,7 +777,7 @@ export function UserManager() {
                     <div className="flex flex-wrap gap-2">
                       {typeof navigator !== 'undefined' && 'share' in navigator && (
                         <button
-                          onClick={() => compartilharLink(linkSenha.nome, linkSenha.url)}
+                          onClick={() => compartilharLink(u.id, linkSenha.nome, linkSenha.url)}
                           className="flex-1 px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-1.5"
                         >
                           <Share2 size={14} />

@@ -45,6 +45,12 @@ export const ErrosManager: React.FC = () => {
   const [mostrarResolvidos, setMostrarResolvidos] = useState(false);
   const [aberto, setAberto] = useState<number | null>(null);
   const [recarga, setRecarga] = useState(0);
+  /*
+   * Falha de marcar/reabrir, guardada com o id da linha: aparece DENTRO do
+   * cartão tocado. `erroDaTela` (carregar a lista) fica no topo, e numa lista
+   * comprida no celular o topo está fora da tela.
+   */
+  const [erroDaLinha, setErroDaLinha] = useState<{ id: number; msg: string } | null>(null);
 
   /**
    * Recarrega quando o filtro muda ou quando `recarga` é incrementado pelo
@@ -85,18 +91,45 @@ export const ErrosManager: React.FC = () => {
 
   const alternarResolvido = async (linha: ErroLinha) => {
     const proximo = linha.resolvido_em === null;
+    setErroDaLinha(null);
     // Otimista: a lista some/volta na hora, e recarrega em seguida para
-    // confirmar. Se o PATCH falhar, o recarregamento desfaz visualmente.
+    // confirmar.
     setErros((atual) =>
       atual.map((e) =>
         e.id === linha.id ? { ...e, resolvido_em: proximo ? new Date().toISOString() : null } : e
       )
     );
-    await fetch('/api/admin/erros', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: linha.id, resolvido: proximo }),
-    }).catch(() => {});
+    try {
+      const res = await fetch('/api/admin/erros', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: linha.id, resolvido: proximo }),
+      });
+      if (!res.ok) {
+        const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(corpo?.error || 'O servidor recusou a alteração.');
+      }
+    } catch (e) {
+      // Antes a falha era engolida em silêncio: o PATCH falhava, o admin não
+      // sabia, e o erro voltava na próxima carga como se nada tivesse sido
+      // tentado. Agora a linha volta ao estado real (a marca otimista era
+      // mentira) e diz por quê. Sem recarregar: recarregar traria o estado do
+      // servidor, que é o mesmo que acabamos de restaurar, e piscaria a lista
+      // à toa.
+      setErros((atual) =>
+        atual.map((x) => (x.id === linha.id ? { ...x, resolvido_em: linha.resolvido_em } : x))
+      );
+      setErroDaLinha({
+        id: linha.id,
+        msg:
+          e instanceof TypeError
+            ? 'Sem conexão — não foi possível salvar. Tente de novo.'
+            : e instanceof Error
+              ? e.message
+              : 'Não foi possível salvar. Tente de novo.',
+      });
+      return;
+    }
     recarregar();
   };
 
@@ -200,6 +233,15 @@ export const ErrosManager: React.FC = () => {
                 {e.resolvido_em ? <AlertOctagon size={15} /> : <CheckCircle2 size={15} />}
               </button>
             </div>
+
+            {erroDaLinha?.id === e.id && (
+              <p
+                role="alert"
+                className="mt-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[11px] font-bold text-rose-300"
+              >
+                {erroDaLinha.msg}
+              </p>
+            )}
 
             {aberto === e.id && (
               <div className="mt-3 pt-3 border-t border-slate-800 space-y-2">

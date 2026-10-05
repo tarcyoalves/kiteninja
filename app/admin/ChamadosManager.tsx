@@ -23,30 +23,46 @@ const STATUS_STYLE: Record<StatusChamado, string> = {
 };
 
 /** Uma linha da lista — estado próprio de parecer, porque digitar não pode
- * disparar uma requisição a cada tecla (só o botão "Salvar parecer" salva). */
+ * disparar uma requisição a cada tecla (só o botão "Salvar parecer" salva).
+ *
+ * As duas ações devolvem a mensagem de erro (ou `null` se deu certo), e a linha
+ * a mostra DENTRO do próprio cartão. Antes o erro ia para o topo da lista: no
+ * celular, com o cartão de baixo tocado, ele ficava fora da tela. */
 function LinhaChamado({
   chamado,
   onMudarStatus,
   onSalvarParecer,
 }: {
   chamado: ChamadoAdmin;
-  onMudarStatus: (id: string, status: StatusChamado) => void;
-  onSalvarParecer: (id: string, parecer: string) => Promise<void>;
+  onMudarStatus: (id: string, status: StatusChamado) => Promise<string | null>;
+  onSalvarParecer: (id: string, parecer: string) => Promise<string | null>;
 }) {
   const [parecer, setParecer] = useState(chamado.parecer ?? '');
   const [salvando, setSalvando] = useState(false);
   const [salvo, setSalvo] = useState(false);
+  const [erroLinha, setErroLinha] = useState<string | null>(null);
 
   const salvar = async () => {
     setSalvando(true);
     setSalvo(false);
+    setErroLinha(null);
     try {
-      await onSalvarParecer(chamado.id, parecer.trim());
+      const erro = await onSalvarParecer(chamado.id, parecer.trim());
+      if (erro) {
+        setErroLinha(erro);
+        return;
+      }
       setSalvo(true);
       setTimeout(() => setSalvo(false), 2500);
     } finally {
       setSalvando(false);
     }
+  };
+
+  const mudarStatus = async (status: StatusChamado) => {
+    setErroLinha(null);
+    const erro = await onMudarStatus(chamado.id, status);
+    if (erro) setErroLinha(erro);
   };
 
   return (
@@ -103,7 +119,7 @@ function LinhaChamado({
         <select
           id={`status-${chamado.id}`}
           value={chamado.status}
-          onChange={(e) => onMudarStatus(chamado.id, e.target.value as StatusChamado)}
+          onChange={(e) => void mudarStatus(e.target.value as StatusChamado)}
           className={`flex-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-black uppercase bg-[#1E293B] ${STATUS_STYLE[chamado.status]}`}
         >
           {STATUS_OPCOES.filter((o) => o.value !== 'todos').map((o) => (
@@ -137,6 +153,12 @@ function LinhaChamado({
           {salvo ? 'Salvo!' : 'Salvar parecer'}
         </button>
       </div>
+
+      {erroLinha && (
+        <p role="alert" className="p-2.5 rounded-lg bg-rose-500/15 border border-rose-500/40 text-rose-300 text-xs font-semibold">
+          {erroLinha}
+        </p>
+      )}
     </article>
   );
 }
@@ -180,34 +202,55 @@ export function ChamadosManager() {
     };
   }, [filtro]);
 
-  const mudarStatus = async (id: string, status: StatusChamado) => {
-    // Otimista: a lista reage na hora; reverte se o servidor recusar.
-    const anterior = chamados;
+  /** Mensagem do servidor quando há, senão a genérica da ação. */
+  const motivoDaFalha = async (res: Response, generica: string): Promise<string> => {
+    const corpo = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    return typeof corpo?.error === 'string' && corpo.error ? corpo.error : generica;
+  };
+
+  const mudarStatus = async (id: string, status: StatusChamado): Promise<string | null> => {
+    // Otimista: a lista reage na hora; reverte se o servidor recusar. Reverte
+    // só ESTA linha: voltar ao `chamados` capturado desfaria também uma troca
+    // de outro cartão que tenha dado certo enquanto esta estava em voo.
+    const statusAnterior = chamados.find((c) => c.id === id)?.status;
     setChamados((prev) => prev.map((c) => (c.id === id ? { ...c, status } : c)));
+    const reverter = () => {
+      if (statusAnterior) {
+        setChamados((prev) => prev.map((c) => (c.id === id ? { ...c, status: statusAnterior } : c)));
+      }
+    };
     try {
       const res = await fetch(`/api/admin/chamados/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        reverter();
+        return await motivoDaFalha(res, 'Não foi possível salvar o status. Tente de novo.');
+      }
+      return null;
     } catch {
-      setChamados(anterior);
-      setErro('Não foi possível salvar o status. Tente de novo.');
+      reverter();
+      return 'Sem conexão — o status não foi salvo. Tente de novo.';
     }
   };
 
-  const salvarParecer = async (id: string, parecer: string) => {
-    const res = await fetch(`/api/admin/chamados/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parecer }),
-    });
-    if (!res.ok) {
-      setErro('Não foi possível salvar o parecer. Tente de novo.');
-      return;
+  const salvarParecer = async (id: string, parecer: string): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/admin/chamados/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parecer }),
+      });
+      if (!res.ok) return await motivoDaFalha(res, 'Não foi possível salvar o parecer. Tente de novo.');
+    } catch {
+      // Antes a exceção de rede escapava daqui sem ninguém para pegá-la: o
+      // botão voltava ao normal e o admin achava que tinha salvo.
+      return 'Sem conexão — o parecer não foi salvo. Tente de novo.';
     }
     setChamados((prev) => prev.map((c) => (c.id === id ? { ...c, parecer } : c)));
+    return null;
   };
 
   return (

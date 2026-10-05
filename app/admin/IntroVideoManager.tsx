@@ -31,10 +31,58 @@ import {
   type ModoRodizio,
 } from '../../lib/introVideo';
 
+/**
+ * Onde a falha aparece. Cada ação mostra o erro PERTO de onde o admin tocou:
+ *
+ *  - 'carga'    — ler a playlist (acima da galeria);
+ *  - 'modo'     — trocar rodízio/aleatório (logo abaixo do seletor);
+ *  - 'novo'     — enviar/cadastrar vídeo (no fim do formulário de inclusão);
+ *  - 'edicao'   — salvar o novo corte (dentro do painel de edição);
+ *  - `video:<id>` — ativar, desativar ou excluir (dentro do cartão do vídeo).
+ *
+ * Antes havia um único banner no TOPO da aba. Com a galeria comprida no
+ * celular, quem tocava "Excluir" num cartão de baixo ou "Adicionar" no fim da
+ * página não via nada acontecer: a mensagem estava fora da tela, rolada para
+ * cima. Mesma lição do botão "Nova senha" (docs/REDEFINIR-SENHA-NAO-PRESTOU.md).
+ */
+interface ErroLocal {
+  onde: string;
+  msg: string;
+}
+
+/** Id estável de um vídeo (o mesmo usado nas chamadas à rota). */
+const idDoVideo = (v: IntroVideo) => v.id || v.url;
+
+/** Mensagem do servidor quando há; senão a genérica da ação. */
+async function motivoDaResposta(res: Response, generica: string): Promise<string> {
+  const corpo = (await res.json().catch(() => null)) as { error?: unknown } | null;
+  return typeof corpo?.error === 'string' && corpo.error ? corpo.error : generica;
+}
+
+/** `fetch` sem rede lança TypeError com texto em inglês ("Failed to fetch"). */
+function mensagemDe(e: unknown, generica: string): string {
+  if (e instanceof TypeError) return 'Sem conexão. Tente de novo.';
+  return e instanceof Error && e.message ? e.message : generica;
+}
+
+function CaixaErro({ msg }: { msg: string | null }) {
+  if (!msg) return null;
+  return (
+    <div
+      role="alert"
+      className="flex items-center gap-2 p-3.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs font-medium"
+    >
+      <AlertTriangle size={16} className="text-red-400 shrink-0" />
+      <span>{msg}</span>
+    </div>
+  );
+}
+
 export const IntroVideoManager: React.FC = () => {
   const [config, setConfig] = useState<IntroVideoConfig>({ modo: 'rodizio', videos: [] });
   const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
+  const [erro, setErro] = useState<ErroLocal | null>(null);
+  const erroEm = (onde: string) => (erro?.onde === onde ? erro.msg : null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   // Modo de inclusão: 'arquivo' | 'url'
@@ -80,9 +128,11 @@ export const IntroVideoManager: React.FC = () => {
       } else if (data.video) {
         setConfig({ modo: 'rodizio', videos: [data.video] });
       }
-      setErro(null);
+      // Só limpa o erro de CARGA: um erro de ação (ex.: excluir) não some
+      // porque a releitura da lista logo depois funcionou.
+      setErro((atual) => (atual?.onde === 'carga' ? null : atual));
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao carregar.');
+      setErro({ onde: 'carga', msg: mensagemDe(e, 'Falha ao carregar.') });
     } finally {
       setCarregando(false);
     }
@@ -93,15 +143,16 @@ export const IntroVideoManager: React.FC = () => {
     if (!f) return;
 
     if (!TIPOS_VIDEO_ACEITOS.includes(f.type as (typeof TIPOS_VIDEO_ACEITOS)[number])) {
-      setErro(`Formato "${f.type || 'desconhecido'}" não suportado. Use MP4, WebM ou MOV.`);
+      setErro({ onde: 'novo', msg: `Formato "${f.type || 'desconhecido'}" não suportado. Use MP4, WebM ou MOV.` });
       return;
     }
     if (f.size > MAX_BYTES_VIDEO) {
-      setErro(
-        `Vídeo de ${(f.size / 1024 / 1024).toFixed(1)}MB excede o limite de ${
+      setErro({
+        onde: 'novo',
+        msg: `Vídeo de ${(f.size / 1024 / 1024).toFixed(1)}MB excede o limite de ${
           MAX_BYTES_VIDEO / 1024 / 1024
-        }MB.`
-      );
+        }MB.`,
+      });
       return;
     }
 
@@ -199,8 +250,7 @@ export const IntroVideoManager: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...payload, ativo: true }),
     });
-    const data = (await res.json()) as { error?: string };
-    if (!res.ok) throw new Error(data.error || 'Falha ao cadastrar vídeo.');
+    if (!res.ok) throw new Error(await motivoDaResposta(res, 'Falha ao cadastrar vídeo.'));
   }
 
   // Upload com progresso: o arquivo vai DIRETO do navegador para o Vercel
@@ -212,7 +262,7 @@ export const IntroVideoManager: React.FC = () => {
 
     const problema = erroDoTrecho(trechoNovo.inicioSeg, trechoNovo.fimSeg);
     if (problema) {
-      setErro(problema);
+      setErro({ onde: 'novo', msg: problema });
       return;
     }
 
@@ -251,17 +301,18 @@ export const IntroVideoManager: React.FC = () => {
       if (inputRef.current) inputRef.current.value = '';
       await carregar();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Falha no envio.';
+      const msg = mensagemDe(e, 'Falha no envio.');
       // upload() do @vercel/blob/client não repassa o corpo JSON de erro da
       // nossa rota quando a emissão do token falha — só um erro genérico.
       // Isso acontece sobretudo quando falta BLOB_READ_WRITE_TOKEN (a rota
       // devolve 503 com mensagem clara, mas essa mensagem não chega até
       // aqui), então damos uma pista melhor que "Failed to..." cru.
-      setErro(
-        /retrieve the client token/i.test(msg)
+      setErro({
+        onde: 'novo',
+        msg: /retrieve the client token/i.test(msg)
           ? 'Falha ao autorizar o envio. Confira se sua sessão de admin ainda está ativa e se o armazenamento de vídeo (Vercel Blob) está configurado no ambiente.'
-          : msg
-      );
+          : msg,
+      });
     } finally {
       setEnviando(false);
       setProgresso(0);
@@ -272,13 +323,13 @@ export const IntroVideoManager: React.FC = () => {
   async function cadastrarUrlDireta() {
     const url = urlDireta.trim();
     if (!url.startsWith('https://')) {
-      setErro('A URL deve começar com https://');
+      setErro({ onde: 'novo', msg: 'A URL deve começar com https://' });
       return;
     }
 
     const problema = erroDoTrecho(trechoNovo.inicioSeg, trechoNovo.fimSeg);
     if (problema) {
-      setErro(problema);
+      setErro({ onde: 'novo', msg: problema });
       return;
     }
 
@@ -299,7 +350,7 @@ export const IntroVideoManager: React.FC = () => {
       setTituloVideo('');
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao cadastrar.');
+      setErro({ onde: 'novo', msg: mensagemDe(e, 'Falha ao cadastrar.') });
     } finally {
       setEnviando(false);
     }
@@ -314,11 +365,11 @@ export const IntroVideoManager: React.FC = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ modo: novoModo }),
       });
-      if (!res.ok) throw new Error('Falha ao atualizar modo.');
+      if (!res.ok) throw new Error(await motivoDaResposta(res, 'Falha ao atualizar modo.'));
       setConfig((prev) => ({ ...prev, modo: novoModo }));
       setAviso(`Modo alterado para ${novoModo === 'rodizio' ? 'Rodízio Sequencial' : novoModo === 'aleatorio' ? 'Aleatório' : 'Único'}.`);
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao mudar modo.');
+      setErro({ onde: 'modo', msg: mensagemDe(e, 'Falha ao mudar modo.') });
     }
   }
 
@@ -329,12 +380,12 @@ export const IntroVideoManager: React.FC = () => {
       const res = await fetch('/api/admin/intro-video', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: v.id || v.url, ativo: !v.ativo }),
+        body: JSON.stringify({ id: idDoVideo(v), ativo: !v.ativo }),
       });
-      if (!res.ok) throw new Error('Falha ao alternar status.');
+      if (!res.ok) throw new Error(await motivoDaResposta(res, 'Falha ao alternar status.'));
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao alterar.');
+      setErro({ onde: `video:${idDoVideo(v)}`, msg: mensagemDe(e, 'Falha ao alterar.') });
     }
   }
 
@@ -343,7 +394,7 @@ export const IntroVideoManager: React.FC = () => {
     if (!editandoVideo) return;
     const problema = erroDoTrecho(trechoEdicao.inicioSeg, trechoEdicao.fimSeg);
     if (problema) {
-      setErro(problema);
+      setErro({ onde: 'edicao', msg: problema });
       return;
     }
 
@@ -354,17 +405,17 @@ export const IntroVideoManager: React.FC = () => {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: editandoVideo.id || editandoVideo.url,
+          id: idDoVideo(editandoVideo),
           inicioSeg: trechoEdicao.inicioSeg,
           fimSeg: trechoEdicao.fimSeg,
         }),
       });
-      if (!res.ok) throw new Error('Falha ao atualizar corte.');
+      if (!res.ok) throw new Error(await motivoDaResposta(res, 'Falha ao atualizar corte.'));
       setAviso('Corte do vídeo atualizado com sucesso!');
       setEditandoVideo(null);
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao salvar.');
+      setErro({ onde: 'edicao', msg: mensagemDe(e, 'Falha ao salvar.') });
     } finally {
       setSalvandoEdicao(false);
     }
@@ -378,16 +429,16 @@ export const IntroVideoManager: React.FC = () => {
 
     setErro(null);
     try {
-      const res = await fetch(`/api/admin/intro-video?id=${encodeURIComponent(v.id || v.url)}`, {
+      const res = await fetch(`/api/admin/intro-video?id=${encodeURIComponent(idDoVideo(v))}`, {
         method: 'DELETE',
       });
-      if (!res.ok) throw new Error('Falha ao excluir vídeo.');
+      if (!res.ok) throw new Error(await motivoDaResposta(res, 'Falha ao excluir vídeo.'));
       setAviso('Vídeo removido da playlist.');
       if (editandoVideo?.id === v.id) setEditandoVideo(null);
       if (previewId === v.id) setPreviewId(null);
       await carregar();
     } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Falha ao excluir.');
+      setErro({ onde: `video:${idDoVideo(v)}`, msg: mensagemDe(e, 'Falha ao excluir.') });
     }
   }
 
@@ -436,14 +487,10 @@ export const IntroVideoManager: React.FC = () => {
         </div>
       </div>
 
-      {/* Alertas */}
-      {erro && (
-        <div className="flex items-center gap-2 p-3.5 bg-red-950/40 border border-red-500/40 rounded-xl text-red-300 text-xs font-medium">
-          <AlertTriangle size={16} className="text-red-400 shrink-0" />
-          <span>{erro}</span>
-        </div>
-      )}
+      <CaixaErro msg={erroEm('modo')} />
 
+      {/* Os erros NÃO ficam aqui no topo: cada ação mostra o seu perto de onde
+          foi tocada (ver `ErroLocal`). Só o aviso de sucesso fica aqui. */}
       {aviso && (
         <div className="flex items-center gap-2 p-3.5 bg-emerald-950/40 border border-emerald-500/40 rounded-xl text-emerald-300 text-xs font-medium">
           <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
@@ -461,6 +508,8 @@ export const IntroVideoManager: React.FC = () => {
             </span>
           </h3>
         </div>
+
+        <CaixaErro msg={erroEm('carga')} />
 
         {carregando ? (
           <div className="flex items-center justify-center p-8 bg-slate-900/40 rounded-2xl border border-slate-800">
@@ -575,6 +624,8 @@ export const IntroVideoManager: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                <CaixaErro msg={erroEm(`video:${idDoVideo(v)}`)} />
               </div>
             ))}
           </div>
@@ -603,6 +654,8 @@ export const IntroVideoManager: React.FC = () => {
             onChange={(novo) => setTrechoEdicao(novo)}
             maxSeg={MAX_TRECHO_SEG}
           />
+
+          <CaixaErro msg={erroEm('edicao')} />
 
           <div className="flex justify-end gap-2 pt-2">
             <button
@@ -773,6 +826,9 @@ export const IntroVideoManager: React.FC = () => {
             )}
           </div>
         )}
+
+        {/* Fim do formulário, logo abaixo dos botões de enviar. */}
+        <CaixaErro msg={erroEm('novo')} />
       </div>
     </div>
   );
