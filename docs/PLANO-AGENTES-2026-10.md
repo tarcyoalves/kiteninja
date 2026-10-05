@@ -26,25 +26,25 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 
 ## Painel
 
-| ID | Prio | Tarefa | Esforço | Quem |
-|---|---|---|---|---|
-| T01 | 🔴 P0 | Escalada do SOS roda a cada 3–6 h, não a cada 5 min | M | agente + dono |
-| T02 | 🔴 P0 | CI vermelho: job Android quebrou com a depreciação do Node 20 | P | agente |
-| T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** |
-| T04 | 🟠 P1 | Posições do link de apoio em terra guardadas para sempre | P | agente |
-| T05 | 🟠 P1 | Nenhum cabeçalho de segurança HTTP | P | agente |
-| T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente |
-| T07 | 🟠 P1 | Ações do admin não deixam rastro (`audit_logs` só no SOS) | M | agente |
-| T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente |
-| T09 | 🟡 P2 | Painel admin: polling de 12 s que não pausa, apaga erros e mantém o banco acordado | P | agente |
-| T10 | 🟡 P2 | Painel admin: falhas engolidas em silêncio (Erros, Convites) | P | agente |
-| T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente |
-| T12 | 🟡 P2 | Sessões expiradas nunca são apagadas | P | agente |
-| T13 | 🔵 P3 | Trocar guardas de texto por testes de comportamento nos fluxos críticos | M | agente |
-| T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente |
-| T15 | 🔵 P3 | `data/mockSpots` é o catálogo real — nome engana | P | agente |
-| T16 | 🔵 P3 | Domínio `app.kiteninja.ct.ws` pendente de verificação desde a criação | P | **dono** |
-| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 |
+| ID | Prio | Tarefa | Esforço | Quem | Estado |
+|---|---|---|---|---|---|
+| T01 | 🔴 P0 | Escalada do SOS roda a cada 3–6 h, não a cada 5 min | M | agente + dono | ✅ `a928a56` — T01b: ver aviso do Neon abaixo |
+| T02 | 🔴 P0 | CI vermelho: job Android quebrou com a depreciação do Node 20 | P | agente | ⏳ `5ee5317` — CI ainda não validou (falha de runner do GitHub) |
+| T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** | ⬜ dono |
+| T04 | 🟠 P1 | Posições do link de apoio em terra guardadas para sempre | P | agente | ✅ `994ea33` |
+| T05 | 🟠 P1 | Nenhum cabeçalho de segurança HTTP | P | agente | ✅ `6343780` + `305f78b` |
+| T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente | ⬜ |
+| T07 | 🟠 P1 | Ações do admin não deixam rastro (`audit_logs` só no SOS) | M | agente | ✅ `e907b17` |
+| T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente | ⬜ dono primeiro |
+| T09 | 🟡 P2 | Painel admin: polling de 12 s que não pausa, apaga erros e mantém o banco acordado | P | agente | ✅ `3bc716d` |
+| T10 | 🟡 P2 | Painel admin: falhas engolidas em silêncio (Erros, Convites) | P | agente | ✅ `ee56790` |
+| T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente | ⬜ dono decide |
+| T12 | 🟡 P2 | Sessões expiradas nunca são apagadas | P | agente | ✅ `e8fbfbc` |
+| T13 | 🔵 P3 | Trocar guardas de texto por testes de comportamento nos fluxos críticos | M | agente | ⬜ |
+| T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ⬜ |
+| T15 | 🔵 P3 | `data/mockSpots` é o catálogo real — nome engana | P | agente | ✅ `91e1f42` |
+| T16 | 🔵 P3 | Domínio `app.kiteninja.ct.ws` pendente de verificação desde a criação | P | **dono** | ⬜ dono |
+| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⬜ |
 
 Prioridade: 🔴 alguém pode se machucar ou a casa está pegando fogo ·
 🟠 segurança/privacidade/dado · 🟡 o dono ou o velejador sentem ·
@@ -215,8 +215,16 @@ adapte os nomes de coluna. Com isso, sempre que houver alguém com o app aberto
 a escalada anda — inclusive quem está esperando socorro, que é justamente
 quem tem o app aberto.
 
+> ⚠️ **Correção de 05/10, depois da execução:** o Agente A conferiu os limites
+> do Neon gratuito — o banco hiberna após 5 min parado e a computação gratuita é
+> limitada por mês. Um agendador a cada 1 minuto (ou qualquer intervalo abaixo
+> de 5 min) mantém o banco acordado o tempo todo e esgota a cota no meio do
+> mês, derrubando o app inteiro, SOS incluso. **Não use 1 minuto.** O T01a
+> (carona no polling) já cobre o caso de alguém com o app aberto, sem custo
+> extra. As opções, com as contas, estão em `docs/CRON-EXTERNO-SOS.md`.
+
 **T01b — agendador externo (dono, com o agente guiando).** cron-job.org
-(gratuito, intervalo de 1 minuto) chamando
+(gratuito; intervalo: ver o aviso acima) chamando
 `https://kiteninja.vercel.app/api/cron/sos-escalada` e
 `.../api/cron/downwind-silencio` com o cabeçalho que a rota exige (leia
 `app/api/cron/sos-escalada/route.ts` para o nome exato — é o `CRON_SECRET`).

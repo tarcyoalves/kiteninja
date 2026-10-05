@@ -50,3 +50,48 @@ agente. Regra do dono: *"sempre coloque no histórico de progresso ou diário"*.
   exceto o job Android (T02 — ambiente, não código).
 - **Pendente com o dono:** T03 (apagar projeto Vercel `kiteninja1`), T16
   (domínio), T08 (conta de e-mail), T11 (decisão de desenho do downwind).
+
+## 2026-10-05 — Três agentes Sonnet em paralelo: SOS, dados/plataforma, painel admin
+**Quem:** 3 agentes (Sonnet), cada um num worktree isolado; integração por
+Claude (Opus, orquestrador) · **Tarefas:** T01, T02, T04, T05, T07, T09, T10, T12, T15
+**Commits:** `5ee5317` (T02), `a928a56` (T01), `994ea33` (T04), `e8fbfbc` (T12),
+`6343780` (T05), `91e1f42` (T15), `305f78b` (integração A+B), `3bc716d` (T09),
+`ee56790` (T10), `e907b17` (T07)
+
+Entradas detalhadas de cada agente:
+[T01](diario/2026-10-05-T01.md) ·
+[T04/T05/T12/T15](diario/2026-10-05-T04-T05-T12-T15.md) ·
+[T07/T09/T10](diario/2026-10-05-T07-T09-T10.md)
+
+- **Como foi feito sem quebrar nada:** cada agente com lista fechada de arquivos,
+  sem push. Integração por cherry-pick, **um agente por vez**, com verificação
+  completa depois de cada um; duas contraprovas refeitas pelo orquestrador (trava
+  do SOS; token de senha fora da auditoria, inclusive escondido em campo de nome
+  inocente) — ambas vermelhas como deviam.
+- **T01 — SOS:** a escalada pega carona no polling de `/api/sos/active` (no máximo
+  1×/min no app inteiro, trava em memória + trava atômica no banco, sem atrasar a
+  resposta), o cron também anota, e o painel mostra "última varredura há X min".
+- **T04/T12:** posições do link de apoio apagadas 24 h após o link vencer; sessões
+  de login vencidas apagadas. Uma vez por hora por instância, só pegando carona.
+- **T05:** 5 cabeçalhos de segurança. Na integração saíram `camera=()` e
+  `microphone=()` — o próprio agente registrou não ter verificado o envio de foto
+  num Android real; o ganho era quase nenhum e o risco era quebrar foto.
+- **T07/T09/T10 — painel admin:** toda ação que muda algo fica registrada (aba
+  Auditoria; token e URL de senha nunca entram); lista de velejadores atualiza a
+  cada 60 s e só com a aba visível (antes: 12 s, sempre); nenhuma falha silenciosa.
+- **T15:** `data/mockSpots.ts` → `data/spotsCatalogo.ts`.
+- **T02 — CI Android:** sem a action de terceiro; runners fixos em ubuntu-24.04.
+  **Ainda não validado:** os runs depois do push foram cancelados com "The job was
+  not acquired by Runner of type hosted" — falha de capacidade do GitHub (Lint e
+  SQL rodaram no mesmo run). Próximo push na `main` valida.
+- **Conflito de integração resolvido:** `AdminDashboard.tsx` (A e C acrescentaram
+  componentes) e um teste do A que passou a contar o trabalho adiado do login do B.
+- **Verificação final:** 1167 testes, tsc, eslint 0 erros, verify-sql 319/0,
+  verify-sos 59/0, build exit 0.
+- **Planos gratuitos:** nenhum polling novo, nenhum cron novo, nenhuma
+  dependência nova. Painel admin: de 7.200 recargas/dia com a aba esquecida aberta
+  para zero. **Correção importante ao plano:** agendador externo a cada 1 min
+  esgotaria a computação gratuita do Neon (ver T01b no plano).
+- **Pendente com o dono:** decidir o agendador do SOS (recomendação: só a carona,
+  e olhar o consumo no painel do Neon na primeira semana); T03; T08; T11; T16;
+  testar num Android real o envio de foto e o painel novo.
