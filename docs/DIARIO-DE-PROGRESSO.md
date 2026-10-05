@@ -95,3 +95,21 @@ Entradas detalhadas de cada agente:
 - **Pendente com o dono:** decidir o agendador do SOS (recomendação: só a carona,
   e olhar o consumo no painel do Neon na primeira semana); T03; T08; T11; T16;
   testar num Android real o envio de foto e o painel novo.
+
+## 2026-10-05 (noite) — Produção no ar; GitHub Actions fora do ar
+**Quem:** Claude (Opus, orquestrador) · **Tarefa:** acompanhamento pós-integração
+
+- **Produção:** `40787d1` (todo o trabalho de hoje) está READY na Vercel, no
+  projeto `kiteninja`, alvo produção. A carona da escalada do SOS (T01) está no ar.
+- **GitHub Actions em "major outage"** (githubstatus.com, ~20h45 UTC). Os runs do
+  CI ficam na fila e os jobs são cancelados com "The job was not acquired by Runner
+  of type hosted". No run de `40787d1`, Testes e Lint passaram; TypeScript e SQL
+  foram cancelados pela instabilidade; o job Android não chegou a rodar.
+  **T02 continua sem validação** — não por falha do código.
+- **A varredura do SOS pelo GitHub Actions também parou** (última às 17:04 UTC),
+  pelo mesmo motivo. É exatamente o cenário que a T01 cobre: com a carona no
+  polling, a escalada não depende do GitHub enquanto alguém tiver o app aberto.
+- **Para o dono, quando o GitHub voltar:** abrir o último run do CI em
+  github.com → Actions e clicar em "Re-run all jobs" para validar a T02 (este
+  ambiente não tem permissão para re-executar). Ou simplesmente o próximo push na
+  `main` valida.
