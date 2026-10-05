@@ -1,11 +1,12 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
+import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 
 /** Revoga um convite ainda não usado. */
-export async function DELETE(_request: Request, ctx: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await ctx.params;
 
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
@@ -21,6 +22,8 @@ export async function DELETE(_request: Request, ctx: { params: Promise<{ id: str
     if (rows.length === 0) {
       throw new HttpError(404, 'Convite não encontrado, já usado ou já revogado.');
     }
+
+    await registrarAcaoAdmin(admin.id, 'admin.convite.revogado', id, {}, request);
     return { ok: true };
   });
 }

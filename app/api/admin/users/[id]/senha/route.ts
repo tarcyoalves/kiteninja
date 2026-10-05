@@ -6,6 +6,7 @@ import {
   requireAdmin,
 } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await ctx.params;
     if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, 'ID de usuário inválido.');
 
@@ -68,6 +69,18 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
      * justamente o que não deveria continuar de pé.
      */
     await invalidateAllUserSessions(id);
+
+    /*
+     * Auditoria: ficou registrado QUE o link foi gerado, para quem e por quem
+     * — nunca o token nem a URL. Um link de uso único é, enquanto vale, a
+     * senha da conta; o log não pode virar um lugar onde ele fica guardado.
+     * (`registrarAcaoAdmin` ainda derruba por conta própria qualquer chave ou
+     * valor com cara de segredo, mas o certo é não passar.)
+     */
+    await registrarAcaoAdmin(admin.id, 'admin.usuario.link_senha_gerado', id, {
+      validoPorHoras: 2,
+      sessoesEncerradas: true,
+    }, request);
 
     return {
       nome: String(u.name),

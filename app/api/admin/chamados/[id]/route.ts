@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
 import { oneOf, str } from '@/lib/validation';
+import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 import type { StatusChamado } from '@/types';
 
 /**
@@ -10,7 +11,7 @@ import type { StatusChamado } from '@/types';
  */
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const { id } = await ctx.params;
 
     if (!/^[0-9a-f-]{36}$/i.test(id)) {
@@ -42,17 +43,33 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       throw new HttpError(400, 'Nada para atualizar.');
     }
 
+    // O FROM traz o status de ANTES do UPDATE, para a auditoria dizer "de
+    // novo para aprovado" sem uma segunda consulta (ver users/[id]/route.ts).
     const rows = await sql`
       UPDATE chamados
-      SET status = COALESCE(${status ?? null}, status),
-          parecer = COALESCE(${parecer}, parecer),
+      SET status = COALESCE(${status ?? null}, chamados.status),
+          parecer = COALESCE(${parecer}, chamados.parecer),
           atualizado_em = NOW()
-      WHERE id = ${id}
-      RETURNING id
+      FROM (SELECT id AS id_anterior, status AS status_anterior FROM chamados WHERE id = ${id}) anterior
+      WHERE chamados.id = anterior.id_anterior
+      RETURNING chamados.id, anterior.status_anterior
     `;
 
     if (rows.length === 0) {
       throw new HttpError(404, 'Chamado não encontrado.');
+    }
+
+    const statusAnterior = (rows[0] as Record<string, unknown>).status_anterior;
+    if (status !== undefined && status !== statusAnterior) {
+      await registrarAcaoAdmin(admin.id, 'admin.chamado.status_alterado', id, {
+        de: statusAnterior,
+        para: status,
+      }, request);
+    }
+    // O texto do parecer não vai para o log: é opinião sobre um chamado de
+    // outra pessoa, e o que interessa auditar é que o admin mexeu nele.
+    if (parecer) {
+      await registrarAcaoAdmin(admin.id, 'admin.chamado.parecer_alterado', id, {}, request);
     }
 
     return { ok: true };

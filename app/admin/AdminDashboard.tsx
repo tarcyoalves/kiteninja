@@ -2,16 +2,17 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning, AlertOctagon } from 'lucide-react';
+import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning, AlertOctagon, History } from 'lucide-react';
 import { InviteManager } from './InviteManager';
 import { UserManager } from './UserManager';
 import { IntroVideoManager } from './IntroVideoManager';
 import { ChamadosManager } from './ChamadosManager';
 import { ErrosManager } from './ErrosManager';
 import { SaudeSos } from './SaudeSos';
+import { AuditoriaManager } from './AuditoriaManager';
 
 export function AdminDashboard({ adminName }: { adminName: string }) {
-  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados' | 'erros'>('convites');
+  const [tab, setTab] = useState<'convites' | 'usuarios' | 'abertura' | 'chamados' | 'erros' | 'auditoria'>('convites');
 
   return (
     // O app inteiro herda `body { overflow: hidden }` (globals.css) pensado para o
@@ -137,6 +138,18 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
                 <MessageSquareWarning size={14} className="shrink-0" />
                 <span className="truncate">Chamados</span>
               </button>
+
+              <button
+                onClick={() => setTab('auditoria')}
+                className={`px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition-all min-w-0 ${
+                  tab === 'auditoria'
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/25'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <History size={14} className="shrink-0" />
+                <span className="truncate">Auditoria</span>
+              </button>
             </div>
           </div>
         </div>
@@ -149,6 +162,7 @@ export function AdminDashboard({ adminName }: { adminName: string }) {
         {tab === 'abertura' && <IntroVideoManager />}
         {tab === 'chamados' && <ChamadosManager />}
         {tab === 'erros' && <ErrosManager />}
+        {tab === 'auditoria' && <AuditoriaManager />}
       </div>
       </main>
     </div>

@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { createInvite, requireAdmin } from '@/lib/auth';
 import { str } from '@/lib/validation';
+import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 
 function appOrigin(request: Request): string {
   // Em produção usamos a origem configurada; em preview/local caímos no host da
@@ -65,6 +66,15 @@ export async function POST(request: Request) {
       email: emailRaw || undefined,
       note: note || undefined,
     });
+
+    // `createInvite` não devolve o id do convite, então o alvo fica sem id. O
+    // e-mail e a anotação NÃO vão para o log (dado pessoal sem necessidade):
+    // só se havia restrição, que é o que importa para auditar.
+    await registrarAcaoAdmin(admin.id, 'admin.convite.criado', null, {
+      restritoAoEmail: Boolean(emailRaw),
+      comAnotacao: Boolean(note),
+      expiraEm: expiresAt.toISOString(),
+    }, request);
 
     return {
       inviteUrl: `${appOrigin(request)}/convite/${token}`,

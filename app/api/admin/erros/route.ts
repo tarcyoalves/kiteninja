@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireAdmin } from '@/lib/auth';
+import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 
 /**
  * Lista os erros de produção para o painel.
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
  */
 export async function PATCH(request: Request) {
   return handle(async () => {
-    await requireAdmin();
+    const admin = await requireAdmin();
     const corpo = (await readJson(request)) as Record<string, unknown> | null;
 
     const id = Number(corpo?.id);
@@ -69,6 +70,10 @@ export async function PATCH(request: Request) {
       : await sql`UPDATE erros_registrados SET resolvido_em = NULL WHERE id = ${id} RETURNING id`;
 
     if (linhas.length === 0) throw new HttpError(404, 'Erro não encontrado.');
+
+    // Só o id do erro vai para o log: a mensagem e o stack podem trazer dado
+    // de quem sofreu o erro.
+    await registrarAcaoAdmin(admin.id, resolvido ? 'admin.erro.resolvido' : 'admin.erro.reaberto', id, {}, request);
     return { ok: true };
   });
 }
