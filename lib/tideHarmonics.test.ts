@@ -6,7 +6,7 @@ import {
   DISTANCIA_MAX_ESTACAO_KM,
   ESTACOES_MAREGRAFICAS_CHM,
 } from './tideHarmonics';
-import { INITIAL_SPOTS } from '../data/mockSpots';
+import { INITIAL_SPOTS } from '../data/spotsCatalogo';
 
 function distanciaKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const rad = (v: number) => (v * Math.PI) / 180;

@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { neon } from '@neondatabase/serverless';
 import bcrypt from 'bcryptjs';
 import { loadEnv } from './load-env';
-import { INITIAL_SPOTS } from '../data/mockSpots';
+import { INITIAL_SPOTS } from '../data/spotsCatalogo';
 import { INITIAL_EVENTS } from '../data/mockFeed';
 
 loadEnv();

@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation } from '../types';
 import { useAuth } from './AuthContext';
-import { INITIAL_SPOTS } from '../data/mockSpots';
+import { INITIAL_SPOTS } from '../data/spotsCatalogo';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
 import { limparTrilhaSalva } from '../lib/useTrilhaSessao';
 import { usePushNotifications } from '../lib/usePushNotifications';

@@ -10,7 +10,7 @@
  * downwinds do Rio para achar o da praia dele.
  *
  * A UF vem de `spots.state`, que já é sigla de duas letras em todos os spots
- * catalogados (`data/mockSpots.ts`) — então o evento herda a UF do spot de
+ * catalogados (`data/spotsCatalogo.ts`) — então o evento herda a UF do spot de
  * saída na criação, sem ninguém digitar nada. Guardar em `events.uf` em vez
  * de derivar por JOIN a cada consulta é o que permite indexar o filtro; um
  * evento pode ter spot removido (`ON DELETE SET NULL`) e ainda assim precisa

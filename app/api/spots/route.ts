@@ -2,7 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { getSessionUser } from '@/lib/auth';
 import { getManySpotsWeather } from '@/lib/weather';
-import { INITIAL_SPOTS } from '@/data/mockSpots';
+import { INITIAL_SPOTS } from '@/data/spotsCatalogo';
 
 /**
  * Lista os spots com vento, onda e maré reais da Open-Meteo.

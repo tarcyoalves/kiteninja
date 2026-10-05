@@ -1,6 +1,6 @@
 import { neon } from '@neondatabase/serverless';
 import { loadEnv } from './load-env';
-import { INITIAL_SPOTS } from '../data/mockSpots';
+import { INITIAL_SPOTS } from '../data/spotsCatalogo';
 
 loadEnv();
 
