@@ -575,7 +575,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       cancelado = true;
       if (timeoutId) clearTimeout(timeoutId);
     };
-  }, [isAuthenticated, activeTab]);
+  }, [isAuthenticated, activeTab, user?.id]);
 
   /**
    * Background watcher para conversas diretas (DM). Diferente do geral acima,

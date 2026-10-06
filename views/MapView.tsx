@@ -142,7 +142,7 @@ export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
       if (!valePenaRegistrarSessao(resumo)) return;
       abrirLoggerComResumo(paraPrefillLogbook(resumo, new Date()));
     },
-    [abrirLoggerComResumo, encerrarApoioSolo]
+    [abrirLoggerComResumo, encerrarApoioSolo, setModoNavegacaoAtivo]
   );
 
   const handleSelectSpot = useCallback((spot: Spot) => {

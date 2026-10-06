@@ -146,7 +146,7 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
     // lint não consegue ver isso e acusa a chamada inteira.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void buscarPagina(null, true);
-  }, [escopo]);
+  }, [buscarPagina]);
 
   // 3) Voltar de background/troca de aba do navegador.
   useEffect(() => {
