@@ -295,7 +295,7 @@ export async function GET(request: Request, ctx: Params) {
     }
     const cursor = proximoCursor(desdeRaw, maiorTs);
 
-    const participantes = (partRows as Record<string, unknown>[]).map((p, idx) => {
+    const participantes = (partRows as Record<string, unknown>[]).map((p) => {
       const uId = String(p.user_id);
       return {
         userId: uId,

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, KeyRound, Users, Shield, Sparkles, Film, MessageSquareWarning, AlertOctagon, History } from 'lucide-react';
+import { ArrowLeft, KeyRound, Users, Shield, Film, MessageSquareWarning, AlertOctagon, History } from 'lucide-react';
 import { InviteManager } from './InviteManager';
 import { UserManager } from './UserManager';
 import { IntroVideoManager } from './IntroVideoManager';

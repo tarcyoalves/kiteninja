@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Check,
-  Tag,
   MapPin,
   DollarSign,
   Package,

@@ -120,8 +120,6 @@ export function usePushNotifications(
       return;
     }
 
-    let token: string | null = null;
-
     const init = async () => {
       try {
         // Lazy-load do plugin para evitar erros em browser/pwa
@@ -186,7 +184,6 @@ export function usePushNotifications(
             setError('O aparelho devolveu um registro de push sem token.');
             return;
           }
-          token = recebido;
           console.log('[push] Token FCM recebido');
           void registerToken(recebido);
         });

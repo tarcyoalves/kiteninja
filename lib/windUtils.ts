@@ -1,5 +1,5 @@
 import { Discipline } from '../types';
-import { getWindBand, getWindTailwindColor } from './windScale';
+import { getWindTailwindColor } from './windScale';
 
 /**
  * Obtém as classes de cor do Tailwind para uma intensidade de vento.
@@ -14,7 +14,6 @@ export function getWindColorClass(knots: number): {
   glow: string;
 } {
   const color = getWindTailwindColor(knots);
-  const colorNum = color === 'sky' ? '500' : ''; // sky não tem tone 500 como base
 
   // Mapeia a cor base da escala para as variações necessárias na UI
   const variations: Record<string, {

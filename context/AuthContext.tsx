@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { Discipline, RiderLevel, UserProfile } from '../types';
+import { UserProfile } from '../types';
 import { FCM_TOKEN_STORAGE_KEY } from '../lib/usePushNotifications';
 
 interface AuthContextType {

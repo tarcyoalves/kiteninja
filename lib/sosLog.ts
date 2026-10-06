@@ -112,7 +112,6 @@ export function logSos(evento: EventoSos): void {
   try {
     const linha = montarLinhaSos(evento);
     const grave = evento.etapa === 'erro' || evento.etapa === 'push.falhou';
-    // eslint-disable-next-line no-console
     (grave ? console.error : console.log)(JSON.stringify(linha));
   } catch {
     // Se nem serializar deu, desistimos em silêncio.

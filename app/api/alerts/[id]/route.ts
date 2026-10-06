@@ -1,5 +1,5 @@
 import { sql } from '@/lib/db';
-import { handle, readJson } from '@/lib/api';
+import { handle } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { canResolveAlert } from '@/lib/authz';
 import { HttpError } from '@/lib/auth';

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { getWindBand, getWindIntensity, getWindTailwindColor } from '../lib/windScale';
+import { getWindIntensity, getWindTailwindColor } from '../lib/windScale';
 
 interface WindStrengthBarProps {
   /** Vento médio em nós */
@@ -38,7 +38,6 @@ export const WindStrengthBar: React.FC<WindStrengthBarProps> = ({
   className = '',
 }) => {
   // Obtém a faixa e intensidade
-  const band = getWindBand(knots);
   const colorBase = getWindTailwindColor(knots);
   const intensity = getWindIntensity(knots);
 

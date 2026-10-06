@@ -16,7 +16,6 @@ import {
   PlusCircle,
   LogOut,
   LogIn,
-  Sun,
   Shield,
   Camera,
   ChevronRight,

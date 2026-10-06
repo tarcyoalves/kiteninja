@@ -68,7 +68,7 @@ interface SpotCardProps {
 }
 
 export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavoriteToggle = true }) => {
-  const { toggleFavorite, windUnit, convertWind, beachMode } = useKiteData();
+  const { toggleFavorite, convertWind, beachMode } = useKiteData();
 
   const currentConverted = convertWind(spot.currentKnots);
   const maxConverted = convertWind(spot.maxKnots);

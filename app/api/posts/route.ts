@@ -1,7 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
-import { HttpError } from '@/lib/auth';
 import { num, str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
 

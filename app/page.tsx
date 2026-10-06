@@ -76,7 +76,6 @@ const MainContent: React.FC = () => {
     modoNavegacaoSolo,
     setModoNavegacaoSolo,
     ativarApoioSolo,
-    createDownwind,
     avisarInicioDeVelejo,
     spots,
   } = useKiteData();

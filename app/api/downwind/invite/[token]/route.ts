@@ -1,7 +1,7 @@
 ﻿import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser, HttpError, hashToken } from '@/lib/auth';
-import { ehUuid, buscarParticipacao, buscarStatusDownwind } from '@/lib/downwindDb';
+import { buscarParticipacao } from '@/lib/downwindDb';
 
 export const dynamic = 'force-dynamic';
 
@@ -92,7 +92,6 @@ export async function POST(request: Request, ctx: Params) {
     }
 
     const row = rows[0] as Record<string, unknown>;
-    const inviteId = String(row.id);
     const downwindId = String(row.downwind_id);
     const downwindStatus = String(row.downwind_status);
     const papel = String(row.role);

@@ -9,7 +9,6 @@ import {
   Sparkles,
   X,
   ExternalLink,
-  ChevronRight,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useIsNativeApp } from '../lib/usePushNotifications';

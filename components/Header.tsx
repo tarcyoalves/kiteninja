@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import React from 'react';
-import { Menu, Sun, Moon, Wind, RefreshCw, Star, Plus, Shield, Bell } from 'lucide-react';
+import { Menu, Sun, RefreshCw, Plus, Shield, Bell } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useAppUpdateAvailable } from '../lib/appUpdate';
@@ -28,7 +28,6 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
     setIsLoggerOpen,
     unreadChatCount,
     dmUnreadCount,
-    safetyAlerts,
     setIsNotificacoesAbertas,
     zerarNotificacoesNaoLidas,
     notificacoesNaoLidas,

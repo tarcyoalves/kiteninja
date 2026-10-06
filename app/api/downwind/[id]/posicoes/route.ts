@@ -8,10 +8,9 @@ import {
   podeReportarPosicao,
   podeVerPosicoes,
   apareceNoMapa,
-  posicaoVisivel,
 } from '@/lib/downwindAcesso';
 import { buscarContexto, ehUuid } from '@/lib/downwindDb';
-import { amostrarTrilha, MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ultimoTimestamp } from '@/lib/trilhaDownwind';
+import { MAX_PONTOS_DELTA_POR_PARTICIPANTE as LIMITE_DELTA, ultimoTimestamp } from '@/lib/trilhaDownwind';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
 import { validarTokenRastreio } from '@/lib/trackingToken';
 import { resolverSilencio } from '@/lib/downwindSilencio';

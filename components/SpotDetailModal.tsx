@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Spot, DayForecast, WindForecastHour } from '../types';
-import { filterHoursBy3, resolveCurrentHourBlock, getPreparedHours } from '../lib/forecastGrid';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { Spot, DayForecast } from '../types';
+import { resolveCurrentHourBlock, getPreparedHours } from '../lib/forecastGrid';
 import { encontrarJanelasDePico, indiceDoPicoMaximo, resumoDePico } from '../lib/windPeaks';
 import {
   ChevronLeft,
@@ -17,8 +17,6 @@ import {
   CloudSun,
   CloudMoon,
   CloudRain,
-  ArrowUpRight,
-  ArrowDownRight,
   TrendingUp,
   TrendingDown,
   Waves,
@@ -27,10 +25,7 @@ import {
   CheckCircle2,
   Video,
   Wind,
-  Shield,
-  Clock,
   Sparkles,
-  Calculator,
 } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
@@ -53,7 +48,7 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   // selectedDayIndex: dia ativo selecionado
   // scrolledDayIndex: dia que o scroll revelou (para manter em sync)
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
-  const [scrolledDayIndex, setScrolledDayIndex] = useState(0);
+  const [, setScrolledDayIndex] = useState(0);
 
   const prefersReducedMotion = usePrefereMenosMovimento();
 
@@ -66,7 +61,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const daySectionRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const dayButtonsNavRef = useRef<HTMLDivElement>(null);
   const dayButtonRefs = useRef<Map<number, HTMLButtonElement>>(new Map());
-  const isUserScrollingRef = useRef(false);
 
   // Centraliza o botão do dia ativo no cabeçalho horizontal de dias
   useEffect(() => {
@@ -201,35 +195,6 @@ export const SpotDetailModal: React.FC<SpotDetailModalProps> = ({ spot, onClose 
   const selectedDay: DayForecast | null = spot
     ? spot.daysForecast[selectedDayIndex] || spot.daysForecast[0] || null
     : null;
-
-  // Filtra horas para passo de 3h (00h, 03h, 06h...) para caber um dia na tela.
-  // Aplica em todas as tabs que mostram horas: WindTrend, tabela e TideCurve.
-  const filteredHours = useMemo(
-    () => (selectedDay ? getPreparedHours(selectedDay.hours) : []),
-    [selectedDay]
-  );
-  // Resolve qual bloco de 3h contém a hora atual (ex: 16h -> bloco 15h)
-  const currentHourBlockIdx = useMemo(
-    () => (selectedDayIndex === 0 ? resolveCurrentHourBlock(filteredHours, nowHour) : -1),
-    [filteredHours, nowHour, selectedDayIndex]
-  );
-
-  /* Janelas de vento forte do dia selecionado. Set para o lookup por linha
-     ficar O(1) — a tabela consulta a cada render de linha. */
-  const indicesDePico = useMemo(() => {
-    const ids = new Set<number>();
-    for (const janela of encontrarJanelasDePico(filteredHours)) {
-      for (const i of janela.indices) ids.add(i);
-    }
-    return ids;
-  }, [filteredHours]);
-
-  const idxPicoMaximo = useMemo(
-    () => (indicesDePico.size > 0 ? indiceDoPicoMaximo(filteredHours) : -1),
-    [filteredHours, indicesDePico]
-  );
-
-  const textoResumoPico = useMemo(() => resumoDePico(filteredHours), [filteredHours]);
 
   if (!spot || !selectedDay) return null;
 

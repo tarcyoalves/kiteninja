@@ -132,12 +132,6 @@ export const BuscarVelejadores: React.FC<BuscarVelejadoresProps> = ({ onClose, o
     return () => clearTimeout(timer);
   }, [query, buscar]);
 
-  // Estado computado a partir de query e estados - evita chamada de setState no effect
-  const deveMostrarResultados = deveBuscarVelejadores(query);
-  const resultadosExibidos = deveMostrarResultados ? resultados : [];
-  const carregandoExibido = deveMostrarResultados && carregando;
-  const erroExibido = deveMostrarResultados ? erro : null;
-
   /**
    * Fecha a busca — mas primeiro tira o foco do campo de texto, se ele
    * estiver focado. Sem isto, o menu flutuante desaparecia para sempre

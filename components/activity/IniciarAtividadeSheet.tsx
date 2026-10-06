@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { AlertCircle, ChevronRight, Compass, Link2, MapPin, Navigation, Share2, Users, X } from 'lucide-react';
 import { Spot } from '@/types';
 import { DownwindAtivo } from '@/context/DownwindContext';

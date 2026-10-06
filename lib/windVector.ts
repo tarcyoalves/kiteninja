@@ -4,7 +4,7 @@
  * isso não aparece olhando a tela — as partículas se movem de qualquer jeito.
  */
 
-import { getWindRgbaColor, getWindBand } from './windScale';
+import { getWindRgbaColor } from './windScale';
 
 /**
  * Converte a direção meteorológica no vetor de deslocamento em TELA.

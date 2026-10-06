@@ -1,7 +1,7 @@
 ﻿'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Calendar, Check, Compass, Loader2, MapPin, Navigation, Users, X } from 'lucide-react';
+import { Calendar, Check, Compass, Loader2, MapPin, Users, X } from 'lucide-react';
 import { Spot } from '@/types';
 import { useDownwind } from '@/context/DownwindContext';
 import { useAoMudar } from '../../lib/useAoMudar';

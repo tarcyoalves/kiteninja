@@ -6,7 +6,6 @@
  * por aqui: é propositalmente mínimo, só push e click.
  */
 
-/* eslint-disable no-restricted-globals */
 // O global aqui é `self` (escopo de service worker), não `window`.
 //
 // Este arquivo não leva diretiva de supressão do TypeScript: o `include` do

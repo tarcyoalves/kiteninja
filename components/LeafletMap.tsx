@@ -8,15 +8,14 @@ import { MapContainer, TileLayer, Marker, CircleMarker, useMap } from 'react-lea
 import L from 'leaflet';
 import { Spot } from '@/types';
 import { getWindColorClass } from '@/lib/windUtils';
-import { nearestSpot, LatLng } from '@/lib/geo';
+import { LatLng } from '@/lib/geo';
 import { formatDistance } from '@/lib/geoFormat';
 // ANT-005: `users.name` é campo livre e entra CRU em `L.divIcon({ html })`,
 // que o Leaflet injeta via innerHTML. DownwindMapa.tsx já escapava; estes
 // dois ícones de SOS/socorrista tinham ficado de fora.
 import { escaparHtml } from '@/lib/htmlEscape';
 import { WindParticleLayer } from './WindParticleLayer';
-import { Wind, LocateFixed, XCircle, Loader2, Layers } from 'lucide-react';
-import { useKiteData } from '@/context/KiteDataContext';
+import { Wind, LocateFixed, Loader2, Layers } from 'lucide-react';
 import { MAP_TILES, opcoesDeTile, type MapStyle } from '@/lib/mapTiles';
 
 export type { MapStyle };
@@ -219,7 +218,6 @@ function createResponderMarkerIcon(name?: string): L.DivIcon {
 
 export const LeafletMap: React.FC<LeafletMapProps> = ({
   spots,
-  selectedSpot,
   onSelectSpot,
   onLocateUser,
   locateStatus,
@@ -233,8 +231,8 @@ export const LeafletMap: React.FC<LeafletMapProps> = ({
   const [windAnim, setWindAnim] = useState(true);
 
   const mapRef = useRef<L.Map | null>(null);
-  const [mapCenter, setMapCenter] = useState<LatLng | null>(null);
-  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
+  const [mapCenter] = useState<LatLng | null>(null);
+  const [mapZoom] = useState(DEFAULT_ZOOM);
 
   /**
    * `mapRef` (acima) só fica preenchido depois que o `MapContainer` do

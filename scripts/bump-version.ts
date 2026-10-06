@@ -15,7 +15,7 @@
  * Requer JAVA_HOME ou java no PATH para parse do build.gradle.
  * Funciona sem keystore (build de debug continua funcionando).
  */
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ROOT = process.cwd();

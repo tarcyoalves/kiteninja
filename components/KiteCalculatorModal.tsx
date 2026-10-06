@@ -1,14 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { X, Calculator, Wind, Scale, Sparkles, ShieldCheck, AlertCircle } from 'lucide-react';
+import { X, Calculator, Wind, Scale, ShieldCheck } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { Discipline } from '../types';
-import { calculateKiteSize, getWindColorClass, type WindStability } from '../lib/windUtils';
+import { calculateKiteSize, type WindStability } from '../lib/windUtils';
 
 export const KiteCalculatorModal: React.FC = () => {
-  const { isCalculatorOpen, setIsCalculatorOpen, windUnit, convertWind } = useKiteData();
+  const { isCalculatorOpen, setIsCalculatorOpen } = useKiteData();
   const { user, updateProfile } = useAuth();
 
   const [weightKg, setWeightKg] = useState(user?.weightKg || 78);
@@ -19,7 +19,6 @@ export const KiteCalculatorModal: React.FC = () => {
   if (!isCalculatorOpen) return null;
 
   const result = calculateKiteSize(weightKg, knots, discipline, stability);
-  const windColors = getWindColorClass(knots);
 
   const getBoardRecommendation = () => {
     switch (discipline) {

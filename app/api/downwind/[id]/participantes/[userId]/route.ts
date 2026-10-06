@@ -2,7 +2,6 @@ import { sql } from '@/lib/db';
 import { handle, readOptionalJson } from '@/lib/api';
 import { requireUser, HttpError } from '@/lib/auth';
 import { num, oneOf } from '@/lib/validation';
-import { amostrarTrilha } from '@/lib/trilhaDownwind';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
 import {
   apoioValido,

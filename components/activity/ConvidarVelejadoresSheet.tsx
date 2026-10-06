@@ -1,8 +1,7 @@
 ﻿'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Check, Copy, Loader2, Search, Share2, UserCheck, UserPlus, Users, X } from 'lucide-react';
-import { formatRelativeTime } from '@/lib/chat';
+import { Check, Copy, Loader2, Search, Share2, UserCheck, UserPlus, X } from 'lucide-react';
 import { useAoMudar } from '../../lib/useAoMudar';
 
 interface RiderResult {

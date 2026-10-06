@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import {
-  Heart,
   MessageCircle,
   Search,
   Share2,
@@ -145,7 +144,7 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
   useEffect(() => {
     // `buscarPagina` não tem setState nenhum antes do primeiro `await` — o
     // lint não consegue ver isso e acusa a chamada inteira.
-    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void buscarPagina(null, true);
   }, [escopo]);
 

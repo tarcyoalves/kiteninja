@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { X, MapPin, Clock, Users, AlertTriangle, ExternalLink, Loader2, Wind } from 'lucide-react';
 import { BotoesEmergencia } from './BotoesEmergencia';
 import { mensagemDeSocorro } from '../lib/emergencia';

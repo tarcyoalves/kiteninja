@@ -4,7 +4,7 @@ import React, { useState, useCallback, useEffect, Suspense, useRef } from 'react
 import dynamic from 'next/dynamic';
 import { useKiteData } from '../context/KiteDataContext';
 import { Spot } from '../types';
-import { Loader2, Navigation } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { nearestSpot } from '../lib/geo';
 import { UserPosition } from '@/components/LeafletMap';
 import { ModoNavegacao, ResumoNavegacao } from '@/components/ModoNavegacao';
@@ -44,8 +44,6 @@ interface MapViewProps {
 export const MapView: React.FC<MapViewProps> = ({ onSelectSpot }) => {
   const {
     spots,
-    convertWind,
-    beachMode,
     allActiveSosList,
     setLastKnownPosition,
     abrirLoggerComResumo,

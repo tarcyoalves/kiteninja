@@ -1,6 +1,6 @@
 import { Spot, DayForecast, WindForecastHour } from '../types';
 
-function generateDaysForecast(baseKnots: number, spotName: string): DayForecast[] {
+function generateDaysForecast(baseKnots: number): DayForecast[] {
   const dates = [
     { label: 'SEXTA-FEIRA, 14/08', short: 'Hoje, 14/08' },
     { label: 'SÁBADO, 15/08', short: 'Amanhã, 15/08' },
@@ -185,7 +185,7 @@ export const INITIAL_SPOTS: Spot[] = [
     amenities: ['Pousadas na praia', 'Guarderia', 'Resgate de apoio'],
     webcamUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
     coverImage: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&q=80',
-    daysForecast: generateDaysForecast(19, 'Praia Ponta do Mel'),
+    daysForecast: generateDaysForecast(19),
   },
   {
     id: 'porto-do-mangue',
@@ -221,7 +221,7 @@ export const INITIAL_SPOTS: Spot[] = [
     amenities: ['Escola de Kite', 'Acesso 4x4', 'Restaurantes de praia'],
     webcamUrl: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
     coverImage: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Porto do Mangue'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'galinhos',
@@ -257,7 +257,7 @@ export const INITIAL_SPOTS: Spot[] = [
     amenities: ['Pousadas charmosas', 'Guarderia completa', 'Restaurantes', 'Barcos de apoio'],
     webcamUrl: 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?w=800&q=80',
     coverImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    daysForecast: generateDaysForecast(18, 'Galinhos'),
+    daysForecast: generateDaysForecast(18),
   },
   {
     id: 'galinhos-lighthouse',
@@ -292,7 +292,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Área de arrebentação próxima à ponta do farol'],
     amenities: ['Visual clássico do pôr do sol', 'Downwind point'],
     coverImage: 'https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&q=80',
-    daysForecast: generateDaysForecast(18, 'Galinhos Lighthouse'),
+    daysForecast: generateDaysForecast(18),
   },
   {
     id: 'barra-areia-branca',
@@ -327,7 +327,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Tráfego de barcos pesqueiros locais'],
     amenities: ['Estrutura de apoio', 'Compressor de ar'],
     coverImage: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Barra / Areia Branca'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'barra-pernambuquinho',
@@ -362,7 +362,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Pouca estrutura urbana, levar água e suprimentos'],
     amenities: ['Área de decolagem ampla e desimpedida'],
     coverImage: 'https://images.unsplash.com/photo-1473186578172-c141e6798cf4?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Barra de Pernambuquinho'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'cumbuco-beach',
@@ -398,7 +398,7 @@ export const INITIAL_SPOTS: Spot[] = [
     amenities: ['Kite centers mundiais', 'Hotéis pé na areia', 'Lagoa do Cauípe próxima', 'Oficinas de reparo'],
     webcamUrl: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
     coverImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    daysForecast: generateDaysForecast(21, 'Cumbuco Beach'),
+    daysForecast: generateDaysForecast(21),
   },
   {
     id: 'taiba-secret-lagoon',
@@ -433,7 +433,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Espaço disputado na lagoa pequena'],
     amenities: ['Barracas de apoio', 'Downwinds diários'],
     coverImage: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&q=80',
-    daysForecast: generateDaysForecast(22, 'Taíba'),
+    daysForecast: generateDaysForecast(22),
   },
   {
     id: 'barra-grande-pi',
@@ -468,7 +468,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Caranguejos e raízes no mangue na maré muito seca'],
     amenities: ['Vila charmosa', 'Restaurantes', 'Clínicas de Wing e Kite'],
     coverImage: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800&q=80',
-    daysForecast: generateDaysForecast(20, 'Barra Grande'),
+    daysForecast: generateDaysForecast(20),
   },
   {
     id: 'ilha-do-guajiru',
@@ -503,7 +503,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Evitar navegar na maré morta com quilha comprida'],
     amenities: ['Pousadas pé na água', 'Escolas IKO', 'Restaurantes'],
     coverImage: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    daysForecast: generateDaysForecast(24, 'Ilha do Guajirú'),
+    daysForecast: generateDaysForecast(24),
   },
   {
     id: 'sao-miguel-do-gostoso',
@@ -538,7 +538,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Área de banhistas delimitada'],
     amenities: ['Grandes clubes de vela', 'Clima paradisíaco', 'Clínicas profissionais'],
     coverImage: 'https://images.unsplash.com/photo-1510414842594-a61c69b5ae57?w=800&q=80',
-    daysForecast: generateDaysForecast(19, 'São Miguel do Gostoso'),
+    daysForecast: generateDaysForecast(19),
   },
   {
     id: 'gado-bravo',
@@ -579,7 +579,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Correnteza leve na maré cheia'],
     amenities: ['Pousadas pé na areia', 'Acesso fácil'],
     coverImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Praia de Gado Bravo'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'pousada-quilombo-tibau',
@@ -620,7 +620,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Atenção aos banhistas na maré cheia'],
     amenities: ['Estrutura da Pousada Quilombo', 'Guarderia', 'Restaurante'],
     coverImage: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Pousada Quilombo do Tibau'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'soledade-kauli-seadi',
@@ -661,7 +661,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Vento forte constante, excelente para freestyle e big air'],
     amenities: ['Bangalôs Kauli Seadi', 'Kite Center', 'Restaurante de praia'],
     coverImage: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?w=800&q=80',
-    daysForecast: generateDaysForecast(24, 'Soledade Bangalôs Kauli Seadi'),
+    daysForecast: generateDaysForecast(24),
   },
   {
     id: 'tibau-rn',
@@ -702,7 +702,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Correnteza leve na vazante'],
     amenities: ['Barracas de praia', 'Acesso fácil'],
     coverImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    daysForecast: generateDaysForecast(17, 'Praia de Tibau'),
+    daysForecast: generateDaysForecast(17),
   },
   {
     id: 'tibau-do-sul',
@@ -743,7 +743,7 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Atenção aos barcos na boca da barra da Lagoa de Guaraíras'],
     amenities: ['Pousadas de Pipa', 'Escolas IKO', 'Restaurantes'],
     coverImage: 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=800&q=80',
-    daysForecast: generateDaysForecast(18, 'Tibau do Sul'),
+    daysForecast: generateDaysForecast(18),
   },
   {
     id: 'araruama-praia-seca',
@@ -778,6 +778,6 @@ export const INITIAL_SPOTS: Spot[] = [
     hazards: ['Vento Sudoeste pode trazer rajadas fortes de frente fria'],
     amenities: ['Gramado para montar pipas', 'Chuveirão doce', 'Estacionamento fácil'],
     coverImage: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=80',
-    daysForecast: generateDaysForecast(16, 'Praia Seca Araruama'),
+    daysForecast: generateDaysForecast(16),
   }
 ];

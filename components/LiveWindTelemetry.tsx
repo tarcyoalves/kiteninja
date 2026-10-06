@@ -2,8 +2,7 @@
 
 import React from 'react';
 import { Spot, WindUnit } from '../types';
-import { getWindRgbaColor, getWindBand } from '../lib/windScale';
-import { Waves, TrendingUp, TrendingDown, Radio, Sparkles, Navigation } from 'lucide-react';
+import { Waves, TrendingUp, TrendingDown, Radio, Navigation } from 'lucide-react';
 
 interface LiveWindTelemetryProps {
   spot: Spot;
@@ -33,7 +32,6 @@ const COMPASS_SECTORS = [
 
 export const LiveWindTelemetry: React.FC<LiveWindTelemetryProps> = ({
   spot,
-  windUnit,
   convertWind,
   beachMode = false,
 }) => {
@@ -44,8 +42,6 @@ export const LiveWindTelemetry: React.FC<LiveWindTelemetryProps> = ({
   const maxConverted = convertWind(maxKnots);
 
   const activeSectorCode = spot.windDirectionText || 'ENE';
-  const band = getWindBand(spot.currentKnots);
-  const activeColor = getWindRgbaColor(spot.currentKnots);
 
   // Geração de pontos recentes para o gráfico de histórico dos últimos 45 minutos
   const recentPoints = React.useMemo(() => {

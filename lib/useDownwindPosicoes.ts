@@ -138,7 +138,6 @@ export function useDownwindPosicoes(
     // `onVisibility` leem `pausadoRef.current` (sempre atual), não a variável
     // fechada no closure, então retomam sozinhos no próximo tick/visibilidade
     // sem precisar recriar o efeito.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [downwindId]);
 
   /**

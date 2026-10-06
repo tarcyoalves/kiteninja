@@ -1,5 +1,3 @@
-import { haversineKm, LatLng } from './geo';
-
 /** Estágios da escalada: raio em km e quanto esperar antes de subir. */
 export const ESTAGIOS_RAIO = [
   { raioKm: 5,  esperaMs: 2 * 60 * 1000 },

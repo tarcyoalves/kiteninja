@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useKiteData } from '../context/KiteDataContext';
 import { SpotCard } from '../components/SpotCard';
 import { Spot } from '../types';
-import { Search, SlidersHorizontal, Wind, Star, Compass, MapPin, Zap, Flame } from 'lucide-react';
+import { Search, Star, Compass, Flame } from 'lucide-react';
 
 interface SpotsViewProps {
   onSelectSpot: (spot: Spot) => void;

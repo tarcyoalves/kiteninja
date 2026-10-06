@@ -2,7 +2,6 @@ import 'server-only';
 import { sql } from '@/lib/db';
 import {
   INTRO_VIDEO_KEY,
-  parseIntroVideo,
   parseIntroVideoConfig,
   type IntroVideo,
   type IntroVideoConfig,

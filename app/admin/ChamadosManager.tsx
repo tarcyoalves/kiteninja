@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Bug, Lightbulb, Loader2, User } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/chat';
 import type { ChamadoAdmin, StatusChamado } from '@/types';

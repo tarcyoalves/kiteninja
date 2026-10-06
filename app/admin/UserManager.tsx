@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Search,
-  Shield,
   UserCheck,
   UserX,
   KeyRound,
@@ -18,13 +17,9 @@ import {
   Clock,
   Radio,
   Wind,
-  MessageSquare,
-  Flame,
   Smartphone,
   Laptop,
-  Globe,
   MapPin,
-  Sparkles,
 } from 'lucide-react';
 
 interface UserData {

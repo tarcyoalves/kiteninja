@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, Discipline, ChatMessage, DmConversation } from '../types';
+import { Spot, SessionLog, CommunityPost, SafetyOccurrence, KiteEvent, WindUnit, ChatMessage, DmConversation } from '../types';
 import { useAuth } from './AuthContext';
 import { INITIAL_SPOTS } from '../data/spotsCatalogo';
 import { usePositionBeacon } from '../lib/usePositionBeacon';
@@ -445,7 +445,7 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_INICIAL);
   const [feedAba, setFeedAba] = useState<AbaFeed>('comunidade');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isHydrated, setIsHydrated] = useState(false);
+  const [, setIsHydrated] = useState(false);
   const [lastKnownPosition, setLastKnownPosition] = useState<{ lat: number; lng: number } | null>(null);
 
   // Chat Notifications & Unread Counters
