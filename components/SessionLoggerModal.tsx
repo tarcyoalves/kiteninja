@@ -278,7 +278,7 @@ export const SessionLoggerModal: React.FC = () => {
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-4 flex items-center justify-between shadow-md">
           <div className="flex items-center gap-2.5">
             <Compass size={22} className="text-slate-950" />
-            <h2 className="font-black text-base sm:text-lg text-slate-950">Registrar Velejo no Logbook</h2>
+            <h2 className="font-black text-base sm:text-lg text-slate-950">Registrar Velejo no Diário</h2>
           </div>
           <button
             type="button"
@@ -614,7 +614,7 @@ export const SessionLoggerModal: React.FC = () => {
               <span className="block text-[10px] text-slate-400 mt-0.5">
                 {isPublic
                   ? 'O Ride aparecerá para outros velejadores.'
-                  : 'O Ride ficará visível somente no seu Logbook.'}
+                  : 'O velejo ficará visível somente no seu Diário.'}
               </span>
             </span>
             <span

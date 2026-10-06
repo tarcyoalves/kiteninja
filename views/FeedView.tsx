@@ -247,7 +247,9 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
       <div className="px-3 pt-2" role="tablist" aria-label="Escopo do feed de velejos">
         <div className="flex items-center gap-1 p-1 rounded-2xl bg-[#1E293B] border border-slate-700/80 max-w-lg mx-auto">
           {([
-            { valor: 'comunidade' as const, rotulo: 'Comunidade', icone: <Globe2 size={13} className="shrink-0" /> },
+            // "Todos", não "Comunidade": a aba de cima (Velejos / Comunidade)
+            // já usa esse nome para outra coisa, o feed de relatos.
+            { valor: 'comunidade' as const, rotulo: 'Todos', icone: <Globe2 size={13} className="shrink-0" /> },
             { valor: 'seguindo' as const, rotulo: 'Seguindo', icone: <UserCheck size={13} className="shrink-0" /> },
           ]).map((op) => (
             <button
@@ -282,11 +284,11 @@ function AbaVelejos({ onAbrirBusca, onAbrirPerfil, onAbrirDetalhe }: AbaVelejosP
             {escopo === 'seguindo' ? 'Você ainda não segue ninguém' : 'Nenhum velejo por aqui ainda'}
           </p>
           {/* O texto muda com o escopo: mandar "siga alguém" para quem está na
-              aba Comunidade seria instrução errada — ali o feed vazio significa
+              aba Todos seria instrução errada — ali o feed vazio significa
               que ninguém publicou ainda, não que falta seguir gente. */}
           <p className="mt-1.5 text-sm text-slate-400 leading-relaxed">
             {escopo === 'seguindo'
-              ? 'Toque em Comunidade para ver o que todo mundo está velejando, e siga quem você quiser acompanhar de perto.'
+              ? 'Toque em Todos para ver o que todo mundo está velejando, e siga quem você quiser acompanhar de perto.'
               : 'Registre a sua sessão no mapa — ela aparece aqui para a comunidade e para quem te segue.'}
           </p>
           {/* Sem isto a instrução acima era impossível de cumprir (seção 7 do

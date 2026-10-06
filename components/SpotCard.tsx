@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Spot } from '../types';
-import { Navigation, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudRain, Star, Compass, Sparkles, Flame, Zap, Waves } from 'lucide-react';
+import { Navigation, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudRain, Star, ChevronRight, Sparkles, Flame, Zap, Waves } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { getWindColorClass } from '../lib/windUtils';
 
@@ -97,6 +97,18 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
   return (
     <div
       onClick={() => onSelect(spot)}
+      // O card é o botão de abrir o spot (o botão de bússola que fazia isso
+      // saiu): precisa ser focável e responder a Enter/Espaço.
+      role="button"
+      tabIndex={0}
+      aria-label={`Abrir ${spot.name}: previsão completa e marés`}
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return; // a estrela tem a própria ação
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect(spot);
+        }
+      }}
       className={`group relative flex items-center justify-between border-b transition-all cursor-pointer overflow-hidden ${
         beachMode
           ? 'bg-[#020617] hover:bg-[#0f172a] border-slate-800 text-white'
@@ -104,7 +116,7 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
       }`}
     >
       {/* Left Wind Badge matching Screenshot 1 (Gradient glow + Arrow + Knots + Max) */}
-      <div className="relative flex items-center min-w-[130px] sm:min-w-[150px] py-3.5 pl-3 pr-2">
+      <div className="relative flex items-center min-w-[104px] sm:min-w-[150px] py-3.5 pl-3 pr-1 sm:pr-2 shrink-0">
         {/* Ambient colored gradient on the left edge */}
         <div
           className={`absolute left-0 top-0 bottom-0 w-28 bg-gradient-to-r ${windColors.gradient} opacity-90 pointer-events-none`}
@@ -141,7 +153,7 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
       </div>
 
       {/* Middle: Weather Icon + Temp + Spot Name + Observation/Forecast status */}
-      <div className="flex-1 flex items-center gap-3 px-2 py-3 min-w-0">
+      <div className="flex-1 flex items-center gap-2 sm:gap-3 px-1 sm:px-2 py-3 min-w-0">
         {/* Weather Icon & Temp */}
         <div className="flex flex-col items-center justify-center shrink-0 w-10 text-center">
           {renderWeatherIcon()}
@@ -153,7 +165,8 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
         {/* Spot Name & Location/Type */}
         <div className="flex-1 min-w-0 pr-1">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <h3 className="text-sm sm:text-base font-extrabold text-white truncate group-hover:text-cyan-300 transition-colors">
+            {/* Até 2 linhas: no celular o nome cortava em "Praia Ponta…". */}
+            <h3 className="text-sm sm:text-base font-extrabold leading-tight text-white line-clamp-2 break-words group-hover:text-cyan-300 transition-colors">
               {spot.name}
             </h3>
             {spot.sailingScore ? (
@@ -177,7 +190,7 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <span
-              className={`text-[11px] tracking-tight ${
+              className={`text-[11px] tracking-tight whitespace-nowrap ${
                 spot.isLiveObservation
                   ? 'text-cyan-400 font-extrabold flex items-center gap-1'
                   : 'text-slate-400 font-medium'
@@ -196,16 +209,15 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
                   leitura é honesto e mais útil que um rótulo genérico. */}
               {spot.isLiveObservation ? `Atualizado ${spot.lastUpdated}` : 'Sem dados'}
             </span>
-            <span className="text-[10px] text-slate-400">&bull;</span>
-            <span className="text-[11px] text-slate-400 truncate">
-              {spot.location}
-            </span>
           </div>
+          {/* Linha própria: dividindo a linha com "Atualizado 21:43" sobrava
+              espaço para uma letra só ("• A."). */}
+          <p className="text-[11px] text-slate-400 truncate mt-0.5">{spot.location}</p>
         </div>
       </div>
 
       {/* Right Side: Map Icon in red outline matching Screenshot 1 + Favorite Star */}
-      <div className="flex items-center gap-1.5 pr-3 shrink-0">
+      <div className="flex items-center gap-0.5 sm:gap-1.5 pr-2 sm:pr-3 shrink-0">
         {showFavoriteToggle && (
           <button
             onClick={e => {
@@ -222,17 +234,10 @@ export const SpotCard: React.FC<SpotCardProps> = ({ spot, onSelect, showFavorite
           </button>
         )}
 
-        {/* Red Map button matching screenshot 1 */}
-        <button
-          onClick={e => {
-            e.stopPropagation();
-            onSelect(spot);
-          }}
-          className="w-8 h-8 rounded-full flex items-center justify-center border border-rose-500/50 bg-rose-500/10 text-rose-400 hover:bg-rose-500 hover:text-white active:scale-95 transition-all shadow-sm min-w-11 min-h-11"
-          aria-label="Ver previsão completa e marés"
-        >
-          <Compass size={17} className="stroke-[2.2]" />
-        </button>
+        {/* Era um botão de bússola de 44px que fazia o mesmo que tocar no card
+            (abrir o spot) e tirava do nome o espaço que faltava no celular.
+            O card inteiro continua tocável; a seta só indica isso. */}
+        <ChevronRight size={18} className="text-slate-500 group-hover:text-cyan-300 transition-colors" aria-hidden />
       </div>
     </div>
   );

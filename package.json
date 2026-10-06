@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:preview": "node scripts/dev-preview.mjs",
     "build": "tsx scripts/migrate-on-build.ts && next build",
     "start": "next start",
     "lint": "eslint",

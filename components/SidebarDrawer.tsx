@@ -36,6 +36,7 @@ import { urlBase64ToUint8Array } from '../lib/pushClient';
 import { useAoMudar } from '../lib/useAoMudar';
 import { useIsNativeApp } from '../lib/usePushNotifications';
 import { BotoesEmergencia } from './BotoesEmergencia';
+import { marcarSeloVisto, useSeloNovo } from '../lib/seloNovo';
 
 export const SidebarDrawer: React.FC = () => {
   const {
@@ -60,6 +61,11 @@ export const SidebarDrawer: React.FC = () => {
   } = useKiteData();
 
   const { user, isAdmin, logout, openAuthModal, updateProfile } = useAuth();
+
+  // Selos "Novo" que somem depois do primeiro toque (ver lib/seloNovo.ts).
+  const mapaNovo = useSeloNovo('mapa');
+  const anunciosNovo = useSeloNovo('anuncios');
+  const chamadosNovo = useSeloNovo('chamados');
 
   // Gatilho de SOS (press-and-hold). Ao disparar, fecha o menu e leva ao mapa
   // para o velejador acompanhar quem está a caminho.
@@ -447,16 +453,21 @@ export const SidebarDrawer: React.FC = () => {
 
           {/* Mapa (Novo) */}
           <button
-            onClick={() => navigateTo('mapa')}
+            onClick={() => {
+              marcarSeloVisto('mapa');
+              navigateTo('mapa');
+            }}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <div className="flex items-center gap-3.5">
               <MapPin size={18} className="text-rose-400" />
               <span>Mapa</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
-              Novo
-            </span>
+            {mapaNovo && (
+              <span className="px-2 py-0.5 rounded-full bg-cyan-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
+                Novo
+              </span>
+            )}
           </button>
 
           {/*
@@ -478,16 +489,21 @@ export const SidebarDrawer: React.FC = () => {
 
           {/* Anúncios — marketplace de equipamento usado da comunidade */}
           <button
-            onClick={() => navigateTo('anuncios')}
+            onClick={() => {
+              marcarSeloVisto('anuncios');
+              navigateTo('anuncios');
+            }}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <div className="flex items-center gap-3.5">
               <Megaphone size={18} className="text-emerald-400" />
               <span>Anúncios</span>
             </div>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
-              Novo
-            </span>
+            {anunciosNovo && (
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 text-[10px] font-black uppercase tracking-wider shadow-xs">
+                Novo
+              </span>
+            )}
           </button>
 
           {/* Favoritos */}
@@ -527,7 +543,7 @@ export const SidebarDrawer: React.FC = () => {
             className="w-full flex items-center gap-3.5 px-3 py-2.5 rounded-xl hover:bg-slate-800/80 text-slate-200 hover:text-white transition-colors text-left"
           >
             <BookOpen size={18} className="text-cyan-400" />
-            <span className="flex-1">Meu Logbook</span>
+            <span className="flex-1">Meu Diário</span>
           </button>
 
           {/* Chat — badge mostra quantos velejadores estão online de verdade. */}
@@ -566,23 +582,30 @@ export const SidebarDrawer: React.FC = () => {
 
           {/* Central de chamados — propositalmente mais chamativa enquanto é
               novidade: bloco inteiro pisca, ícone emite um ping e o selo se
-              move. prefers-reduced-motion desliga todos os movimentos. */}
+              move. prefers-reduced-motion desliga todos os movimentos.
+              "Enquanto é novidade" agora é literal: depois do primeiro toque
+              o selo e os movimentos param; o bloco continua destacado. */}
           <button
             onClick={() => {
+              marcarSeloVisto('chamados');
               setIsSidebarOpen(false);
               setIsChamadosAbertos(true);
             }}
-            className="chamados-destaque relative isolate w-full flex items-center gap-3 px-3 py-3 rounded-xl overflow-hidden border-2 border-cyan-300 bg-gradient-to-r from-cyan-500/30 via-blue-500/25 to-violet-500/25 text-white hover:from-cyan-400/40 hover:via-blue-400/35 hover:to-violet-400/35 transition-colors text-left"
+            className={`${chamadosNovo ? 'chamados-destaque' : ''} relative isolate w-full flex items-center gap-3 px-3 py-3 rounded-xl overflow-hidden border-2 border-cyan-300 bg-gradient-to-r from-cyan-500/30 via-blue-500/25 to-violet-500/25 text-white hover:from-cyan-400/40 hover:via-blue-400/35 hover:to-violet-400/35 transition-colors text-left`}
           >
-            <span
-              aria-hidden="true"
-              className="chamados-destaque-luz pointer-events-none absolute inset-0 -z-10"
-            />
-            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-300 text-slate-950 shadow-[0_0_16px_rgba(103,232,249,0.75)]">
+            {chamadosNovo && (
               <span
                 aria-hidden="true"
-                className="absolute inset-0 rounded-lg bg-cyan-300 animate-ping motion-reduce:animate-none"
+                className="chamados-destaque-luz pointer-events-none absolute inset-0 -z-10"
               />
+            )}
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-cyan-300 text-slate-950 shadow-[0_0_16px_rgba(103,232,249,0.75)]">
+              {chamadosNovo && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-0 rounded-lg bg-cyan-300 animate-ping motion-reduce:animate-none"
+                />
+              )}
               <MessageSquareWarning size={21} aria-hidden="true" className="relative" />
             </span>
             <span className="flex min-w-0 flex-1 flex-col">
@@ -591,9 +614,11 @@ export const SidebarDrawer: React.FC = () => {
                 Ajude a melhorar o KiteNinja
               </span>
             </span>
-            <span className="rounded-full bg-amber-300 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-[0_0_12px_rgba(253,224,71,0.65)] animate-bounce motion-reduce:animate-none">
-              Novo
-            </span>
+            {chamadosNovo && (
+              <span className="rounded-full bg-amber-300 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-slate-950 shadow-[0_0_12px_rgba(253,224,71,0.65)] animate-bounce motion-reduce:animate-none">
+                Novo
+              </span>
+            )}
           </button>
 
           <div className="my-2 border-t border-slate-800 pt-2" />

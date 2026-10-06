@@ -364,7 +364,13 @@ export const MarketplaceView: React.FC = () => {
                         : 'bg-[#1E293B] border-slate-700/80'
                     }`}
                   >
-                    <div className="relative aspect-square bg-black">
+                    {/* Preto só por trás de foto (moldura). Sem foto, o preto
+                        puro parecia imagem quebrando no celular. */}
+                    <div
+                      className={`relative aspect-square ${
+                        listing.coverPhoto ? 'bg-black' : 'bg-gradient-to-br from-slate-800 to-slate-900'
+                      }`}
+                    >
                       {listing.coverPhoto ? (
                         /* eslint-disable-next-line @next/next/no-img-element -- data URL do banco, sem host para o next/image otimizar */
                         <img
@@ -373,8 +379,9 @@ export const MarketplaceView: React.FC = () => {
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <span className="w-full h-full flex items-center justify-center text-slate-600">
+                        <span className="w-full h-full flex flex-col items-center justify-center gap-1.5 text-slate-500">
                           <Package size={30} aria-hidden="true" />
+                          <span className="text-[11px] font-bold">Sem foto</span>
                         </span>
                       )}
 

@@ -176,21 +176,11 @@ export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
         )}
       </div>
 
-      {/* Beach Sponsor / Pro Banner (matching clean subtle banner at bottom of Screenshot 1 & 2) */}
-      <div className="mx-3 my-4 p-3.5 rounded-2xl bg-[#1E293B] text-white border border-slate-700/70 flex items-center justify-between shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-rose-700 flex items-center justify-center font-black text-xs text-white shadow-md shadow-rose-600/30">
-            KN
-          </div>
-          <div>
-            <h4 className="text-xs font-extrabold text-white">KiteNinja Radar Pro</h4>
-            <p className="text-[11px] text-slate-300 font-medium">Previsão em alta resolução ECMWF & GFS em tempo real.</p>
-          </div>
-        </div>
-        <span className="px-3 py-1.5 rounded-xl bg-emerald-500 text-slate-950 text-[11px] font-black uppercase tracking-wider shrink-0 shadow-sm shadow-emerald-500/40">
-          ATIVO
-        </span>
-      </div>
+      {/* Aqui havia uma faixa "KiteNinja Radar Pro — ATIVO", herdada de um
+          mockup: não existe plano Pro, e a fonte real da previsão (Open-Meteo)
+          já aparece no topo da tela. Removida para não prometer o que não há.
+          Espaço no fim para o último card não ficar sob a barra inferior. */}
+      <div className="h-4" aria-hidden />
     </div>
   );
 };

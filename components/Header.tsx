@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import React from 'react';
-import { Menu, Sun, Moon, Wind, RefreshCw, User, Star, Plus, Shield, Bell } from 'lucide-react';
+import { Menu, Sun, Moon, Wind, RefreshCw, Star, Plus, Shield, Bell } from 'lucide-react';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { useAppUpdateAvailable } from '../lib/appUpdate';
@@ -58,14 +58,15 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
       // celular ao lado dos botões.
       case 'sessoes':
         return 'Diário';
+      // Cabe no celular (~10 letras); as duas subabas logo abaixo dizem o resto.
       case 'alertas':
-        return 'Alertas & Eventos';
+        return 'Eventos';
       case 'chat':
         return 'Chat';
       case 'anuncios':
         return 'Anúncios';
       case 'perfil':
-        return 'Perfil do Rider';
+        return 'Perfil';
       default:
         return 'KiteNinja';
     }
@@ -131,7 +132,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
       <div className="px-4 py-2.5 flex items-center justify-between gap-2">
         {/* Left: Menu Hamburger */}
         {/* min-w-0 em cada nível: sem isso o `truncate` do título não age e um
-            título longo ("Alertas & Eventos", ou um `title` vindo de fora) empurra o avatar para fora da tela. */}
+            título longo (ex.: um `title` vindo de fora) empurra o avatar para fora da tela. */}
         <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => setIsSidebarOpen(true)}
@@ -216,24 +217,19 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
             )}
           </button>
 
-          {/* User Profile Avatar */}
-          <button
-            onClick={() => {
-              if (user) {
-                setIsSidebarOpen(true);
-              } else {
-                openAuthModal();
-              }
-            }}
-            className="w-8 h-8 rounded-full ring-2 ring-white/60 overflow-hidden bg-white/20 flex items-center justify-center text-white ml-1 active:scale-95 transition-all shadow-sm"
-            title={user ? user.name : 'Entrar na conta'}
-          >
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt={user.name} className="w-full h-full object-cover" />
-            ) : (
-              <User size={18} />
-            )}
-          </button>
+          {/* Logado, o avatar daqui abria o mesmo menu lateral que o ☰ à
+              esquerda e o "Menu" da barra inferior — três portas para o mesmo
+              lugar, roubando do título o espaço que faltava no celular.
+              Ficou só para quem NÃO está logado, como porta de entrada. */}
+          {!user && (
+            <button
+              onClick={openAuthModal}
+              className="ml-1 px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 border border-white/20 text-white text-xs font-black active:scale-95 transition-all"
+              title="Entrar na conta"
+            >
+              Entrar
+            </button>
+          )}
         </div>
       </div>
     </header>

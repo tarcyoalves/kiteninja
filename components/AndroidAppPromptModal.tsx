@@ -20,6 +20,33 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>;
 }
 
+/**
+ * PRIMEIRA VISITA NÃO RECEBE O CONVITE AUTOMÁTICO.
+ *
+ * Quem abria o app pela primeira vez via dois bloqueios seguidos: "Antes de
+ * velejar" (permissões) e, logo depois, "Baixe o KiteNinja no Celular" — antes
+ * de ver um único spot. Agora o convite só abre sozinho a partir da segunda
+ * carga do app. A resposta é calculada UMA vez por carga e guardada no módulo:
+ * se fosse relida a cada efeito, a própria primeira carga gravaria a marca e,
+ * num re-render (login, troca de conta), já se veria como "segunda visita".
+ * Pelo menu ("Baixar o app") o modal continua abrindo na hora.
+ */
+const CHAVE_PRIMEIRA_VISITA = 'kiteninja_primeira_visita_em';
+let estaCargaEhPrimeiraVisita: boolean | null = null;
+function ehPrimeiraVisita(): boolean {
+  if (estaCargaEhPrimeiraVisita === null) {
+    try {
+      estaCargaEhPrimeiraVisita = !localStorage.getItem(CHAVE_PRIMEIRA_VISITA);
+      if (estaCargaEhPrimeiraVisita) localStorage.setItem(CHAVE_PRIMEIRA_VISITA, Date.now().toString());
+    } catch {
+      // Sem armazenamento (aba anônima bloqueada): não dá para saber se é a
+      // primeira visita, e insistir a cada carga seria pior. Não abre sozinho.
+      estaCargaEhPrimeiraVisita = true;
+    }
+  }
+  return estaCargaEhPrimeiraVisita;
+}
+
 export const AndroidAppPromptModal: React.FC<{
   forcarAbertura?: boolean;
   onFechar?: () => void;
@@ -70,6 +97,7 @@ export const AndroidAppPromptModal: React.FC<{
     // Não elegível: nada a fazer — `abertoAutomatico` só vira `true` depois
     // desta checagem passar, então ele já está em `false` aqui.
     if (!isAndroid || ehAppNativo || isStandalone || !user) return;
+    if (ehPrimeiraVisita()) return;
 
     // Verifica se o usuário dispensou nas últimas 48 horas
     const dispensadoEm = localStorage.getItem('kiteninja_android_prompt_dismissed_at');

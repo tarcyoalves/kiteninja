@@ -366,7 +366,7 @@ export const EventsAndAlertsView: React.FC = () => {
   /**
    * "Só assistir": entra no downwind como espectador e abre o mapa ao vivo.
    *
-   * NÃO é o mesmo que "Entrar no Downwind". Entrar te põe na água — na
+   * NÃO é o mesmo que "No dia: entrar na travessia" (antes "Entrar no Downwind"). Entrar te põe na água — na
    * contagem de velejadores e no quórum que segura o encerramento até todos
    * saírem. Quem não vai ao evento e entra como velejador trava o grupo
    * inteiro de casa, que é exatamente o que acontecia com quem CRIAVA o
@@ -1119,7 +1119,18 @@ export const EventsAndAlertsView: React.FC = () => {
                       {/* O rótulo NÃO muda durante o envio: trocar para
                           "Enviando..." mexeria na largura do botão embaixo do
                           dedo, que é exatamente o defeito que o chat teve. */}
-                      <span>{event.isRegistered ? 'Presença Confirmada' : 'Quero Participar'}</span>
+                      {/* No downwind, "Quero Participar" e "Entrar no Downwind"
+                          pareciam a mesma coisa. São momentos diferentes:
+                          este confirma presença (dias antes, entra na contagem
+                          ao lado); o botão de baixo põe a pessoa NA ÁGUA, no
+                          quórum e no SOS — só no dia. */}
+                      <span>
+                        {event.isRegistered
+                          ? 'Presença Confirmada'
+                          : event.type === 'Downwind'
+                            ? 'Confirmar presença'
+                            : 'Quero Participar'}
+                      </span>
                     </button>
                   )}
                 </div>
@@ -1145,7 +1156,7 @@ export const EventsAndAlertsView: React.FC = () => {
                       <span>
                         {event.downwindStatus === 'em_andamento'
                           ? 'Downwind AO VIVO — entrar'
-                          : 'Entrar no Downwind'}
+                          : 'No dia: entrar na travessia'}
                       </span>
                     </button>
                   )}
@@ -1153,7 +1164,7 @@ export const EventsAndAlertsView: React.FC = () => {
                 {/*
                   * SÓ ASSISTIR — entra no downwind como espectador.
                   *
-                  * "Entrar no Downwind" acima te põe NA ÁGUA: na contagem de
+                  * "No dia: entrar na travessia" acima te põe NA ÁGUA: na contagem de
                   * velejadores e no quórum que segura o encerramento até
                   * todos saírem. Quem não vai ao evento e entra por ali trava
                   * o grupo de casa — e era o que acontecia justamente com

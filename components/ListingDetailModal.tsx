@@ -223,7 +223,11 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
           {listing && (
             <>
               {/* Carrossel de fotos */}
-              <div className="relative bg-black aspect-4/3">
+              <div
+                className={`relative aspect-4/3 ${
+                  fotos.length > 0 ? 'bg-black' : 'bg-gradient-to-br from-slate-800 to-slate-900'
+                }`}
+              >
                 {fotos.length > 0 ? (
                   <>
                     <button
@@ -283,7 +287,7 @@ export const ListingDetailModal: React.FC<ListingDetailModalProps> = ({
                     </span>
                   </>
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-600">
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 text-slate-500">
                     <Package size={36} aria-hidden="true" />
                     <span className="text-xs font-bold">Sem foto</span>
                   </div>
