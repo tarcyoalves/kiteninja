@@ -469,20 +469,20 @@ describe('SOS — encerrar: quem pode fechar o SOS de alguém', () => {
   });
 
   /*
-   * POSSÍVEL DEFEITO DE PRODUÇÃO (não corrigido — T13 só cria testes):
-   * PATCH /api/sos/[id] não olha o status atual. Medido ao escrever o teste:
-   * um SOS 'resolvido' por um moderador, reencerrado pelo autor como
-   * 'falso_alarme', responde 200, troca o status e sobrescreve `resolved_by`
-   * com o autor. Um SOS terminal vira outro terminal e o rastro de quem o
-   * encerrou originalmente se perde. Quando o dono decidir, troque `it.fails`
-   * por `it`.
+   * DEFEITO CORRIGIDO em 06/10 (achado da T13): PATCH /api/sos/[id] não olhava
+   * o status atual. Um SOS 'resolvido' por moderador, reencerrado pelo autor
+   * como 'falso_alarme', respondia 200, trocava o status e sobrescrevia
+   * `resolved_by`. Agora responde 200 SEM mudar nada (`jaEncerrado`) — 200 e
+   * não 409 porque o app só limpa o painel de SOS quando o pedido dá certo
+   * (ver o comentário na rota).
    */
-  it.fails('DEFEITO?: SOS já encerrado não é reencerrado (o registro de quem encerrou não se perde)', async () => {
+  it('SOS já encerrado não é reencerrado (o registro de quem encerrou não se perde)', async () => {
     const mod = await criarUsuario({ role: 'moderator' });
     expect((await encerrar(mod, id, { status: 'resolvido' })).status).toBe(200);
 
     const r = await encerrar(vitima, id, { status: 'falso_alarme' });
-    expect(r.status).toBeGreaterThanOrEqual(400);
+    expect(r.status).toBe(200);
+    expect(r.body.jaEncerrado).toBe(true);
     const a = await linha(id);
     expect(a.status).toBe('resolvido');
     expect(a.resolved_by).toBe(mod.id);

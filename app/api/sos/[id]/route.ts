@@ -30,14 +30,33 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       throw new HttpError(403, 'Acesso negado para resolver este SOS.');
     }
 
-    await sql`
+    /*
+     * SÓ ENCERRA O QUE AINDA ESTÁ ABERTO.
+     *
+     * O UPDATE era `WHERE id`: um SOS já 'resolvido' por um moderador, tocado
+     * depois pelo autor como "falso alarme", trocava de status e tinha
+     * `resolved_by` sobrescrito — o registro de quem de fato encerrou o
+     * socorro se perdia. Medido em lib/sosFluxo.test.ts (06/10/2026, T13).
+     *
+     * Já encerrado responde 200 sem mudar nada, e não 409, de propósito:
+     * `cancelMySos` (KiteDataContext) só limpa o painel de SOS da tela quando
+     * o pedido dá certo. Com 409, quem tocasse "cancelar" num SOS que outra
+     * pessoa acabou de encerrar ficaria com o painel preso até o próximo
+     * polling. Para o autor, o resultado é o mesmo: o SOS está encerrado.
+     */
+    const encerrado = await sql`
       UPDATE sos_alerts
       SET status = ${status},
           resolved_at = NOW(),
           resolved_by = ${user.id},
           resolution_note = ${resolutionNote || null}
       WHERE id = ${sosId}
+        AND status IN ('ativo', 'em_atendimento')
+      RETURNING id
     `;
+    if (encerrado.length === 0) {
+      return { ok: true, jaEncerrado: true };
+    }
 
     await sql`
       INSERT INTO audit_logs (actor_id, action, target_type, target_id)

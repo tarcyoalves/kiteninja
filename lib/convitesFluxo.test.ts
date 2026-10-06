@@ -295,9 +295,12 @@ describe('convite de downwind para um usuário — convidar, aceitar, recusar', 
     const comum = await novaPessoa();
     const alvo = await novaPessoa();
     const dw = await downwindDe(org);
-    await entrarComo(comum);
-    const { POST: entrar } = await import('@/app/api/downwind/[id]/entrar/route');
-    await entrar(reqIp('POST', `/api/downwind/${dw}/entrar`), params({ id: dw }));
+    // Downwind privado: participante comum chega por convite, não por
+    // /entrar (que num privado recusa quem não participa — corrigido em 06/10).
+    await db.query(
+      `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'velejador')`,
+      [dw, comum.id],
+    );
 
     expect((await convidar(comum, dw, { inviteeUserId: alvo.id })).status).toBe(403);
     expect((await convidar(org, dw, { inviteeUserId: org.id })).status).toBe(400);

@@ -30,9 +30,36 @@ export async function POST(request: Request, ctx: Params) {
 
     rateLimiters.downwindEntrar(user.id);
 
-    const downwinds = await sql`SELECT status FROM downwinds WHERE id = ${id} LIMIT 1`;
+    const downwinds = await sql`
+      SELECT status, visibilidade, criado_por FROM downwinds WHERE id = ${id} LIMIT 1
+    `;
     if (downwinds.length === 0) throw new HttpError(404, 'Downwind não encontrado.');
-    const status = String((downwinds[0] as Record<string, unknown>).status);
+    const dw = downwinds[0] as Record<string, unknown>;
+    const status = String(dw.status);
+
+    /*
+     * DOWNWIND PRIVADO SÓ PARA QUEM JÁ FOI CHAMADO.
+     *
+     * Esta rota não olhava a visibilidade: quem tivesse o id de um downwind
+     * privado (link antigo, print, alguém que saiu do grupo) entrava sozinho
+     * e, no GET de posições logo depois, via onde cada velejador estava na
+     * água. Medido em lib/downwindFluxo.test.ts (06/10/2026, T13).
+     *
+     * Quem foi convidado não passa por aqui para entrar: os convites gravam a
+     * participação nas próprias rotas (invites/[id]/accept, invite/[token],
+     * convite/[token]/entrar). Aqui, num privado, só o criador e quem já tem
+     * linha de participante — reentrar depois de sair, trocar para "só
+     * assistir" — continuam passando. 404, e não 403, para não confirmar a
+     * um estranho que o downwind existe (mesmo padrão das outras rotas).
+     */
+    if (String(dw.visibilidade) !== 'comunidade' && String(dw.criado_por) !== user.id) {
+      const jaParticipa = await sql`
+        SELECT 1 FROM downwind_participantes
+        WHERE downwind_id = ${id} AND user_id = ${user.id}
+        LIMIT 1
+      `;
+      if (jaParticipa.length === 0) throw new HttpError(404, 'Downwind não encontrado.');
+    }
     if (status !== 'aberto' && status !== 'em_andamento') {
       throw new HttpError(409, 'Este downwind já foi encerrado ou cancelado.');
     }

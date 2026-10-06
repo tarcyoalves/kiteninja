@@ -139,13 +139,19 @@ async function montar(corpo: Record<string, unknown> = {}): Promise<Cenario> {
   const c = await criar(org, corpo);
   expect(c.status, JSON.stringify(c.body)).toBe(200);
   const id = String(c.body.id);
+  // O downwind nasce PRIVADO, e num privado ninguém entra por /entrar sem já
+  // participar (corrigido em 06/10 — ver o teste "quem tem só o id…"). No app,
+  // essas pessoas chegam pelos convites, que gravam a participação na própria
+  // rota; aqui a linha é gravada direto, do mesmo jeito.
   for (const [u, papel] of [
     [velejador, 'velejador'],
     [apoio, 'apoio_terra'],
     [espectador, 'espectador'],
   ] as const) {
-    const r = await entrar(u, id, { papel });
-    expect(r.status, JSON.stringify(r.body)).toBe(200);
+    await db.query(
+      `INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, $3)`,
+      [id, u.id, papel],
+    );
   }
   return { id, org, velejador, apoio, espectador, estranho };
 }
@@ -202,7 +208,8 @@ describe('downwind — criar e listar', () => {
     const estranho = await novaPessoa();
     const priv = String((await criar(org, { nome: 'Privado T13' })).body.id);
     const pub = String((await criar(org, { nome: 'Comunidade T13', visibilidade: 'comunidade' })).body.id);
-    await entrar(participante, priv);
+    // Participante de privado chega por convite (gravado direto aqui).
+    await db.query(`INSERT INTO downwind_participantes (downwind_id, user_id, papel) VALUES ($1, $2, 'velejador')`, [priv, participante.id]);
 
     const { GET } = await rotas.raiz();
     const ver = async (u: UsuarioDeTeste) => {
@@ -234,7 +241,8 @@ describe('downwind — entrar e espectador', () => {
   });
 
   it('papel desconhecido é 400; id malformado ou inexistente é 404 (nunca 500)', async () => {
-    const c = await montar();
+    // Comunidade: num privado o estranho já recebe 404 antes de o papel ser lido.
+    const c = await montar({ visibilidade: 'comunidade' });
     expect((await entrar(c.estranho, c.id, { papel: 'capitao' })).status).toBe(400);
     expect((await entrar(c.estranho, 'nao-e-uuid')).status).toBe(404);
     expect((await entrar(c.estranho, '00000000-0000-4000-8000-000000000000')).status).toBe(404);
@@ -251,7 +259,7 @@ describe('downwind — entrar e espectador', () => {
   it('uma travessia por vez: com outra em andamento a entrada é recusada (409) e nomeia a que trava', async () => {
     const a = await montar({ nome: 'Travessia A' });
     await iniciar(a);
-    const b = await montar({ nome: 'Travessia B' });
+    const b = await montar({ nome: 'Travessia B', visibilidade: 'comunidade' });
     const r = await entrar(a.velejador, b.id);
     expect(r.status).toBe(409);
     expect(String(r.body.error)).toContain('Travessia A');
@@ -261,12 +269,12 @@ describe('downwind — entrar e espectador', () => {
   it('espectador de uma travessia em andamento não é impedido de entrar em outra', async () => {
     const a = await montar({ nome: 'Travessia C' });
     await iniciar(a);
-    const b = await montar({ nome: 'Travessia D' });
+    const b = await montar({ nome: 'Travessia D', visibilidade: 'comunidade' });
     expect((await entrar(a.espectador, b.id)).status).toBe(200);
   });
 
   it('downwind encerrado ou cancelado não aceita entrada (409)', async () => {
-    const c = await montar();
+    const c = await montar({ visibilidade: 'comunidade' });
     await mudarStatus(c.org, c.id, 'cancelado');
     expect((await entrar(c.estranho, c.id)).status).toBe(409);
   });
@@ -282,7 +290,7 @@ describe('downwind — entrar e espectador', () => {
    * convite por link/usuário existe justamente para entrar em privado), troque
    * `it.fails` por `it`.
    */
-  it.fails('DEFEITO?: quem tem só o id de um downwind PRIVADO não entra nele sozinho', async () => {
+  it('quem tem só o id de um downwind PRIVADO não entra nele sozinho (corrigido em 06/10)', async () => {
     const c = await montar(); // privado por padrão
     const intruso = await novaPessoa({ nome: 'Intruso Com O UUID' });
     await iniciar(c);
@@ -515,7 +523,7 @@ describe('downwind — encerrar: quórum e quem pode', () => {
 
 describe('downwind — cancelar', () => {
   it('o organizador cancela antes de sair da praia (sem quórum) e o downwind deixa de aceitar gente e posição', async () => {
-    const c = await montar();
+    const c = await montar({ visibilidade: 'comunidade' });
     const r = await mudarStatus(c.org, c.id, 'cancelado');
     expect(r.status, JSON.stringify(r.body)).toBe(200);
     expect(await statusDe(c.id)).toBe('cancelado');
@@ -551,7 +559,7 @@ describe('downwind — cancelar', () => {
   });
 
   it('moderação cancela um downwind alheio; instrutor comum (sem ser organizador) não', async () => {
-    const c = await montar();
+    const c = await montar({ visibilidade: 'comunidade' });
     const instrutor = await novaPessoa({ role: 'instructor' });
     await entrar(instrutor, c.id);
     expect((await mudarStatus(instrutor, c.id, 'cancelado')).status).toBe(403);
