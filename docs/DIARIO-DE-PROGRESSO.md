@@ -113,3 +113,38 @@ Entradas detalhadas de cada agente:
   github.com → Actions e clicar em "Re-run all jobs" para validar a T02 (este
   ambiente não tem permissão para re-executar). Ou simplesmente o próximo push na
   `main` valida.
+
+---
+
+## 2026-10-06 — Análise de UX mobile, tela por tela
+**Quem:** Claude (Opus) · **Tarefa:** pedido do dono ("nova análise geral em
+cada funcionalidade e na parte visual de móbile")
+**Commits:** `9ac4480`
+
+- **Como foi feito:** o app rodou localmente com um banco em memória (PGlite)
+  semeado com dados fictícios (5 velejadores, velejos com trilha, downwind,
+  chat, anúncios, alerta) e foi fotografado com Chromium em 390×844 (celular),
+  como velejador e como admin — ~30 telas, com detector de overflow
+  horizontal. Esse modo de preview **não foi commitado** (ver U10 no plano).
+- **Corrigido (defeitos sem decisão de produto):**
+  - Datas cruas no feed, alertas, eventos e Diário ("Mon Oct 05 2026 23:58:21
+    GMT+0000 (Coordinated Universal Time)"). Causa: `String(Date)` nas rotas.
+    Agora ISO na API e "há 46 min" / "06/10/2026" na tela.
+  - "Registrar Velejo" nascia com 28,4 km, 50 km/h, salto 9,2 m, vento 20 e
+    rajada 26. Quem não apagava publicava um velejo que não aconteceu (e
+    entrava no ranking). Medições agora começam vazias.
+  - Título do cabeçalho empurrava o avatar para fora da tela; títulos
+    "Diário" e "Spots" alinhados à barra inferior.
+  - Conta nova abria a Home em "Favoritos (0)" com "Nenhum spot encontrado
+    com estes filtros". Agora abre em Todos quando não há favoritos.
+  - "Maré: •" vazio no card do Diário; placeholder da busca que cortava.
+- **Verificado:** teste de rota contra PGlite (`lib/datasNasRotas.test.ts`) com
+  contraprova — com `String()` de volta ele falha mostrando exatamente o texto
+  visto no celular; trava do formulário (`lib/registroVelejoSemValoresFicticios.test.ts`)
+  reprova 11/11 no código antigo. tsc, eslint 0 erros, vitest 1183/1183,
+  verify-sql 319/0, verify-sos 59/0, build exit 0. Telas recapturadas depois.
+- **Planos gratuitos:** nenhum impacto (sem consulta nova, sem cron, sem
+  dependência).
+- **Para o dono decidir:** itens U01–U10 em `docs/PLANO-AGENTES-2026-10.md`
+  (dois modais seguidos na primeira abertura, faixa "Radar Pro ATIVO" que não
+  corresponde a nada, abas "Comunidade" dentro de "Comunidade" no feed, etc.).
