@@ -3,6 +3,7 @@ import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
 import { num, str } from '@/lib/validation';
+import { instanteIso } from '@/lib/datas';
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -65,7 +66,9 @@ export async function GET(request: Request) {
         content: String(r.content),
         spotName: r.spot_name ? String(r.spot_name) : undefined,
         spotLocation: r.spot_location ? String(r.spot_location) : undefined,
-        timestamp: String(r.created_at),
+        // ISO, não String(Date): o driver devolve Date e o toString dele aparecia
+        // na tela em inglês, com fuso por extenso. Ver lib/datas.ts.
+        timestamp: instanteIso(r.created_at),
         photoUrl: r.photo_url ? String(r.photo_url) : undefined,
         windReport: r.wind_knots !== null ? {
           knots: Number(r.wind_knots),

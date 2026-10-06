@@ -13,10 +13,20 @@ interface SpotsViewProps {
 export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
   const { spots, searchQuery, setSearchQuery, beachMode, selectedStateFilter, setSelectedStateFilter } = useKiteData();
 
-  const [activeListTab, setActiveListTab] = useState<'favoritos' | 'todos'>('favoritos');
+  /*
+   * ABA INICIAL DERIVADA, NÃO FIXA. Abria sempre em "Favoritos" — e quem
+   * acabou de criar a conta (zero favoritos) caía numa tela vazia dizendo
+   * "Nenhum spot encontrado com estes filtros", sem ter usado filtro nenhum.
+   * Enquanto o velejador não escolher uma aba, mostramos Favoritos só se ele
+   * tiver algum; senão, Todos. Derivado no render (sem effect), então
+   * acompanha os favoritos carregando depois do primeiro render.
+   */
+  const [abaEscolhida, setActiveListTab] = useState<'favoritos' | 'todos' | null>(null);
   const [minKnotsFilter, setMinKnotsFilter] = useState<number>(0);
 
   const favoriteSpots = spots.filter(s => s.isFavorite);
+  const activeListTab = abaEscolhida ?? (favoriteSpots.length > 0 ? 'favoritos' : 'todos');
+  const semFavoritos = activeListTab === 'favoritos' && favoriteSpots.length === 0;
 
   // States available in spots
   const states = ['ALL', 'RN', 'CE', 'PI', 'RJ'];
@@ -54,7 +64,7 @@ export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Buscar spot, praia, estado (Ex: Ponta do Mel, Cumbuco, Galinhos)..."
+            placeholder="Buscar spot, praia ou estado"
             className="w-full pl-9 pr-8 py-2.5 rounded-xl text-xs font-semibold focus:outline-hidden transition-all bg-[#1E293B] border border-slate-700 text-white placeholder-slate-400 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 shadow-inner"
           />
           {searchQuery && (
@@ -143,7 +153,14 @@ export const SpotsView: React.FC<SpotsViewProps> = ({ onSelectSpot }) => {
         ) : (
           <div className="p-12 text-center text-slate-400 space-y-4">
             <Compass size={40} className="mx-auto text-cyan-400 animate-pulse" />
-            <p className="text-sm font-bold text-slate-200">Nenhum spot encontrado com estes filtros.</p>
+            <p className="text-sm font-bold text-slate-200">
+              {semFavoritos
+                ? 'Você ainda não tem spots favoritos.'
+                : 'Nenhum spot encontrado com estes filtros.'}
+            </p>
+            {semFavoritos && (
+              <p className="text-xs text-slate-400">Toque na estrela de um spot para acompanhá-lo aqui.</p>
+            )}
             <button
               onClick={() => {
                 setSearchQuery('');

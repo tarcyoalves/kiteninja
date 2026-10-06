@@ -46,14 +46,18 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
   const getHeaderTitle = () => {
     if (title) return title;
     switch (activeTab) {
+      // A Home lista Favoritos OU Todos (ver SpotsView): "Favoritos" no topo
+      // contradizia a aba "Todos" aberta logo abaixo.
       case 'favoritos':
-        return 'Favoritos';
+        return 'Spots';
       case 'mapa':
         return 'Mapa';
       case 'destaques':
         return 'Destaques';
+      // Mesmo nome da barra inferior; "Meu Logbook" também não cabia no
+      // celular ao lado dos botões.
       case 'sessoes':
-        return 'Meu Logbook';
+        return 'Diário';
       case 'alertas':
         return 'Alertas & Eventos';
       case 'chat':
@@ -124,9 +128,11 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
       </div>
 
       {/* Main App Bar */}
-      <div className="px-4 py-2.5 flex items-center justify-between">
+      <div className="px-4 py-2.5 flex items-center justify-between gap-2">
         {/* Left: Menu Hamburger */}
-        <div className="flex items-center gap-3">
+        {/* min-w-0 em cada nível: sem isso o `truncate` do título não age e um
+            título longo ("Alertas & Eventos", ou um `title` vindo de fora) empurra o avatar para fora da tela. */}
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => setIsSidebarOpen(true)}
             className="p-2 -ml-1.5 rounded-xl hover:bg-white/20 active:scale-95 transition-all"
@@ -135,7 +141,7 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
             <Menu size={22} className="text-white" />
           </button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             {/* Placa branca: a logo é preta e o header é escuro. */}
             <span className="w-[2.4rem] h-[2.4rem] rounded-full bg-white p-0.5 shrink-0 shadow-sm">
               <Image
@@ -147,14 +153,14 @@ export const Header: React.FC<HeaderProps> = ({ title, onEditFavorites }) => {
                 className="w-full h-full object-contain"
               />
             </span>
-            <span className="font-black text-xl tracking-wider uppercase drop-shadow-md text-white truncate">
+            <span className="font-black text-lg sm:text-xl tracking-wide sm:tracking-wider uppercase drop-shadow-md text-white truncate">
               {getHeaderTitle()}
             </span>
           </div>
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           {activeTab === 'favoritos' && onEditFavorites && (
             <button
               onClick={onEditFavorites}

@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { PhotoLightboxModal } from '../components/PhotoLightboxModal';
 import { AvisoVelejoNaoRegistrado } from '../components/AvisoVelejoNaoRegistrado';
+import { formatarDataCurta } from '../lib/datas';
 
 export const SessionsView: React.FC = () => {
   const { sessions, deleteSession, setIsLoggerOpen, beachMode } = useKiteData();
@@ -189,7 +190,8 @@ export const SessionsView: React.FC = () => {
                   </div>
                   <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5 font-medium">
                     <Calendar size={12} className="text-rose-400" />
-                    <span>{session.date} às {session.startTime}</span>
+                    {/* Formatada aqui: a API devolve AAAA-MM-DD (lib/datas.ts). */}
+                    <span>{formatarDataCurta(session.date)} às {session.startTime}</span>
                     <span>&bull;</span>
                     <Clock size={12} className="text-cyan-400" />
                     <span>{session.durationMinutes} minutos</span>
@@ -243,7 +245,7 @@ export const SessionsView: React.FC = () => {
                       title: session.spotName,
                       spotName: session.spotLocation,
                       windKnots: session.avgWindKnots,
-                      date: session.date,
+                      date: formatarDataCurta(session.date),
                     })
                   }
                   className="relative block w-full aspect-video rounded-xl overflow-hidden bg-black ring-1 ring-slate-700 cursor-zoom-in"
@@ -288,7 +290,12 @@ export const SessionsView: React.FC = () => {
 
               {/* Card Footer */}
               <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800">
-                <span>Maré: {session.tideCondition} &bull; {session.waterCondition}</span>
+                {/* Sem maré nem mar informados, a linha virava "Maré: •". */}
+                <span>
+                  {[session.tideCondition && `Maré: ${session.tideCondition}`, session.waterCondition]
+                    .filter(Boolean)
+                    .join(' • ')}
+                </span>
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
                   <ShieldCheck size={13} />
                   <span>Sincronizado</span>

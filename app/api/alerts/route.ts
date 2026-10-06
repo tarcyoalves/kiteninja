@@ -3,6 +3,7 @@ import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
 import { str } from '@/lib/validation';
+import { instanteIso } from '@/lib/datas';
 
 export async function GET() {
   return handle(async () => {
@@ -34,7 +35,9 @@ export async function GET() {
         severity: r.severity as 'alerta' | 'perigo' | 'informativo',
         description: String(r.description),
         reportedBy: String(r.reported_by),
-        timestamp: String(r.created_at),
+        // ISO, não String(Date): o driver devolve Date e o toString dele aparecia
+        // na tela em inglês, com fuso por extenso. Ver lib/datas.ts.
+        timestamp: instanteIso(r.created_at),
         status: r.status as 'Ativo' | 'Resolvido',
       };
     });

@@ -37,6 +37,7 @@ import type { DownwindVisibilidade } from '../lib/downwindVisibilidade';
 import { DownwindResumoModal } from '../components/DownwindResumoModal';
 import { ParticipantesEventoSheet } from '../components/activity/ParticipantesEventoSheet';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
+import { formatRelativeTime } from '../lib/chat';
 
 export const EventsAndAlertsView: React.FC = () => {
   const {
@@ -647,7 +648,8 @@ export const EventsAndAlertsView: React.FC = () => {
 
               <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800">
                 <span>Reportado por: {alert.reportedBy}</span>
-                <span>{alert.timestamp}</span>
+                {/* "há 2 h", não o texto cru do Date — ver lib/datas.ts. */}
+                <span>{formatRelativeTime(alert.timestamp)}</span>
               </div>
             </div>
           ))}

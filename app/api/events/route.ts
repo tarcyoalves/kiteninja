@@ -12,6 +12,7 @@ import { normalizarUf } from '@/lib/uf';
 import { encerrarAbandonados } from '@/lib/downwindSilencio';
 import type { KiteEvent } from '@/types';
 import { rateLimiters } from '@/lib/rateLimit';
+import { instanteIso } from '@/lib/datas';
 
 const EVENT_TYPES = ['Downwind', 'Campeonato', 'Clínica / Aulas', 'Encontro de Riders'] as const;
 
@@ -113,7 +114,9 @@ export async function GET(request: Request) {
         description: String(r.description),
         organizer: String(r.organizer),
         imageUrl: r.image_url ? String(r.image_url) : undefined,
-        timestamp: String(r.created_at),
+        // ISO, não String(Date): o driver devolve Date e o toString dele aparecia
+        // na tela em inglês, com fuso por extenso. Ver lib/datas.ts.
+        timestamp: instanteIso(r.created_at),
         participantsCount: Number(r.participants_count),
         isRegistered: Boolean(r.is_registered),
         uf: r.uf ? String(r.uf) : null,

@@ -4,6 +4,7 @@ import { HttpError, requireUser } from '@/lib/auth';
 import { num, oneOf, str } from '@/lib/validation';
 import { exigirSessaoVisivel } from '@/lib/sessaoAcesso';
 import type { Discipline, SessionDetail } from '@/types';
+import { dataCalendario } from '@/lib/datas';
 
 const DISCIPLINES = [
   'Kitesurf Twintip',
@@ -119,7 +120,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       id: String(r.id),
       spotName: String(r.spot_name),
       spotLocation: String(r.spot_location),
-      date: String(r.date),
+      // AAAA-MM-DD, não String(Date) — ver lib/datas.ts.
+      date: dataCalendario(r.date),
       startTime: String(r.start_time),
       createdAt: String(r.created_at),
       durationMinutes: Number(r.duration_minutes),

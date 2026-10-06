@@ -5,6 +5,7 @@ import { bool, isIsoDate, isTime24, num, oneOf, str } from '@/lib/validation';
 import { normalizarFotos } from '@/lib/fotosDoVelejo';
 import { validarTrilhaReduzida } from '@/lib/trilhaSessao';
 import type { Discipline } from '@/types';
+import { dataCalendario } from '@/lib/datas';
 
 const DISCIPLINES = [
   'Kitesurf Twintip',
@@ -96,7 +97,8 @@ export async function GET() {
           spotId: r.spot_id ? String(r.spot_id) : null,
           spotName: String(r.spot_name),
           spotLocation: String(r.spot_location),
-          date: String(r.date),
+          // AAAA-MM-DD, não String(Date) — ver lib/datas.ts.
+          date: dataCalendario(r.date),
           startTime: String(r.start_time),
           durationMinutes: Number(r.duration_minutes),
           discipline: r.discipline as Discipline,

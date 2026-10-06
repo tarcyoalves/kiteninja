@@ -33,13 +33,22 @@ export const SessionLoggerModal: React.FC = () => {
   const [discipline, setDiscipline] = useState<Discipline>('Kitesurf Twintip');
   const [kiteSizeM2, setKiteSizeM2] = useState(9);
   const [boardModel, setBoardModel] = useState('');
-  const [avgWindKnots, setAvgWindKnots] = useState(20);
-  const [maxGustKnots, setMaxGustKnots] = useState<number | ''>(26);
+  /*
+   * MEDIÇÕES COMEÇAM VAZIAS. O formulário nascia com 20 nós, rajada 26,
+   * 28,4 km, 50 km/h e salto de 9,2 m — números de demonstração. Quem
+   * registrava um velejo à mão sem mexer nesses campos publicava no feed e no
+   * ranking uma sessão que nunca aconteceu (todo mundo "saltava 9,2 m").
+   * Agora só o vento médio é obrigatório (a coluna é NOT NULL); o resto, se
+   * ficar vazio, não é enviado. O GPS continua preenchendo distância e
+   * velocidade pelo prefill abaixo.
+   */
+  const [avgWindKnots, setAvgWindKnots] = useState<number | ''>('');
+  const [maxGustKnots, setMaxGustKnots] = useState<number | ''>('');
   const [windDirection, setWindDirection] = useState('ENE');
   const [tideCondition, setTideCondition] = useState<'Seca' | 'Enchendo' | 'Cheia' | 'Vazando'>('Enchendo');
   const [waterCondition, setWaterCondition] = useState('Chop Médio');
   const [rating, setRating] = useState(5);
-  const [distanceKm, setDistanceKm] = useState<number | ''>(28.4);
+  const [distanceKm, setDistanceKm] = useState<number | ''>('');
   /*
    * O CAMPO É EM km/h; a coluna do banco é em nós.
    *
@@ -48,8 +57,8 @@ export const SessionLoggerModal: React.FC = () => {
    * que acabou de ver na tela (44) num campo que o guardaria como 44 nós, ou
    * seja, 81 km/h. A conversão acontece uma vez, no envio.
    */
-  const [maxSpeedKmh, setMaxSpeedKmh] = useState<number | ''>(50);
-  const [highestJumpM, setHighestJumpM] = useState<number | ''>(9.2);
+  const [maxSpeedKmh, setMaxSpeedKmh] = useState<number | ''>('');
+  const [highestJumpM, setHighestJumpM] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
   /*
    * Lista, não uma foto só. Cada item já é a URL final no Vercel Blob — o
@@ -129,6 +138,10 @@ export const SessionLoggerModal: React.FC = () => {
     if (isSaving || isCompressingPhoto) return;
     const finalSpotName = selectedSpotId === 'outro' ? (customSpotName || 'Spot Customizado') : (targetSpot?.name || 'Spot');
     const finalSpotLocation = selectedSpotId === 'outro' ? 'Brasil' : (targetSpot?.location || 'Litoral');
+    if (avgWindKnots === '') {
+      setSaveError('Informe o vento médio (nós) do velejo.');
+      return;
+    }
 
     setIsSaving(true);
     setSaveError('');
@@ -181,15 +194,15 @@ export const SessionLoggerModal: React.FC = () => {
     setDiscipline('Kitesurf Twintip');
     setKiteSizeM2(9);
     setBoardModel('');
-    setAvgWindKnots(20);
-    setMaxGustKnots(26);
+    setAvgWindKnots('');
+    setMaxGustKnots('');
     setWindDirection('ENE');
     setTideCondition('Enchendo');
     setWaterCondition('Chop Médio');
     setRating(5);
-    setDistanceKm(28.4);
-    setMaxSpeedKmh(50);
-    setHighestJumpM(9.2);
+    setDistanceKm('');
+    setMaxSpeedKmh('');
+    setHighestJumpM('');
     setNotes('');
     setFotoUrls([]);
     setPhotoError('');
@@ -432,8 +445,13 @@ export const SessionLoggerModal: React.FC = () => {
                 <input
                   type="number"
                   value={avgWindKnots}
-                  onChange={e => setAvgWindKnots(Number(e.target.value))}
-                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-emerald-400 font-black text-sm"
+                  required
+                  min={0}
+                  max={80}
+                  inputMode="decimal"
+                  placeholder="ex.: 18"
+                  onChange={e => setAvgWindKnots(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-emerald-400 font-black text-sm placeholder:text-slate-500 placeholder:font-normal"
                 />
               </div>
               <div>
@@ -441,8 +459,9 @@ export const SessionLoggerModal: React.FC = () => {
                 <input
                   type="number"
                   value={maxGustKnots}
+                  placeholder="opcional"
                   onChange={e => setMaxGustKnots(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 font-black text-sm"
+                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 font-black text-sm placeholder:text-slate-500 placeholder:font-normal"
                 />
               </div>
               <div>
@@ -520,8 +539,8 @@ export const SessionLoggerModal: React.FC = () => {
                   step="0.1"
                   value={distanceKm}
                   onChange={e => setDistanceKm(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-cyan-400 font-bold"
-                  placeholder="30.5"
+                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-cyan-400 font-bold placeholder:text-slate-500 placeholder:font-normal"
+                  placeholder="opcional"
                 />
               </div>
               <div>
@@ -531,8 +550,8 @@ export const SessionLoggerModal: React.FC = () => {
                   step="0.1"
                   value={maxSpeedKmh}
                   onChange={e => setMaxSpeedKmh(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-cyan-400 font-bold"
-                  placeholder="28.4"
+                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-cyan-400 font-bold placeholder:text-slate-500 placeholder:font-normal"
+                  placeholder="opcional"
                 />
               </div>
               <div>
@@ -542,8 +561,8 @@ export const SessionLoggerModal: React.FC = () => {
                   step="0.1"
                   value={highestJumpM}
                   onChange={e => setHighestJumpM(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 font-black"
-                  placeholder="10.5"
+                  className="w-full p-2 rounded-xl bg-[#0F172A] border border-slate-700 text-amber-400 font-black placeholder:text-slate-500 placeholder:font-normal"
+                  placeholder="opcional"
                 />
               </div>
             </div>

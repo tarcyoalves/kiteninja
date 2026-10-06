@@ -486,8 +486,10 @@ export const FeedView: React.FC = () => {
                     <div className="flex items-center gap-1 text-xs text-cyan-400 mt-0.5 font-bold">
                       <span className="truncate">{post.spotName} &bull; {post.spotLocation}</span>
                     </div>
-                    <span className="text-[11px] text-slate-400 font-mono">
-                      {post.timestamp}
+                    {/* Mesmo formato do card de velejo ("há 37 min"). Antes era o
+                        texto cru do Date, em inglês — ver lib/datas.ts. */}
+                    <span className="text-[11px] text-slate-400">
+                      {formatRelativeTime(post.timestamp)}
                     </span>
                   </div>
                 </div>
@@ -517,7 +519,7 @@ export const FeedView: React.FC = () => {
                         authorName: post.authorName,
                         spotName: post.spotName,
                         windKnots: post.windReport?.knots,
-                        date: post.timestamp,
+                        date: formatRelativeTime(post.timestamp),
                       })
                     }
                     className="block w-full h-full cursor-zoom-in"
