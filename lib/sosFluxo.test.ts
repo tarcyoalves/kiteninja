@@ -468,6 +468,26 @@ describe('SOS — encerrar: quem pode fechar o SOS de alguém', () => {
     expect((await encerrar(vitima, '00000000-0000-4000-8000-000000000000', { status: 'resolvido' })).status).toBe(404);
   });
 
+  /*
+   * POSSÍVEL DEFEITO DE PRODUÇÃO (não corrigido — T13 só cria testes):
+   * PATCH /api/sos/[id] não olha o status atual. Medido ao escrever o teste:
+   * um SOS 'resolvido' por um moderador, reencerrado pelo autor como
+   * 'falso_alarme', responde 200, troca o status e sobrescreve `resolved_by`
+   * com o autor. Um SOS terminal vira outro terminal e o rastro de quem o
+   * encerrou originalmente se perde. Quando o dono decidir, troque `it.fails`
+   * por `it`.
+   */
+  it.fails('DEFEITO?: SOS já encerrado não é reencerrado (o registro de quem encerrou não se perde)', async () => {
+    const mod = await criarUsuario({ role: 'moderator' });
+    expect((await encerrar(mod, id, { status: 'resolvido' })).status).toBe(200);
+
+    const r = await encerrar(vitima, id, { status: 'falso_alarme' });
+    expect(r.status).toBeGreaterThanOrEqual(400);
+    const a = await linha(id);
+    expect(a.status).toBe('resolvido');
+    expect(a.resolved_by).toBe(mod.id);
+  });
+
   it('depois de encerrado o SOS some do polling de TODOS e o autor pode pedir socorro de novo', async () => {
     expect((await polling(vitima)).map((a) => a.id)).toEqual([id]);
     expect((await polling(socorrista)).map((a) => a.id)).toEqual([id]);
