@@ -148,3 +148,41 @@ cada funcionalidade e na parte visual de móbile")
 - **Para o dono decidir:** itens U01–U10 em `docs/PLANO-AGENTES-2026-10.md`
   (dois modais seguidos na primeira abertura, faixa "Radar Pro ATIVO" que não
   corresponde a nada, abas "Comunidade" dentro de "Comunidade" no feed, etc.).
+
+---
+
+## 2026-10-06 — U01–U10 executados ("Faça tudo")
+**Quem:** Claude (Opus) · **Tarefa:** U01–U10 do plano
+**Commits:** `3d6c8c6`
+
+- **O que mudou:** primeira abertura sem o convite de instalação (U01); faixa
+  "Radar Pro" fictícia removida (U02); subabas do feed "Todos / Seguindo" (U03);
+  card de spot com nome inteiro e local legível (U04); rótulos do downwind que
+  separam "confirmar presença" de "entrar na água" (U05); avatar redundante do
+  topo removido para quem está logado (U06); selos "Novo" que somem após o
+  primeiro toque (U07); anúncio sem foto sem quadrado preto (U08); e
+  `npm run dev:preview` (U10). Detalhes por item na tabela do plano.
+- **Correções de rota ao executar:**
+  - U05: a contagem de confirmados **já batia** com a própria lista; o problema
+    real eram dois botões que pareciam sinônimos. Juntá-los mudaria quórum e
+    SOS, então só os rótulos mudaram.
+  - U09: verificado na tela que não é defeito; nada foi alterado.
+  - U04: o botão de bússola era o único elemento focável do card; ao tirá-lo,
+    o card virou botão acessível (Enter/Espaço) para não perder acesso por
+    teclado e leitor de tela.
+  - U10: a primeira tentativa (alias do Turbopack) não funciona — o Next
+    resolve `@/` pelo tsconfig antes do alias. Ficou um `require` atrás de
+    `NODE_ENV === 'development'`, que o build elimina.
+- **Verificado:** telas recapturadas a 390×844 (1ª carga sem convite, 2ª com;
+  selo do Mapa some após o toque; cards, downwind, anúncios, feed). Build de
+  produção sem nenhum `.js` contendo o preview; contraprova sem a condição o
+  levou a dezenas de rotas. Novos testes: `lib/seloNovo.test.ts`,
+  `lib/dbPreviewForaDaProducao.test.ts` (contraprovado). tsc, eslint 0 erros
+  (avisos 139 → 138), vitest 1188/1188, verify-sql 319/0, verify-sos 59/0,
+  build exit 0.
+- **Planos gratuitos:** nenhum impacto. O preview roda só na máquina de quem
+  desenvolve e não toca Neon nem Vercel.
+- **Pendente para o dono:** velejos já gravados com os valores fictícios do
+  formulário antigo (28,4 km / 50 km/h / salto 9,2 m) continuam no banco de
+  produção — este ambiente não tem acesso a ele para contar. Também seguem
+  T02 (validar CI), T03, T08, T11 e T16.

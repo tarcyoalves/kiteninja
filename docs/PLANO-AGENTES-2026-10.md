@@ -586,24 +586,24 @@ commit, começando pelo SOS), nunca de uma vez.
 ## Rodada UX mobile (06/10) — U01 a U10
 
 Vistos em telas reais a 390×844 (ver diário de 06/10). Os defeitos sem
-decisão de produto já foram corrigidos em `9ac4480`. Estes mexem em produto
-ou em texto que o velejador conhece — **o dono decide antes do agente**.
+decisão de produto já foram corrigidos em `9ac4480`. O dono aprovou todos
+("Faça tudo", 06/10) e eles foram executados em `3d6c8c6` — coluna **Estado**.
 
-| ID | O que se vê no celular | Proposta | Quem |
-|---|---|---|---|
-| U01 | Primeira abertura: modal "Antes de velejar" (permissões) e, logo em seguida, "Baixe o KiteNinja no Celular". Dois bloqueios antes de ver qualquer spot. | Mostrar o de instalar só a partir da 2ª visita, ou depois do primeiro velejo. | dono decide → agente |
-| U02 | Faixa "KiteNinja Radar Pro — ATIVO" na Home. Não existe plano Pro; é decoração herdada de um mockup. | Remover, ou trocar por algo real (ex.: fonte da previsão). | dono decide → agente |
-| U03 | Feed: abas "Velejos / Comunidade" no topo e, dentro de Velejos, outras abas "Comunidade / Seguindo". Duas "Comunidade" com sentidos diferentes. | Renomear as de dentro para "Todos / Seguindo". | dono decide → agente |
-| U04 | Card de spot na Home: nome e local cortados ("Praia Ponta…", "• A."); a coluna de texto fica estreita entre o vento e dois botões. | Nome em até 2 linhas e local abaixo; botão de bússola menor. | agente (visual) |
-| U05 | Card de downwind com dois botões de participar e contagem que não bate com a lista de participantes logo abaixo. | Um botão só; contagem tirada da mesma lista. | dono confirma → agente |
-| U06 | Três portas para o mesmo menu/perfil: hambúrguer, avatar no topo e "Menu" na barra inferior. | Escolher duas (sugestão: hambúrguer + Menu). | dono decide |
-| U07 | Selos "NOVO" permanentes no menu. | Sumir depois do primeiro toque (por usuário). | agente |
-| U08 | Anúncios sem foto mostram um retângulo preto. | Placeholder com ícone e a cor do card. | agente |
-| U09 | Botões flutuantes "Publicar Relato" / "Criar Downwind" cobrem o fim da lista. | Espaço no fim da lista do tamanho do botão. | agente |
-| U10 | Não há como ver o app sem um banco Neon: a análise de 06/10 usou um modo de preview local (PGlite + dados fictícios) que ficou fora do commit porque o `require` estático levaria o PGlite ao bundle de produção. | Script `npm run dev:preview` com o banco trocado por alias só no dev, sem tocar `lib/db.ts` em produção. Não consome Neon nem Vercel. | agente |
+| ID | O que se vê no celular | Proposta | Quem | Estado |
+|---|---|---|---|---|
+| U01 | Primeira abertura: modal "Antes de velejar" (permissões) e, logo em seguida, "Baixe o KiteNinja no Celular". Dois bloqueios antes de ver qualquer spot. | Mostrar o de instalar só a partir da 2ª visita, ou depois do primeiro velejo. | dono decide → agente | ✅ `3d6c8c6` — só a partir da 2ª carga |
+| U02 | Faixa "KiteNinja Radar Pro — ATIVO" na Home. Não existe plano Pro; é decoração herdada de um mockup. | Remover, ou trocar por algo real (ex.: fonte da previsão). | dono decide → agente | ✅ `3d6c8c6` — removida |
+| U03 | Feed: abas "Velejos / Comunidade" no topo e, dentro de Velejos, outras abas "Comunidade / Seguindo". Duas "Comunidade" com sentidos diferentes. | Renomear as de dentro para "Todos / Seguindo". | dono decide → agente | ✅ `3d6c8c6` |
+| U04 | Card de spot na Home: nome e local cortados ("Praia Ponta…", "• A."); a coluna de texto fica estreita entre o vento e dois botões. | Nome em até 2 linhas e local abaixo; botão de bússola menor. | agente (visual) | ✅ `3d6c8c6` — bússola virou seta; card focável (Enter/Espaço) |
+| U05 | Card de downwind com dois botões de participar e contagem que não bate com a lista de participantes logo abaixo. | Um botão só; contagem tirada da mesma lista. | dono confirma → agente | ✅ `3d6c8c6` — rótulos ("Confirmar presença" / "No dia: entrar na travessia"). A contagem **já batia** com a própria lista; a descrição acima estava errada. Nenhuma regra de quórum/SOS mudou |
+| U06 | Três portas para o mesmo menu/perfil: hambúrguer, avatar no topo e "Menu" na barra inferior. | Escolher duas (sugestão: hambúrguer + Menu). | dono decide | ✅ `3d6c8c6` — avatar do topo saiu para logado; deslogado vê "Entrar" |
+| U07 | Selos "NOVO" permanentes no menu. | Sumir depois do primeiro toque (por usuário). | agente | ✅ `3d6c8c6` — por aparelho (`lib/seloNovo.ts`) |
+| U08 | Anúncios sem foto mostram um retângulo preto. | Placeholder com ícone e a cor do card. | agente | ✅ `3d6c8c6` |
+| U09 | Botões flutuantes "Publicar Relato" / "Criar Downwind" cobrem o fim da lista. | Espaço no fim da lista do tamanho do botão. | agente | ✔️ verificado: não é defeito — no fim da rolagem nada fica sob o botão; sobrepor durante a rolagem é o normal de botão flutuante |
+| U10 | Não há como ver o app sem um banco Neon: a análise de 06/10 usou um modo de preview local (PGlite + dados fictícios) que ficou fora do commit porque o `require` estático levaria o PGlite ao bundle de produção. | Script `npm run dev:preview` com o banco trocado por alias só no dev, sem tocar `lib/db.ts` em produção. Não consome Neon nem Vercel. | agente | ✅ `3d6c8c6` — `npm run dev:preview`; ver README |
 
-Também visto, sem urgência: "Alertas & …" ainda trunca no cabeçalho (agora
-sem empurrar nada) e o menu lateral ainda chama o Diário de "Meu Logbook".
+Também feito em `3d6c8c6`: títulos curtos que cabem no celular ("Eventos",
+"Perfil") e "Meu Diário" no menu lateral e no formulário de velejo.
 
 ---
 
