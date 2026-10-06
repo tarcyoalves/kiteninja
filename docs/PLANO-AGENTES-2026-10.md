@@ -33,18 +33,18 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 | T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** | ⬜ dono |
 | T04 | 🟠 P1 | Posições do link de apoio em terra guardadas para sempre | P | agente | ✅ `994ea33` |
 | T05 | 🟠 P1 | Nenhum cabeçalho de segurança HTTP | P | agente | ✅ `6343780` + `305f78b` |
-| T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente | ⬜ |
+| T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente | ✅ `0d2fd06` `8f63782` — altas 4→0; resta 1 crítica no `@capacitor/android` (**dono decide**, ver `docs/DEPENDENCIAS-ALERTAS.md`) |
 | T07 | 🟠 P1 | Ações do admin não deixam rastro (`audit_logs` só no SOS) | M | agente | ✅ `e907b17` |
 | T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente | ⬜ dono primeiro |
 | T09 | 🟡 P2 | Painel admin: polling de 12 s que não pausa, apaga erros e mantém o banco acordado | P | agente | ✅ `3bc716d` |
 | T10 | 🟡 P2 | Painel admin: falhas engolidas em silêncio (Erros, Convites) | P | agente | ✅ `ee56790` |
 | T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente | ⬜ dono decide |
 | T12 | 🟡 P2 | Sessões expiradas nunca são apagadas | P | agente | ✅ `e8fbfbc` |
-| T13 | 🔵 P3 | Trocar guardas de texto por testes de comportamento nos fluxos críticos | M | agente | ⬜ |
-| T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ⬜ |
+| T13 | 🔵 P3 | Trocar guardas de texto por testes de comportamento nos fluxos críticos | M | agente | ✅ `9e7c682`…`df6f30a` — +116 testes; achou 2 defeitos, corrigidos em `333f57f` |
+| T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ✅ `a0d4140` `90f5dd4` — avisos 138→39; `<img>` ficaram (todos dinâmicos) |
 | T15 | 🔵 P3 | `data/mockSpots` é o catálogo real — nome engana | P | agente | ✅ `91e1f42` |
 | T16 | 🔵 P3 | Domínio `app.kiteninja.ct.ws` pendente de verificação desde a criação | P | **dono** | ⬜ dono |
-| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⬜ |
+| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⬜ (T13 feita: liberada) |
 
 Prioridade: 🔴 alguém pode se machucar ou a casa está pegando fogo ·
 🟠 segurança/privacidade/dado · 🟡 o dono ou o velejador sentem ·

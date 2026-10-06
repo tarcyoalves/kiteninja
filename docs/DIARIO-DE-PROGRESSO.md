@@ -186,3 +186,56 @@ cada funcionalidade e na parte visual de móbile")
   formulário antigo (28,4 km / 50 km/h / salto 9,2 m) continuam no banco de
   produção — este ambiente não tem acesso a ele para contar. Também seguem
   T02 (validar CI), T03, T08, T11 e T16.
+
+---
+
+## 2026-10-06 — Três agentes Sonnet: dependências, testes de fluxo, lint
+**Quem:** 3 agentes Sonnet em worktrees isolados; integração por Claude (Opus)
+· **Tarefa:** T06, T13, T14 — pedido do dono: "Adiante algum serviço com agentes"
+**Commits:** T06 `0d2fd06` `8f63782` `c86159e` · T14 `a0d4140` `90f5dd4` ·
+T13 `9e7c682` `6c3fae4` `2fed5ec` `4c2c7e3` `0abc2c3` `df6f30a` · correções
+`333f57f` · consulta para o dono `d984b8e`
+
+- **T06 (dependências)** — `npm audit --omit=dev`: 1 crítica / 4 altas / 6
+  moderadas → 1 crítica / 0 altas / 2 moderadas. `npm audit fix` sem `--force`
+  + `firebase-admin` 14.3.0 → 14.5.0 (mesma versão principal). Conferido na
+  integração: lock continua v3, `next` igual, nenhum pacote nativo por
+  plataforma perdido (swc, sharp, lightningcss, oxide). Diário do agente:
+  `docs/diario/2026-10-06-T06.md`.
+  - **Para o dono decidir:** `@capacitor/android` 8.5.0 tem falha crítica
+    (GHSA-rvm3-566m-v7fv) que só vale dentro do APK. A correção (8.5.2) foi
+    tentada pelo agente e negada pelo controle de permissões da sessão; não
+    foi refeita por outro caminho. Precisa de autorização e de um APK novo.
+    Ver `docs/DEPENDENCIAS-ALERTAS.md`.
+- **T14 (lint)** — avisos 138 → 40 (39 depois da integração), 0 erros. Só
+  nomes, imports e cálculos mortos. Revisado na integração, um por um, o que
+  podia mudar comportamento: efeito do feed (dispara nos mesmos momentos), o
+  vigia do chat (agora também reinicia ao trocar de conta direto — correto),
+  `useMemo` removidos (puros, sem leitor), `sw.js` (só um comentário; o
+  navegador rebaixa o service worker uma vez). Os 31 `<img>` ficaram: todos
+  são imagem de usuário ou remota. Diário: `docs/diario/2026-10-06-T14.md`.
+- **T13 (testes de comportamento)** — 4 arquivos novos pelas rotas reais
+  contra PGlite: SOS (37), downwind (36), convites (28), chat privado (15);
+  `redefinirSenhaFluxo.test.ts` migrado para o helper. ~67 contraprovas
+  registradas em `docs/diario/2026-10-06-T13.md`. Helper novo
+  `test/entrarRapido.ts` (sessão sem bcrypt, o arquivo do SOS caiu de 66 s
+  para 6 s).
+- **Dois defeitos reais que os testes acharam — corrigidos em `333f57f`:**
+  1. **Downwind privado aceitava qualquer um com o id** e, em seguida,
+     mostrava a posição de todos na água. Agora só criador e participantes
+     passam por `/entrar` num privado (404 para o resto). Convites não passam
+     por essa rota, então não foram afetados.
+  2. **SOS já encerrado podia ser "reencerrado"**, apagando quem encerrou.
+     Agora só fecha o que está aberto; já fechado responde 200 sem mudar nada
+     (com 409, o painel de SOS do autor ficaria preso na tela).
+  Contraprova das duas: sem a trava, só o teste correspondente fica vermelho.
+  Testes do agente que usavam `/entrar` como atalho para pôr gente num
+  downwind privado foram ajustados para gravar a participação como os
+  convites fazem.
+- **Também:** `docs/CONSULTA-VELEJOS-FICTICIOS.md` — consulta para o dono
+  contar/listar (e, se quiser, limpar) velejos gravados com 28,4 km / salto
+  9,2 m do formulário antigo. Validada contra o `lib/schema.sql` em PGlite.
+- **Verificado no conjunto integrado:** tsc, eslint 0 erros (39 avisos),
+  vitest 91 arquivos / 1304 testes, verify-sql 319/0, verify-sos 59/0, next
+  build exit 0, nenhum `.js` de produção com o banco de preview.
+- **Planos gratuitos:** nenhum impacto. Um push único em main/master.
