@@ -1,8 +1,9 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
+import { HttpError, requireUser } from '@/lib/auth';
 import { num, str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
+import { fotoAceitaNaEntrada } from '@/lib/fotosNoBlob';
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -110,6 +111,15 @@ export async function POST(request: Request) {
     const spotName = str(body, 'spotName', { optional: true, max: 200 });
     const spotLocation = str(body, 'spotLocation', { optional: true, max: 200 });
     const photoUrl = str(body, 'photoUrl', { optional: true, max: 1_500_000 });
+    /*
+     * Foto do relato: URL do Vercel Blob (caminho novo, ver lib/fotosNoBlob.ts)
+     * ou data:image/ (aba/cliente antigo — aceito por compatibilidade, pode ser
+     * fechado depois). Antes disto QUALQUER texto virava `photo_url`, inclusive
+     * `javascript:` e URL de rastreador, que o feed de todo mundo carregaria.
+     */
+    if (photoUrl && !fotoAceitaNaEntrada(photoUrl, 1_500_000)) {
+      throw new HttpError(400, 'Formato de imagem não suportado. Envie JPG, PNG ou WEBP.');
+    }
     const windKnots = num(body, 'windKnots', { optional: true, min: 0, max: 80 });
     const windKiteUsed = str(body, 'windKiteUsed', { optional: true, max: 100 });
     const windCondition = str(body, 'windCondition', { optional: true, max: 100 });

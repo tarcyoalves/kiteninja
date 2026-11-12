@@ -30,6 +30,7 @@ import {
 import { ActiveTab, useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../lib/imageCompress';
+import { enviarFotoParaBlob } from '../lib/enviarFotoParaBlob';
 import { useSosHold } from '../lib/useSosHold';
 import { urlBase64ToUint8Array } from '../lib/pushClient';
 import { useAoMudar } from '../lib/useAoMudar';
@@ -296,7 +297,9 @@ export const SidebarDrawer: React.FC = () => {
     try {
       // Avatar aparece em 56px; 512 já cobre telas retina com folga.
       const dataUrl = await compressImage(file, 512, 0.8);
-      const res = await updateProfile({ avatarUrl: dataUrl });
+      // No banco vai só a URL do Blob, não o base64 (V01).
+      const avatarUrl = await enviarFotoParaBlob(dataUrl, 'avatar');
+      const res = await updateProfile({ avatarUrl });
       if (res && res.ok === false) {
         setPhotoError(res.error ?? 'Não foi possível salvar a foto.');
       }

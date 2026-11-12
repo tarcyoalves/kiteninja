@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { X, Camera, MapPin, Send, Loader2 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompress';
+import { enviarFotoParaBlob } from '../lib/enviarFotoParaBlob';
 import { useKiteData } from '../context/KiteDataContext';
 import { useAuth } from '../context/AuthContext';
 import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
@@ -88,7 +89,9 @@ export const NewPostModal: React.FC = () => {
 
     setProcessandoFoto(true);
     try {
-      setPhotoUrl(await compressImage(file));
+      // Sobe para o Blob ao escolher (igual ao logbook): no banco vai só a URL.
+      // `processandoFoto` já trava o botão Publicar durante o envio.
+      setPhotoUrl(await enviarFotoParaBlob(await compressImage(file), 'relato'));
     } catch (err) {
       setFotoErro(err instanceof Error ? err.message : 'Não foi possível processar a foto.');
     } finally {

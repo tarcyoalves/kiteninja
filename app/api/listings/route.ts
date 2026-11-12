@@ -8,7 +8,7 @@ import {
   LISTING_CONDITIONS,
   MAX_LISTING_PHOTOS,
   MAX_PHOTO_CHARS,
-  isSafeImageDataUrl,
+  isFotoDeAnuncioValida,
   parseListingFilters,
 } from '@/lib/marketplace';
 import type { Listing, ListingCategory, ListingCondition } from '@/types';
@@ -228,7 +228,7 @@ export async function POST(request: Request) {
       // Recusar URL externa evita que o anúncio se transforme em vetor de
       // requisição a terceiros: quem abrisse o feed disparava um GET no host do
       // anunciante, entregando IP e User-Agent da comunidade toda.
-      if (!isSafeImageDataUrl(photo)) {
+      if (!isFotoDeAnuncioValida(photo)) {
         throw new HttpError(400, 'Formato de imagem não suportado. Envie JPG, PNG ou WEBP.');
       }
     }

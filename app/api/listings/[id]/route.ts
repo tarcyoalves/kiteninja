@@ -7,7 +7,7 @@ import {
   LISTING_CONDITIONS,
   MAX_LISTING_PHOTOS,
   MAX_PHOTO_CHARS,
-  isSafeImageDataUrl,
+  isFotoDeAnuncioValida,
 } from '@/lib/marketplace';
 import type { Listing, ListingCategory, ListingCondition, ListingStatus } from '@/types';
 import { instanteIso } from '@/lib/datas';
@@ -227,7 +227,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
         if (photo.length > MAX_PHOTO_CHARS) {
           throw new HttpError(400, 'Uma das fotos está grande demais. Tente novamente.');
         }
-        if (!isSafeImageDataUrl(photo)) {
+        if (!isFotoDeAnuncioValida(photo)) {
           throw new HttpError(400, 'Formato de imagem não suportado. Envie JPG, PNG ou WEBP.');
         }
       }

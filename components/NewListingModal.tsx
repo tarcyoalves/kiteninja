@@ -17,6 +17,7 @@ import {
   Megaphone,
 } from 'lucide-react';
 import { compressImage } from '../lib/imageCompress';
+import { enviarFotoParaBlob } from '../lib/enviarFotoParaBlob';
 import { useKiteData } from '../context/KiteDataContext';
 import {
   CATEGORIES_SIZE_CM,
@@ -169,7 +170,6 @@ export const NewListingModal: React.FC = () => {
 
     setFotoBusy(true);
     try {
-      const novas: string[] = [];
       for (const file of arquivos.slice(0, vagas)) {
         if (!TIPOS_ACEITOS.includes(file.type)) {
           setErro('Formato não aceito. Use JPG, PNG, WEBP ou HEIC.');
@@ -179,11 +179,13 @@ export const NewListingModal: React.FC = () => {
           setErro('Uma das fotos passa de 12MB e foi ignorada.');
           continue;
         }
-        // 1280px cobre o carrossel em tela retina sem estourar o corpo da
-        // requisição com seis imagens de uma vez.
-        novas.push(await compressImage(file, 1280, 0.75));
+        // 1280px cobre o carrossel em tela retina. Cada foto sobe ao Blob e o
+        // anúncio guarda só a URL (V01) — o corpo do POST deixa de carregar
+        // seis imagens em base64.
+        // Uma a uma no estado: se a terceira falhar, as duas que subiram ficam.
+        const url = await enviarFotoParaBlob(await compressImage(file, 1280, 0.75), 'anuncio');
+        setPhotos((prev) => [...prev, url].slice(0, MAX_LISTING_PHOTOS));
       }
-      if (novas.length > 0) setPhotos((prev) => [...prev, ...novas]);
       if (arquivos.length > vagas) {
         setErro(`Só cabiam ${vagas} foto(s); o resto foi ignorado.`);
       }
@@ -205,6 +207,11 @@ export const NewListingModal: React.FC = () => {
   };
 
   const publicar = async () => {
+    // Foto sobe ao Blob em segundo plano; publicar antes do fim deixaria a foto de fora.
+    if (fotoBusy) {
+      setErro('Aguarde o envio das fotos terminar.');
+      return;
+    }
     // Revalida tudo: o velejador pode ter voltado e mexido numa etapa anterior.
     for (const e of ETAPAS) {
       const msg = validarEtapa(e);
@@ -704,7 +711,7 @@ export const NewListingModal: React.FC = () => {
             <button
               type="button"
               onClick={publicar}
-              disabled={enviando}
+              disabled={enviando || fotoBusy}
               className="flex-1 py-3.5 min-h-11 rounded-2xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-sm shadow-xl shadow-emerald-500/25 active:scale-98 transition-all flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {enviando ? (

@@ -6,6 +6,7 @@
  * real (valor errado no anúncio, requisição a terceiro, filtro que ignora o que
  * o velejador pediu). Ficando aqui, dá para testar sem banco e sem navegador.
  */
+import { urlDoBlobValida } from './fotosNoBlob';
 import type {
   ListingCategory,
   ListingCondition,
@@ -75,6 +76,16 @@ export function isSafeImageDataUrl(value: unknown): boolean {
   if (typeof value !== 'string' || value.length === 0) return false;
   if (value.length > MAX_PHOTO_CHARS) return false;
   return IMAGE_DATA_URL.test(value);
+}
+
+/**
+ * Foto de anúncio aceita na entrada: URL do Vercel Blob (caminho novo, V01 —
+ * ver lib/fotosNoBlob.ts) OU data URL de imagem (cliente antigo, por
+ * compatibilidade). Qualquer outra URL externa segue recusada, pelo motivo
+ * descrito acima: só o nosso storage é host confiável.
+ */
+export function isFotoDeAnuncioValida(value: unknown): boolean {
+  return urlDoBlobValida(value) || isSafeImageDataUrl(value);
 }
 
 // ------------------------------------------------------------------ dinheiro
