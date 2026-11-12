@@ -17,6 +17,16 @@ const DISCIPLINES = [
 // valor fora dessa lista quebraria o UPDATE com erro 500 em vez de 400.
 const WIND_UNITS = ['knots', 'kmh', 'mph', 'ms'] as const;
 
+/**
+ * Distingue "campo não enviado" de "campo enviado". `null` conta como não
+ * enviado: um cliente que serializa `null` por descuido não apaga o dado.
+ */
+function sent(body: unknown, field: string): boolean {
+  if (body === null || typeof body !== 'object') return false;
+  const v = (body as Record<string, unknown>)[field];
+  return v !== undefined && v !== null;
+}
+
 /** Atualiza o próprio perfil. Não permite trocar email, role nem senha. */
 export async function PATCH(request: Request) {
   return handle(async () => {
@@ -24,13 +34,40 @@ export async function PATCH(request: Request) {
     const body = await readJson(request);
 
     const name = str(body, 'name', { min: 2, max: 120, optional: true });
+    // `name` vazio nunca apaga (a coluna é NOT NULL e o app inteiro mostra o
+    // nome). Antes, `name: ""` era ignorado em silêncio e a tela dizia "salvo".
+    if (sent(body, 'name') && !name) {
+      throw new HttpError(400, 'O nome não pode ficar vazio.');
+    }
     const weightKg = num(body, 'weightKg', { min: 30, max: 200, optional: true });
     const heightCm = num(body, 'heightCm', { min: 100, max: 230, optional: true });
-    const homeSpot = str(body, 'homeSpot', { optional: true, max: 120 });
-    const bio = str(body, 'bio', { optional: true, max: 500 });
+    /*
+     * CAMPOS DE TEXTO OPCIONAIS: "não enviado" MANTÉM, "enviado vazio" APAGA.
+     *
+     * Antes tudo era `COALESCE(${valor || null}, coluna)`: vazio virava NULL e o
+     * COALESCE devolvia o valor antigo, então a bio, o spot de casa e o contato
+     * de emergência não podiam mais ser removidos depois de preenchidos (V02).
+     * `sent()` separa os dois casos, como em sessions/[id]. Conferido antes de
+     * mudar: o único formulário que manda texto vazio é o do contato de
+     * emergência (SidebarDrawer), e lá vazio É a intenção de apagar; nenhum
+     * outro chamador de updateProfile manda estes campos (a calculadora manda
+     * só weightKg; JSON.stringify omite `undefined`).
+     */
+    const homeSpotEnviado = sent(body, 'homeSpot');
+    const bioEnviada = sent(body, 'bio');
+    const contatoNomeEnviado = sent(body, 'emergencyContactName');
+    const contatoFoneEnviado = sent(body, 'emergencyContactPhone');
+    // Só espaços também é "vazio" (o `str` recusaria como "muito curto").
+    const textoOpcional = (campo: string, max: number): string => {
+      const v = (body as Record<string, unknown> | null)?.[campo];
+      if (typeof v === 'string' && v.trim() === '') return '';
+      return str(body, campo, { optional: true, max });
+    };
+    const homeSpot = textoOpcional('homeSpot', 120);
+    const bio = textoOpcional('bio', 500);
     const highestJumpM = num(body, 'highestJumpM', { min: 0, max: 40, optional: true });
-    const emergencyContactName = str(body, 'emergencyContactName', { optional: true, max: 120 });
-    const emergencyContactPhone = str(body, 'emergencyContactPhone', { optional: true, max: 30 });
+    const emergencyContactName = textoOpcional('emergencyContactName', 120);
+    const emergencyContactPhone = textoOpcional('emergencyContactPhone', 30);
 
     /**
      * Foto de perfil. Aceita data URL JPEG/PNG/WebP comprimida ou URLs HTTPS seguras (ex: Dicebear, Vercel Blob).
@@ -80,14 +117,15 @@ export async function PATCH(request: Request) {
     const rawQuiverBoards = (body as Record<string, unknown>)?.quiverBoards;
     const quiverBoards = Array.isArray(rawQuiverBoards) ? clampQuiverBoards(rawQuiverBoards) : null;
 
-    // COALESCE mantém o valor atual quando o campo não foi enviado.
+    // COALESCE mantém o valor atual quando o campo não foi enviado; os quatro
+    // textos opcionais usam CASE (acima) para também poderem ser apagados.
     await sql`
       UPDATE users SET
         name                = COALESCE(${name || null}, name),
         weight_kg           = COALESCE(${weightKg}, weight_kg),
         height_cm           = COALESCE(${heightCm}, height_cm),
-        home_spot           = COALESCE(${homeSpot || null}, home_spot),
-        bio                 = COALESCE(${bio || null}, bio),
+        home_spot           = CASE WHEN ${homeSpotEnviado}::boolean THEN ${homeSpot || null}::text ELSE home_spot END,
+        bio                 = CASE WHEN ${bioEnviada}::boolean THEN ${bio || null}::text ELSE bio END,
         highest_jump_m      = COALESCE(${highestJumpM}, highest_jump_m),
         avatar_url          = COALESCE(${avatarUrl || null}, avatar_url),
         rider_level         = COALESCE(${riderLevel}, rider_level),
@@ -95,8 +133,8 @@ export async function PATCH(request: Request) {
         quiver_kites        = COALESCE(${quiverKites && quiverKites.length > 0 ? quiverKites : null}, quiver_kites),
         quiver_boards       = COALESCE(${quiverBoards && quiverBoards.length > 0 ? quiverBoards : null}, quiver_boards),
         preferred_wind_unit = COALESCE(${preferredWindUnit || null}, preferred_wind_unit),
-        emergency_contact_name  = COALESCE(${emergencyContactName || null}, emergency_contact_name),
-        emergency_contact_phone = COALESCE(${emergencyContactPhone || null}, emergency_contact_phone),
+        emergency_contact_name  = CASE WHEN ${contatoNomeEnviado}::boolean THEN ${emergencyContactName || null}::text ELSE emergency_contact_name END,
+        emergency_contact_phone = CASE WHEN ${contatoFoneEnviado}::boolean THEN ${emergencyContactPhone || null}::text ELSE emergency_contact_phone END,
         notificar_amigo_velejando = COALESCE(${notificarAmigoVelejando}, notificar_amigo_velejando),
         updated_at          = NOW()
       WHERE id = ${user.id}
