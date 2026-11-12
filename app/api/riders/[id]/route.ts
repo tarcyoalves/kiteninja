@@ -3,8 +3,9 @@ import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { podeVerSessao, relacaoComRider } from '@/lib/social';
 import type { RiderProfile, SessionFeedItem } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Mesmo teto fixo da Fase 3 do feed (PAGE_SIZE=15), um pouco mais generoso
  * porque o perfil não pagina — quem quiser ver mais volta ao feed/logbook do
@@ -149,7 +150,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
         id: String(s.id),
         spotName: String(s.spot_name),
         spotLocation: String(s.spot_location),
-        createdAt: String(s.created_at),
+        createdAt: instanteIso(s.created_at),
         durationMinutes: Number(s.duration_minutes),
         discipline: s.discipline as SessionFeedItem['discipline'],
         boardModel: s.board_model ? String(s.board_model) : undefined,

@@ -12,6 +12,7 @@ import {
   parseListingFilters,
 } from '@/lib/marketplace';
 import type { Listing, ListingCategory, ListingCondition } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 50;
@@ -43,8 +44,8 @@ function mapListing(row: Record<string, unknown>, userId: string): Listing {
     state: String(row.state),
     status: row.status as Listing['status'],
     viewsCount: Number(row.views_count),
-    createdAt: String(row.created_at),
-    updatedAt: String(row.updated_at),
+    createdAt: instanteIso(row.created_at),
+    updatedAt: instanteIso(row.updated_at),
     coverPhoto: row.cover_photo ? String(row.cover_photo) : undefined,
     sellerName: String(row.seller_name),
     sellerAvatar: row.seller_avatar ? String(row.seller_avatar) : undefined,

@@ -1,5 +1,5 @@
 import { handle } from '@/lib/api';
-import { HttpError } from '@/lib/auth';
+import { HttpError, safeEqual } from '@/lib/auth';
 import { varrerEscaladas } from '@/lib/sosEscalada';
 import { registrarVarreduraDoCron } from '@/lib/sosVarredura';
 import { logSos } from '@/lib/sosLog';
@@ -50,7 +50,8 @@ export async function GET(request: Request) {
     }
 
     const header = request.headers.get('authorization') ?? '';
-    if (header !== `Bearer ${segredo}`) {
+    // Comparação em tempo constante: não revela o segredo pelo tempo de resposta.
+    if (!safeEqual(header, `Bearer ${segredo}`)) {
       // Mensagem genérica: não confirma se o segredo existe nem seu formato.
       throw new HttpError(401, 'Não autorizado.');
     }

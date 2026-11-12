@@ -270,13 +270,15 @@ export const SessionsView: React.FC = () => {
                 <div>
                   <span className="block text-[10px] text-slate-400 font-bold">Distância / Vel</span>
                   <span className="font-black text-cyan-400">
-                    {session.distanceKm ? `${session.distanceKm} km` : `${session.durationMinutes}m`}
+                    {/* Sem distância mostrava a DURAÇÃO com "m" ("90m"), que se lia
+                        como 90 metros. Campo não informado é traço. */}
+                    {session.distanceKm ? `${session.distanceKm} km` : '—'}
                   </span>
                 </div>
                 <div>
                   <span className="block text-[10px] text-slate-400 font-bold">Salto Máx (WOO)</span>
                   <span className="font-black text-amber-400">
-                    {session.highestJumpM ? `${session.highestJumpM}m` : 'Flat / Cruising'}
+                    {session.highestJumpM ? `${session.highestJumpM}m` : '—'}
                   </span>
                 </div>
               </div>

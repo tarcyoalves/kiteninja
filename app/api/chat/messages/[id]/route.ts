@@ -2,7 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Apaga uma mensagem. O autor apaga a própria; admin apaga qualquer uma

@@ -14,7 +14,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const admin = await requireAdmin();
     const { id } = await ctx.params;
 
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new HttpError(400, 'Identificador de chamado inválido.');
     }
 

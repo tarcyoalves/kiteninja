@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle, readOptionalJson } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
+import { HttpError, requireUser } from '@/lib/auth';
 import { str } from '@/lib/validation';
 
 export const dynamic = 'force-dynamic';
@@ -11,6 +11,11 @@ export async function POST(request: Request) {
     const body = await readOptionalJson(request);
 
     const endpoint = str(body, 'endpoint', { max: 2000 });
+    // O servidor faz POST neste endereço a cada push. Só https, para a conta
+    // não servir de ponte para requisições a endereços arbitrários.
+    if (!/^https:\/\//i.test(endpoint)) {
+      throw new HttpError(400, 'Endereço de notificação inválido.');
+    }
     const p256dh = str(body, 'p256dh', { max: 100 });
     const auth = str(body, 'auth', { max: 100 });
     const userAgent = request.headers.get('user-agent') || 'Unknown';

@@ -41,7 +41,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   return handle(async () => {
     const admin = await requireAdmin();
     const { id } = await ctx.params;
-    if (!/^[0-9a-f-]{36}$/i.test(id)) throw new HttpError(400, 'ID de usuário inválido.');
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new HttpError(400, 'ID de usuário inválido.');
 
     const rows = await sql`SELECT email, name, is_active FROM users WHERE id = ${id} LIMIT 1`;
     if (rows.length === 0) throw new HttpError(404, 'Usuário não encontrado.');

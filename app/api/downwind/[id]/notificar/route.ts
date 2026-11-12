@@ -8,6 +8,7 @@ import {
   podeNotificarSeguidores,
   textoDoAviso,
 } from '@/lib/downwindVisibilidade';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -73,7 +74,7 @@ export async function POST(_request: Request, ctx: Params) {
       visibilidade,
       ehOrganizador: dw.criado_por !== null && String(dw.criado_por) === user.id,
       statusDownwind: String(dw.status),
-      notificadoEm: dw.notificado_em ? String(dw.notificado_em) : null,
+      notificadoEm: dw.notificado_em ? instanteIso(dw.notificado_em) : null,
     });
     if (!veredicto.permitido) throw new HttpError(409, veredicto.motivo);
 

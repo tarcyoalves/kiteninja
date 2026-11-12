@@ -1,6 +1,7 @@
 import { handle } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { instanteIso } from '@/lib/datas';
 
 /**
  * Listagem paginada e monitoramento em tempo real de velejadores para o painel Admin.
@@ -121,9 +122,9 @@ export async function GET(request: Request) {
           homeSpot: row.home_spot ? String(row.home_spot) : null,
           riderLevel: String(row.rider_level || 'Intermediário'),
           weightKg: Number(row.weight_kg || 75),
-          createdAt: String(row.created_at),
-          lastLoginAt: row.last_login_at ? String(row.last_login_at) : null,
-          lastSeenAt: row.effective_last_seen ? String(row.effective_last_seen) : String(row.created_at),
+          createdAt: instanteIso(row.created_at),
+          lastLoginAt: row.last_login_at ? instanteIso(row.last_login_at) : null,
+          lastSeenAt: row.effective_last_seen ? instanteIso(row.effective_last_seen) : instanteIso(row.created_at),
           loginCount: Number(row.login_count || 1),
           lastUserAgent: row.last_user_agent ? String(row.last_user_agent) : null,
           isOnline: Boolean(row.is_online),

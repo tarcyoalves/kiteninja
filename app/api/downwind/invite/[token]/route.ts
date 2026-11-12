@@ -2,6 +2,7 @@
 import { handle } from '@/lib/api';
 import { requireUser, HttpError, hashToken } from '@/lib/auth';
 import { buscarParticipacao } from '@/lib/downwindDb';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,8 +56,8 @@ export async function GET(request: Request, ctx: Params) {
       downwindStatus: String(row.downwind_status),
       spotSaidaId: row.spot_saida ? String(row.spot_saida) : null,
       spotChegadaId: row.spot_chegada ? String(row.spot_chegada) : null,
-      previstoPara: row.previsto_para ? String(row.previsto_para) : null,
-      iniciadoEm: row.iniciado_em ? String(row.iniciado_em) : null,
+      previstoPara: row.previsto_para ? instanteIso(row.previsto_para) : null,
+      iniciadoEm: row.iniciado_em ? instanteIso(row.iniciado_em) : null,
       inviterName: String(row.inviter_name),
       role: String(row.role),
       status: expirado ? 'expirado' : String(row.status),

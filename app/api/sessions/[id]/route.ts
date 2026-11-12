@@ -1,10 +1,10 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
-import { num, oneOf, str } from '@/lib/validation';
+import { isIsoDate, isTime24, num, oneOf, str } from '@/lib/validation';
 import { exigirSessaoVisivel } from '@/lib/sessaoAcesso';
 import type { Discipline, SessionDetail } from '@/types';
-import { dataCalendario } from '@/lib/datas';
+import { dataCalendario, instanteIso } from '@/lib/datas';
 
 const DISCIPLINES = [
   'Kitesurf Twintip',
@@ -14,7 +14,7 @@ const DISCIPLINES = [
   'Big Air',
 ] as const;
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Distingue "campo não enviado" de "campo enviado vazio". */
 function sent(body: unknown, field: string): boolean {
@@ -123,7 +123,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       // AAAA-MM-DD, não String(Date) — ver lib/datas.ts.
       date: dataCalendario(r.date),
       startTime: String(r.start_time),
-      createdAt: String(r.created_at),
+      createdAt: instanteIso(r.created_at),
       durationMinutes: Number(r.duration_minutes),
       discipline: r.discipline as SessionDetail['discipline'],
       kiteSizeM2: Number(r.kite_size_m2),
@@ -208,6 +208,15 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     const spotLocation = sent(body, 'spotLocation') ? str(body, 'spotLocation', { max: 200 }) : null;
     const date = sent(body, 'date') ? str(body, 'date', { max: 10 }) : null;
     const startTime = sent(body, 'startTime') ? str(body, 'startTime', { max: 10 }) : null;
+    // Mesma validação da criação (POST /api/sessions). Sem ela, "12/11/2026"
+    // chegava ao `::date` do UPDATE e o banco decidia sozinho o que era dia e
+    // o que era mês — ou devolvia erro 500.
+    if (date !== null && !isIsoDate(date)) {
+      throw new HttpError(400, 'Data inválida. Use o formato AAAA-MM-DD.');
+    }
+    if (startTime !== null && !isTime24(startTime)) {
+      throw new HttpError(400, 'Hora inicial inválida. Use o formato HH:MM.');
+    }
     const durationMinutes = sent(body, 'durationMinutes')
       ? num(body, 'durationMinutes', { min: 1, max: 1440 })
       : null;

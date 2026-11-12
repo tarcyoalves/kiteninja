@@ -5,6 +5,7 @@ import { num } from '@/lib/validation';
 import { rateLimiters } from '@/lib/rateLimit';
 import { acompanhamentoAtivo } from '@/lib/apoioSolo';
 import { expurgarPosicoesApoioSePreciso } from '@/lib/expurgos';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
     const ativa = acompanhamentoAtivo(
       {
         expiraEm: new Date(String(s.expira_em)).toISOString(),
-        encerradoEm: s.encerrado_em ? String(s.encerrado_em) : null,
+        encerradoEm: s.encerrado_em ? instanteIso(s.encerrado_em) : null,
       },
       new Date()
     );

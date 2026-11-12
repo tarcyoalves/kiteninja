@@ -6,8 +6,9 @@ import { criarNotificacao } from '@/lib/notificacoes';
 import { podeResponderComentario } from '@/lib/social';
 import { str } from '@/lib/validation';
 import type { SessionComment } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface ComentarioRow {
   id: unknown;
@@ -48,7 +49,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       userName: String(r.author_name),
       userAvatarUrl: r.author_avatar_url ? String(r.author_avatar_url) : undefined,
       text: String(r.text),
-      createdAt: String(r.created_at),
+      createdAt: instanteIso(r.created_at),
       parentCommentId: r.parent_comment_id ? String(r.parent_comment_id) : null,
     }));
 
@@ -148,7 +149,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       userName: user.name,
       userAvatarUrl: authorAvatarUrl ? String(authorAvatarUrl) : undefined,
       text,
-      createdAt: String(row.created_at),
+      createdAt: instanteIso(row.created_at),
       parentCommentId,
     };
 

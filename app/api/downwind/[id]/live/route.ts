@@ -17,6 +17,7 @@ import {
   MAX_PONTOS_TRILHA_PROPRIA,
   proximoCursor,
 } from '@/lib/trilhaDownwind';
+import { instanteIso } from '@/lib/datas';
 
 /**
  * Ponto do mapa ao vivo: `[lat, lng, velocidade, tsMs]`. Difere de
@@ -258,7 +259,7 @@ export async function GET(request: Request, ctx: Params) {
         lat: Number(r.lat),
         lng: Number(r.lng),
         tsMs: Number(r.ts_ms),
-        registradoEm: String(r.registrado_em),
+        registradoEm: instanteIso(r.registrado_em),
       });
       ultimasPorUsuario.set(uId, lista);
     }
@@ -316,8 +317,8 @@ export async function GET(request: Request, ctx: Params) {
         nome: String(dw.nome || 'Downwind'),
         status: String(dw.status),
         visibilidade: String(dw.visibilidade || 'privado'),
-        iniciadoEm: dw.iniciado_em ? String(dw.iniciado_em) : null,
-        encerradoEm: dw.encerrado_em ? String(dw.encerrado_em) : null,
+        iniciadoEm: dw.iniciado_em ? instanteIso(dw.iniciado_em) : null,
+        encerradoEm: dw.encerrado_em ? instanteIso(dw.encerrado_em) : null,
         origemSpotNome: dw.origem_spot_nome ? String(dw.origem_spot_nome) : null,
         destinoSpotNome: dw.destino_spot_nome ? String(dw.destino_spot_nome) : null,
         origemLat: dw.origem_lat !== null ? Number(dw.origem_lat) : null,

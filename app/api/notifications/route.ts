@@ -1,7 +1,9 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
-import { requireUser } from '@/lib/auth';
+import { HttpError, requireUser } from '@/lib/auth';
 import type { AppNotification } from '@/types';
+import { instanteIso } from '@/lib/datas';
+import { ehUuid } from '@/lib/downwindDb';
 
 /** Central de notificações mostra as últimas 50 — mais que suficiente para o
  * uso normal, e mantém a consulta rápida sem paginação nesta primeira versão. */
@@ -98,8 +100,8 @@ export async function GET(request: Request) {
       downwindId: r.downwind_id ? String(r.downwind_id) : undefined,
       inviteId: r.invite_id ? String(r.invite_id) : undefined,
       downwindNome: r.downwind_nome ? String(r.downwind_nome) : undefined,
-      readAt: r.read_at ? String(r.read_at) : null,
-      createdAt: String(r.created_at),
+      readAt: r.read_at ? instanteIso(r.read_at) : null,
+      createdAt: instanteIso(r.created_at),
     }));
 
     const naoLidas = Number((naoLidasRows[0] as Record<string, unknown>).cnt);
@@ -142,6 +144,7 @@ export async function DELETE(request: Request) {
     const all = url.searchParams.get('all');
 
     if (id) {
+      if (!ehUuid(id)) throw new HttpError(400, 'Identificador de notificação inválido.');
       await sql`
         DELETE FROM notifications
         WHERE recipient_id = ${user.id} AND id = ${id}

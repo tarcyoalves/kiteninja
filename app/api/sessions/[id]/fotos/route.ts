@@ -39,7 +39,7 @@ export async function GET(_request: Request, ctx: Params) {
     const user = await requireUser();
     const { id } = await ctx.params;
 
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new HttpError(404, 'Velejo não encontrado.');
     }
 

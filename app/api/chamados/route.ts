@@ -3,6 +3,7 @@ import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { oneOf, str } from '@/lib/validation';
 import type { MeuChamado, TipoChamado } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
 interface ChamadoRow {
   id: unknown;
@@ -24,7 +25,7 @@ function paraMeuChamado(r: ChamadoRow): MeuChamado {
     tela: r.tela ? String(r.tela) : undefined,
     status: r.status as MeuChamado['status'],
     parecer: r.parecer ? String(r.parecer) : undefined,
-    createdAt: String(r.created_at),
+    createdAt: instanteIso(r.created_at),
   };
 }
 

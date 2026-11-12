@@ -1,5 +1,5 @@
 import { handle } from '@/lib/api';
-import { HttpError } from '@/lib/auth';
+import { HttpError, safeEqual } from '@/lib/auth';
 import { varrerSilencos, limparAlertasAntigos, encerrarAbandonados } from '@/lib/downwindSilencio';
 
 /**
@@ -40,7 +40,8 @@ export async function GET(request: Request) {
     }
 
     const header = request.headers.get('authorization') ?? '';
-    if (header !== `Bearer ${segredo}`) {
+    // Comparação em tempo constante: não revela o segredo pelo tempo de resposta.
+    if (!safeEqual(header, `Bearer ${segredo}`)) {
       throw new HttpError(401, 'Não autorizado.');
     }
 

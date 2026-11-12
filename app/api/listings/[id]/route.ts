@@ -10,8 +10,9 @@ import {
   isSafeImageDataUrl,
 } from '@/lib/marketplace';
 import type { Listing, ListingCategory, ListingCondition, ListingStatus } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Status que o dono pode escolher. 'Removido' só pelo DELETE. */
 const STATUS_EDITAVEIS = ['Ativo', 'Reservado', 'Vendido'] as const;
@@ -119,8 +120,8 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
       // O incremento acima não está refletido na linha lida; somamos aqui para a
       // tela mostrar o número já contando a visita atual.
       viewsCount: Number(r.views_count) + (isOwner ? 0 : 1),
-      createdAt: String(r.created_at),
-      updatedAt: String(r.updated_at),
+      createdAt: instanteIso(r.created_at),
+      updatedAt: instanteIso(r.updated_at),
       photos: photos.map((p) => String(p)),
       coverPhoto: photos.length > 0 ? String(photos[0]) : undefined,
       sellerName: String(r.seller_name),

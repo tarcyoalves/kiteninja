@@ -4,6 +4,7 @@ import { hashToken, HttpError } from '@/lib/auth';
 import { motivoIndisponivel } from '@/lib/apoioSolo';
 import { type PontoTrilha } from '@/lib/trilhaDownwind';
 import { simplificarTrilha } from '@/lib/simplificarTrilha';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export async function GET(_request: Request, ctx: Params) {
     const motivo = motivoIndisponivel(
       {
         expiraEm: new Date(String(s.expira_em)).toISOString(),
-        encerradoEm: s.encerrado_em ? String(s.encerrado_em) : null,
+        encerradoEm: s.encerrado_em ? instanteIso(s.encerrado_em) : null,
       },
       new Date()
     );

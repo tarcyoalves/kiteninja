@@ -5,6 +5,7 @@ import { touchPresenceKeepingSpot } from '@/lib/presence';
 import { escalarUmSos } from '@/lib/sosEscalada';
 import { varrerSeForHora } from '@/lib/sosVarredura';
 import { after } from 'next/server';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -111,7 +112,7 @@ export async function GET() {
         motivo: rr.motivo ? String(rr.motivo) : 'proximidade',
         lat: rr.lat ? Number(rr.lat) : null,
         lng: rr.lng ? Number(rr.lng) : null,
-        respondedAt: rr.responded_at ? String(rr.responded_at) : new Date().toISOString(),
+        respondedAt: rr.responded_at ? instanteIso(rr.responded_at) : new Date().toISOString(),
       });
 
       const responders = responderRows.map(rr => mapResponder(rr as Record<string, unknown>));
@@ -197,7 +198,7 @@ export async function GET() {
         authorName: String(row.author_name),
         status: String(row.status),
         radiusKm,
-        createdAt: String(row.created_at),
+        createdAt: instanteIso(row.created_at),
         escalatedAt: escalatedAt ? escalatedAt.toISOString() : null,
         message: row.message ? String(row.message) : null,
         lat: canSeePos ? lat : null,

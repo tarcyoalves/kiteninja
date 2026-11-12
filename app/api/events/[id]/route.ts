@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireUser, HttpError } from '@/lib/auth';
 import { canModerate } from '@/lib/authz';
+import { ehUuid } from '@/lib/downwindDb';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +28,7 @@ export async function DELETE(request: Request, ctx: Params) {
   return handle(async () => {
     const user = await requireUser();
     const { id } = await ctx.params;
+    if (!ehUuid(id)) throw new HttpError(404, 'Evento não encontrado.');
 
     const rows = await sql`
       SELECT

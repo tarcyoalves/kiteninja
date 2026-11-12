@@ -3,15 +3,20 @@ import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
 import { str } from '@/lib/validation';
+import { instanteIso } from '@/lib/datas';
 
 export async function GET(
   _request: Request,
   ctx: { params: Promise<{ id: string }> }
 ) {
   return handle(async () => {
+    // O app é fechado por convite, e esta leitura era a única de conteúdo de
+    // usuário sem sessão: qualquer um com o id de um post lia os comentários
+    // (nome e foto de quem comentou). Achado na varredura de 12/11/2026.
+    await requireUser();
     const { id } = await ctx.params;
 
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new HttpError(400, 'Identificador de post inválido.');
     }
 
@@ -44,7 +49,7 @@ export async function GET(
         userName: String(r.author_name),
         userAvatar: r.author_avatar ? String(r.author_avatar) : undefined,
         text: String(r.text),
-        time: String(r.created_at),
+        time: instanteIso(r.created_at),
       };
     });
 
@@ -61,7 +66,7 @@ export async function POST(
     const { id } = await ctx.params;
     const body = await readJson(request);
 
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new HttpError(400, 'Identificador de post inválido.');
     }
 

@@ -6,6 +6,7 @@ import { normalizarEscopo, podeVerNoFeed } from '@/lib/feedEscopo';
 import type { SessionFeedItem } from '@/types';
 import { simplificarTrilha } from '@/lib/simplificarTrilha';
 import type { PontoTrilha } from '@/lib/trilhaDownwind';
+import { instanteIso } from '@/lib/datas';
 
 /**
  * Feed de velejos (Fase 3 do plano de rede social) — sessões de quem eu sigo
@@ -172,7 +173,7 @@ export async function GET(request: Request) {
         id: String(r.id),
         spotName: String(r.spot_name),
         spotLocation: String(r.spot_location),
-        createdAt: String(r.created_at),
+        createdAt: instanteIso(r.created_at),
         durationMinutes: Number(r.duration_minutes),
         discipline: r.discipline as SessionFeedItem['discipline'],
         boardModel: r.board_model ? String(r.board_model) : undefined,
@@ -204,7 +205,7 @@ export async function GET(request: Request) {
     // último buscado, que pode ter sido descartado no slice) — null quando
     // não sobrou próxima página, sinal para o cliente parar de pedir mais.
     const ultimo = pagina[pagina.length - 1];
-    const proximoCursor = temProximaPagina && ultimo ? String(ultimo.created_at) : null;
+    const proximoCursor = temProximaPagina && ultimo ? instanteIso(ultimo.created_at) : null;
 
     return { sessoes, proximoCursor };
   });

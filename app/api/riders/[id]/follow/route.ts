@@ -4,7 +4,7 @@ import { HttpError, requireUser } from '@/lib/auth';
 import { podeSeguir, relacaoComRider } from '@/lib/social';
 import { criarNotificacao } from '@/lib/notificacoes';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RelacaoRow {
   eu_sigo: unknown;

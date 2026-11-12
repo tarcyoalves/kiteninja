@@ -9,6 +9,7 @@ import {
   normalizarVisibilidade,
 } from '@/lib/downwindVisibilidade';
 import { normalizarUf } from '@/lib/uf';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -127,10 +128,10 @@ function paraResumoDownwind(row: unknown, userId: string) {
     nome: String(r.nome),
     status: String(r.status),
     visibilidade: String(r.visibilidade || 'privado'),
-    previstoPara: r.previsto_para ? String(r.previsto_para) : null,
-    iniciadoEm: r.iniciado_em ? String(r.iniciado_em) : null,
-    encerradoEm: r.encerrado_em ? String(r.encerrado_em) : null,
-    criadoEm: String(r.criado_em),
+    previstoPara: r.previsto_para ? instanteIso(r.previsto_para) : null,
+    iniciadoEm: r.iniciado_em ? instanteIso(r.iniciado_em) : null,
+    encerradoEm: r.encerrado_em ? instanteIso(r.encerrado_em) : null,
+    criadoEm: instanteIso(r.criado_em),
     criadoPorMim: String(r.criado_por) === userId,
     criadorNome: String(r.criador_nome),
     spotSaidaNome: r.spot_saida_nome ? String(r.spot_saida_nome) : null,
@@ -270,9 +271,9 @@ export async function POST(request: Request) {
         spotSaida: String(downwind.spot_saida),
         spotChegada: downwind.spot_chegada ? String(downwind.spot_chegada) : null,
         status: String(downwind.status),
-        previstoPara: String(downwind.previsto_para),
+        previstoPara: instanteIso(downwind.previsto_para),
         visibilidade: String(downwind.visibilidade),
-        criadoEm: String(downwind.criado_em),
+        criadoEm: instanteIso(downwind.criado_em),
       };
     } catch (err) {
       if (downwindId) {

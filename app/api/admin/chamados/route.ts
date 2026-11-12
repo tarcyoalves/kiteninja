@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { requireAdmin } from '@/lib/auth';
 import type { ChamadoAdmin, StatusChamado } from '@/types';
+import { instanteIso } from '@/lib/datas';
 
 const STATUS_VALIDOS: readonly StatusChamado[] = [
   'novo',
@@ -69,7 +70,7 @@ export async function GET(request: Request) {
       tela: r.tela ? String(r.tela) : undefined,
       status: r.status as ChamadoAdmin['status'],
       parecer: r.parecer ? String(r.parecer) : undefined,
-      createdAt: String(r.created_at),
+      createdAt: instanteIso(r.created_at),
       autorId: String(r.autor_id),
       autorNome: String(r.autor_nome),
       autorAvatarUrl: r.autor_avatar_url ? String(r.autor_avatar_url) : undefined,

@@ -4,6 +4,7 @@ import { requireUser, newToken, hashToken } from '@/lib/auth';
 import { rateLimiters } from '@/lib/rateLimit';
 import { VALIDADE_APOIO_HORAS, devoReaproveitar } from '@/lib/apoioSolo';
 import { expurgarPosicoesApoioSePreciso } from '@/lib/expurgos';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export async function POST() {
     const sessaoAtual = atual
       ? {
           expiraEm: new Date(String(atual.expira_em)).toISOString(),
-          encerradoEm: atual.encerrado_em ? String(atual.encerrado_em) : null,
+          encerradoEm: atual.encerrado_em ? instanteIso(atual.encerrado_em) : null,
         }
       : null;
 

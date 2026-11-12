@@ -7,6 +7,7 @@ import { sql } from './db';
 import { HttpError } from './errors';
 import { canOrganizeDownwind } from './authz';
 import { expurgarSessoesExpiradasSePreciso } from './expurgos';
+import { instanteIso } from './datas';
 
 
 export const SESSION_COOKIE = 'kiteninja_session';
@@ -269,7 +270,7 @@ export async function listUserSessions(userId: string): Promise<
     return {
       id: String(row.id),
       userAgent: row.user_agent ? String(row.user_agent) : null,
-      createdAt: String(row.created_at),
+      createdAt: instanteIso(row.created_at),
       isCurrent: currentHash ? safeEqual(String(row.token_hash), currentHash) : false,
     };
   });

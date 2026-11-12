@@ -3,7 +3,7 @@ import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { canDeleteComment } from '@/lib/authz';
 
-const UUID = /^[0-9a-f-]{36}$/i;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Apaga um comentário: o próprio autor apaga o seu, moderador/admin apaga

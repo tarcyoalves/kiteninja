@@ -8,9 +8,15 @@ export async function GET(request: Request) {
   return handle(async () => {
     const user = await requireUser();
     const url = new URL(request.url);
-    const limit = Math.min(Number(url.searchParams.get('limit')) || 50, 100);
+    // Entre 1 e 100: `?limit=-5` chegava ao banco como LIMIT negativo (erro 500).
+    const limit = Math.min(Math.max(Math.trunc(Number(url.searchParams.get('limit'))) || 50, 1), 100);
 
     // Fetch posts with user info, like counts, comment counts, and whether the current user liked them
+    //
+    // PRIVACIDADE: o velejo público gera um relato automático (post com
+    // session_id). Se a autora depois tornava o velejo privado, o relato —
+    // com as anotações, o spot e o vento — continuava no feed de todo mundo.
+    // O filtro olha a privacidade ATUAL do velejo; a autora segue vendo o seu.
     const rows = await sql`
       SELECT
         p.id,
@@ -49,6 +55,8 @@ export async function GET(request: Request) {
         ) AS comments
       FROM posts p
       JOIN users u ON u.id = p.user_id
+      LEFT JOIN sessions_log s ON s.id = p.session_id
+      WHERE p.session_id IS NULL OR s.is_public = TRUE OR p.user_id = ${user.id}
       ORDER BY p.created_at DESC
       LIMIT ${limit}
     `;

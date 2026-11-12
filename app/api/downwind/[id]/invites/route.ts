@@ -5,6 +5,7 @@ import { canModerate } from '@/lib/authz';
 import { buscarParticipacao, buscarStatusDownwind, ehUuid } from '@/lib/downwindDb';
 import { sendPushToUsers } from '@/lib/push';
 import { str } from '@/lib/validation';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,8 +58,8 @@ export async function GET(request: Request, ctx: Params) {
         inviteeId: row.invitee_id ? String(row.invitee_id) : null,
         role: String(row.role),
         status: String(row.status),
-        expiresAt: String(row.expires_at),
-        createdAt: String(row.created_at),
+        expiresAt: instanteIso(row.expires_at),
+        createdAt: instanteIso(row.created_at),
         invitee: row.invitee_id
           ? {
               name: String(row.invitee_name),

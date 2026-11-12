@@ -6,6 +6,7 @@ import {
   normalizarVisibilidade,
   podeVerEvento,
 } from '@/lib/downwindVisibilidade';
+import { instanteIso } from '@/lib/datas';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,7 @@ export async function GET(_request: Request, ctx: Params) {
     const user = await requireUser();
     const { id } = await ctx.params;
 
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
       throw new HttpError(404, MSG_EVENTO_NAO_ENCONTRADO);
     }
 
@@ -111,7 +112,7 @@ export async function GET(_request: Request, ctx: Params) {
         countryFlag: String(r.country_flag ?? ''),
         riderLevel: String(r.rider_level ?? ''),
         homeSpot: r.home_spot ? String(r.home_spot) : null,
-        confirmadoEm: String(r.created_at),
+        confirmadoEm: instanteIso(r.created_at),
         souEu: String(r.id) === user.id,
       };
     });

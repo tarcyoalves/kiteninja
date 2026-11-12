@@ -5,7 +5,7 @@ import { bool, isIsoDate, isTime24, num, oneOf, str } from '@/lib/validation';
 import { normalizarFotos } from '@/lib/fotosDoVelejo';
 import { validarTrilhaReduzida } from '@/lib/trilhaSessao';
 import type { Discipline } from '@/types';
-import { dataCalendario } from '@/lib/datas';
+import { dataCalendario, instanteIso } from '@/lib/datas';
 
 const DISCIPLINES = [
   'Kitesurf Twintip',
@@ -127,7 +127,7 @@ export async function GET() {
           isPublic: Boolean(r.is_public),
           likesCount: Number(r.likes_count ?? 0),
           commentsCount: Number(r.comments_count ?? 0),
-          createdAt: String(r.created_at),
+          createdAt: instanteIso(r.created_at),
           // JSONB já chega desserializado (array) do driver — Array.isArray
           // é só a guarda contra um valor NULL da coluna virar `null` solto
           // em vez de "campo ausente" no JSON de resposta. lat_inicial/
