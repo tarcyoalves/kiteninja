@@ -607,6 +607,20 @@ Também feito em `3d6c8c6`: títulos curtos que cabem no celular ("Eventos",
 
 ---
 
+## Varredura de 12/11 — V01 a V05 (não corrigidos, por tamanho ou decisão)
+
+O que a varredura achou e corrigiu está no diário de 12/11. Estes ficaram:
+
+| ID | O que é | Por que importa | Proposta | Quem |
+|---|---|---|---|---|
+| V01 | Foto de **relato** (`posts.photo_url`), **avatar** e fotos de **anúncio** são gravadas como texto base64 no banco, até 1,5 MB cada. Só as fotos de velejo foram para o Vercel Blob. | Neon Free tem 0,5 GB: ~300 fotos enchem. `GET /api/posts` devolve até 100 posts com as fotos embutidas (resposta de dezenas de MB no 4G). | Mesmo caminho das fotos de velejo (upload direto ao Blob, guardar só a URL), com migração das existentes. | agente (M) |
+| V02 | `PATCH /api/profile` usa `COALESCE`: campo enviado vazio não apaga. | Não dá para remover a bio nem o **contato de emergência** depois de preenchidos. | Distinguir "não enviado" de "enviado vazio" (como `sent()` em sessions/[id]); conferir o que o formulário manda antes. | agente (P) |
+| V03 | Os limites de requisição de quem está **logado** (SOS, downwind, chat, registro de erros) vivem na memória de cada instância serverless. Os de porta aberta (login, convite, recuperar senha) **já usam o banco**. | Na Vercel, instâncias diferentes não compartilham a contagem, então esses limites são mais frouxos do que o número diz. É escolha consciente (comentário em `lib/rateLimit.ts`): o alvo é cliente em laço de erro, não ataque. | Nada a fazer agora; só levar ao banco se aparecer abuso real. | — |
+| V04 | `must_change_password` só é cobrado pela tela (`ForcePasswordChangeModal`). | Quem recebeu senha provisória consegue usar a API sem trocá-la. Risco baixo (é a própria conta). | `requireUser` recusar tudo menos trocar senha/sair quando a marca estiver ligada. | agente (P) |
+| V05 | ~45 rotas que gravam não têm limite de requisições (posts, comentários, curtidas, alertas, anúncios). | App fechado por convite reduz o risco; um convidado mal-intencionado ainda poderia encher o banco. | Limite simples por usuário (em memória, como os demais de usuário logado) nas que criam linha. | agente (P) |
+
+---
+
 ## Como foi medido
 
 | Afirmação | Fonte |

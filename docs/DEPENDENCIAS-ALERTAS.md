@@ -7,6 +7,17 @@ corrigido e qual a exposição real. Medido em 06/10/2026 (tarefa T06).
 |---|---|---|---|---|
 | Antes (partida de 06/10) | 1 | 4 | 6 | 11 |
 | Depois | 1 | 0 | 2 | 3 |
+| 12/11/2026, antes | 2 | 1 | 7 | 11 (+1 baixa) |
+| 12/11/2026, depois (`b7af607`) | 1 | 0 | 7 | 8 |
+
+**Atualização de 12/11/2026.** Em um mês surgiram alertas novos, entre eles
+dois críticos no próprio `next` (execução remota de código pelo otimizador
+de imagens e por `use cache`, faixa 16.0.0–16.4.0). Corrigido subindo para
+`next` 16.4.6 + `npm audit fix` (`undici` alta resolvida). As 7 moderadas que
+sobram são `glob`/`minimatch`/`rimraf` e `uuid`/`gaxios`/`gcp-metadata`/
+`google-gax`, todas dentro do `firebase-admin`, em caminhos que o app não
+usa (ver Pendente 2). **Lição: rodar `npm audit --omit=dev` todo mês** — o
+código não mudou e o risco mudou.
 
 Alertas altas resolvidos sem `--force`, dentro das faixas já declaradas
 (commit `afb16b9`): `@grpc/grpc-js` 1.14.5, `undici` 6.29.0,

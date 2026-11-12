@@ -239,3 +239,50 @@ T13 `9e7c682` `6c3fae4` `2fed5ec` `4c2c7e3` `0abc2c3` `df6f30a` · correções
   vitest 91 arquivos / 1304 testes, verify-sql 319/0, verify-sos 59/0, next
   build exit 0, nenhum `.js` de produção com o banco de preview.
 - **Planos gratuitos:** nenhum impacto. Um push único em main/master.
+
+---
+
+## 2026-11-12 — Varredura completa: rotas, telas, brechas, dependências
+**Quem:** Claude (Fable) · **Tarefa:** pedido do dono ("mega varredura em todo
+o código, todas as páginas, funcionalidades, brechas, falhas, bugs")
+**Commits:** `b7af607` (dependências), `571b5c0` (correções)
+
+- **Como foi feito:** (1) `npm audit`; (2) leitura das 90 rotas de API sem
+  comentários, procurando acesso a dado de outro usuário, escrita sem filtro
+  de dono, rota sem login, entrada sem validação; (3) varredura do cliente por
+  injeção de HTML e links montados com dado de usuário; (4) busca por segredo
+  versionado; (5) app rodando local (`npm run dev:preview`) com um script que
+  chamou todas as rotas de leitura como velejador, admin, anônimo e com
+  entrada malformada; (6) roteiro no celular (390×844) de 44 passos —
+  registrar velejo, comentar, publicar, chat, evento, anúncio, perfil, painel
+  admin, páginas públicas — registrando erro de tela e resposta ≥ 400.
+- **Corrigido:**
+  - **Dependências:** `next` 16.3.8 → 16.4.6 (dois críticos de execução
+    remota de código) e `undici` (alta). Ver `docs/DEPENDENCIAS-ALERTAS.md`.
+  - **Privacidade:** velejo tornado privado continuava no feed de relatos.
+  - **Leitura sem login:** comentários de post (`GET /api/posts/[id]/comments`).
+  - **Datas:** 41 pontos da API ainda devolviam o texto cru do `Date`; o
+    cursor do feed perdia milissegundos (podia pular velejo entre páginas).
+  - **Diário:** "90m" no lugar da distância; "Flat / Cruising" sem salto.
+  - **Validação:** data ao editar velejo; id malformado e `limit` negativo
+    davam erro 500 (22 rotas com regex de id frouxa).
+  - **Endurecimento:** redefinição de senha confere o link antes do bcrypt;
+    segredo do cron em tempo constante; endpoint de push só https.
+- **Verificado e sem defeito:** todo UPDATE/DELETE de dado de usuário filtra
+  pelo dono; painel admin responde 403 a não-admin e 401 a anônimo; conta
+  suspensa e convidado de downwind são barrados em `requireUser`; tokens
+  (sessão, convite, senha, apoio em terra) guardados só como hash; marcadores
+  do mapa escapam HTML; nenhum segredo no repositório; nenhum erro de tela
+  nem overflow nos 44 passos.
+- **Testes:** `lib/varredura2026_11.test.ts` (5, pelas rotas reais).
+  Contraprova: contra a API anterior, os 5 falham. Total: tsc, eslint 0
+  erros, vitest 1309/1309, verify-sql 319/0, verify-sos 59/0, build exit 0.
+- **Planos gratuitos:** nenhum impacto de uso. Um push.
+- **Não corrigido, registrado no plano (V01–V05):** fotos de post, avatar e
+  anúncio gravadas como texto no banco (0,5 GB do Neon); perfil não deixa
+  apagar bio/contato de emergência; limites de usuário logado são em memória
+  (os de porta aberta já usam o banco);
+  "trocar a senha" obrigatório só é cobrado na tela; rotas que gravam sem
+  limite de requisições.
+- **Para o dono:** `@capacitor/android` crítico segue pendente (precisa de
+  autorização e APK novo); T02, T03, T08, T11, T16 seguem como estavam.
