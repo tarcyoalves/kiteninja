@@ -174,9 +174,26 @@ export async function getSessionUser(): Promise<SessionUser | null> {
  * precisam aceitar convidado (mapa e chat do downwind) NÃO usam esta
  * função — usam `getSessionUser()` direto e conferem o escopo elas mesmas.
  */
-export async function requireUser(): Promise<SessionUser> {
+export async function requireUser(
+  opts: {
+    /**
+     * Só a rota de trocar a senha passa `true`.
+     *
+     * "Precisa trocar a senha" (senha provisória dada pelo admin) era cobrado
+     * só pela tela: o app mostrava o bloqueio, mas a API seguia aceitando tudo
+     * de quem estivesse com a provisória. Agora a recusa é aqui. 403, e não
+     * 401, porque a sessão é válida — 401 faria o app tratar como deslogado.
+     * /api/auth/me e o logout usam `getSessionUser` direto e não passam por
+     * aqui: é o `me` que diz ao app para mostrar a tela de troca.
+     */
+    permitirTrocaDeSenhaPendente?: boolean;
+  } = {}
+): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw new HttpError(401, 'Não autenticado.');
+  if (user.mustChangePassword && !opts.permitirTrocaDeSenhaPendente) {
+    throw new HttpError(403, 'Troque sua senha provisória para continuar usando o app.');
+  }
   if (user.guestDownwindId) {
     throw new HttpError(401, 'Este acesso de convidado não inclui esta função.');
   }

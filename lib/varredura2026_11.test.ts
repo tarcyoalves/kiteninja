@@ -149,3 +149,35 @@ describe('entrada malformada não vira erro 500', () => {
     expect(r.status).toBe(400);
   });
 });
+
+describe('troca de senha obrigatória é cobrada no servidor (V04)', () => {
+  it('com a marca ligada a API recusa tudo (403), menos trocar a senha, ver a própria conta e sair', async () => {
+    const provisorio = await novaPessoa({ nome: 'Senha Provisória' });
+    await db.query(`UPDATE users SET must_change_password = TRUE WHERE id = $1`, [provisorio.id]);
+    await entrarComo(provisorio);
+
+    const feed = await import('@/app/api/feed/route');
+    const r = await ler(await feed.GET(req('GET', '/api/feed')));
+    expect(r.status).toBe(403);
+    expect(String(r.body.error)).toMatch(/senha/i);
+
+    // A própria conta continua legível: é o que faz o app mostrar a tela de troca.
+    const me = await import('@/app/api/auth/me/route');
+    const eu = await ler(await me.GET());
+    expect(eu.status).toBe(200);
+    expect((eu.body.user as { mustChangePassword: boolean }).mustChangePassword).toBe(true);
+
+    // Trocar a senha funciona e destrava.
+    const troca = await import('@/app/api/auth/change-password/route');
+    const t = await ler(
+      await troca.POST(
+        req('POST', '/api/auth/change-password', {
+          currentPassword: provisorio.senha,
+          newPassword: 'nova-senha-bem-longa-2026',
+        }),
+      ),
+    );
+    expect(t.status, JSON.stringify(t.body)).toBe(200);
+    expect((await ler(await feed.GET(req('GET', '/api/feed')))).status).toBe(200);
+  });
+});

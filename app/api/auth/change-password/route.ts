@@ -13,7 +13,7 @@ import { password as parsePassword } from '@/lib/validation';
 
 export async function POST(request: Request) {
   return handle(async () => {
-    const user = await requireUser();
+    const user = await requireUser({ permitirTrocaDeSenhaPendente: true });
     const body = await readJson(request);
 
     const currentRaw = (body as Record<string, unknown>)?.currentPassword;
