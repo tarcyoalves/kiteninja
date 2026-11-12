@@ -7,6 +7,7 @@ import { podeResponderComentario } from '@/lib/social';
 import { str } from '@/lib/validation';
 import type { SessionComment } from '@/types';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -70,6 +71,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.comentario(user.id);
     const { id } = await ctx.params;
     if (!UUID.test(id)) throw new HttpError(400, 'Identificador de sessão inválido.');
 

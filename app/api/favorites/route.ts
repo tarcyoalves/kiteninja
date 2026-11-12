@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export async function GET() {
   return handle(async () => {
@@ -21,6 +22,7 @@ export async function GET() {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.toqueRapido(user.id);
     const body = await readJson(request);
 
     const spotId = (body as Record<string, unknown>)?.spotId;

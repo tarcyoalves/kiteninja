@@ -2,6 +2,7 @@ import { sql } from '@/lib/db';
 import { handle, readOptionalJson } from '@/lib/api';
 import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 
 /**
  * Confirmar ou desmarcar presença num evento.
@@ -33,6 +34,7 @@ export async function POST(
 ) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.inscricaoEvento(user.id);
     const { id } = await ctx.params;
 
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {

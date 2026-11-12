@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -18,6 +19,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function POST(_request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.toqueRapido(user.id);
     const { id } = await ctx.params;
 
     if (!UUID.test(id)) throw new HttpError(400, 'Identificador de post inválido.');

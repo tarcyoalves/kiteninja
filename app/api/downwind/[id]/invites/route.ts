@@ -6,6 +6,7 @@ import { buscarParticipacao, buscarStatusDownwind, ehUuid } from '@/lib/downwind
 import { sendPushToUsers } from '@/lib/push';
 import { str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,6 +78,7 @@ export async function GET(request: Request, ctx: Params) {
 export async function POST(request: Request, ctx: Params) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.conviteDownwind(user.id);
     const { id } = await ctx.params;
     if (!ehUuid(id)) throw new HttpError(404, 'Downwind não encontrado.');
 

@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
 import { str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export async function GET(
   _request: Request,
@@ -63,6 +64,7 @@ export async function POST(
 ) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.comentario(user.id);
     const { id } = await ctx.params;
     const body = await readJson(request);
 

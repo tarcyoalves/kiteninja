@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { HttpError } from '@/lib/auth';
 import { str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export async function GET() {
   return handle(async () => {
@@ -49,6 +50,7 @@ export async function GET() {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.alerta(user.id);
     const body = await readJson(request);
 
     const title = str(body, 'title', { max: 200 });

@@ -3,6 +3,7 @@ import { handle } from '@/lib/api';
 import { HttpError, requireUser } from '@/lib/auth';
 import { podeSeguir, relacaoComRider } from '@/lib/social';
 import { criarNotificacao } from '@/lib/notificacoes';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -45,6 +46,7 @@ async function exigirAlvoAtivo(id: string) {
 export async function POST(_request: Request, ctx: { params: Promise<{ id: string }> }) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.toqueRapido(user.id);
     const { id } = await ctx.params;
 
     if (!UUID.test(id)) throw new HttpError(400, 'Identificador de velejador inválido.');

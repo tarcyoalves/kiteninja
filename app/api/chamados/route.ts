@@ -4,6 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { oneOf, str } from '@/lib/validation';
 import type { MeuChamado, TipoChamado } from '@/types';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 interface ChamadoRow {
   id: unknown;
@@ -56,6 +57,7 @@ export async function GET() {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.chamado(user.id);
     const body = await readJson(request);
 
     const tipo = oneOf<TipoChamado>(body, 'tipo', ['bug', 'melhoria']);

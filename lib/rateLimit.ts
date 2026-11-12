@@ -353,4 +353,58 @@ export const rateLimiters = {
       60 * 60 * 1000,
       'Limite de criação de downwinds excedido. Aguarde 1 hora.'
     ),
+
+  // Comentário em post ou velejo: 20/min barra o laço que reenvia, sem apertar conversa real.
+  comentario: (userId: string) =>
+    enforceRateLimit(
+      `comentario:${userId}`,
+      20,
+      60 * 1000,
+      'Muitos comentários em pouco tempo. Aguarde um minuto.'
+    ),
+
+  // Curtir, seguir e favoritar são toques de um clique: um balde só, 60/min, para as três.
+  toqueRapido: (userId: string) =>
+    enforceRateLimit(
+      `toque_rapido:${userId}`,
+      60,
+      60 * 1000,
+      'Muitos toques em pouco tempo. Aguarde um minuto.'
+    ),
+
+  // Alerta: 10/h passa longe do uso real e barra o laço que cria o mesmo aviso de novo.
+  alerta: (userId: string) =>
+    enforceRateLimit(
+      `alerta:${userId}`,
+      10,
+      60 * 60 * 1000,
+      'Limite de alertas atingido. Tente novamente mais tarde.'
+    ),
+
+  // Chamado (bug/melhoria): 10/h basta para quem reporta de verdade e corta o envio repetido.
+  chamado: (userId: string) =>
+    enforceRateLimit(
+      `chamado:${userId}`,
+      10,
+      60 * 60 * 1000,
+      'Limite de chamados atingido. Tente novamente mais tarde.'
+    ),
+
+  // Inscrição em evento: 30/min cobre quem toca, desfaz e toca de novo; só pega o laço.
+  inscricaoEvento: (userId: string) =>
+    enforceRateLimit(
+      `inscricao_evento:${userId}`,
+      30,
+      60 * 1000,
+      'Muitas inscrições em pouco tempo. Aguarde um minuto.'
+    ),
+
+  // Convite de downwind: 30/h cobre um organizador convidando um grupo inteiro, sem deixar laço correr solto.
+  conviteDownwind: (userId: string) =>
+    enforceRateLimit(
+      `convite_dw:${userId}`,
+      30,
+      60 * 60 * 1000,
+      'Limite de convites de downwind atingido. Aguarde 1 hora.'
+    ),
 };
