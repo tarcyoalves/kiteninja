@@ -372,3 +372,51 @@ free — GitHub, Neon, Vercel")
   enviada e até 1.500 linhas pequenas que expiram sozinhas. Um push.
 - **Para o dono:** a T03 (projeto Vercel duplicado) continua fazendo cada push
   virar seis deploys; resolvê-la é o maior alívio disponível no plano Hobby.
+
+---
+
+## 2026-11-13 (tarde) — T08 pronta e desligada, 1ª fatia da T17, APK novo no aparelho
+**Quem:** Claude (Fable) · **Tarefa:** "faça tudo" do dono sobre as pendências
+**Commits:** o deste registro
+
+- **T02 — fechada.** Conferido na API do GitHub: os três últimos runs de CI em
+  `main` passaram, Android incluído. Não havia nada a corrigir.
+- **T08 — código pronto, desligado.** `lib/email.ts` (Resend por HTTP, sem
+  dependência nova), a rota `recover-password` envia o link e a tela
+  `/recuperar-senha` mostra o formulário **só** quando `RESEND_API_KEY` e
+  `EMAIL_FROM` existem. Sem elas nada muda. Três cuidados além do plano:
+  o link sai de `APP_URL`, não do cabeçalho Host (a rota é aberta); em
+  produção sem envio configurado não se cria token que ninguém vai receber;
+  e não há remetente padrão (o de teste do Resend só entrega ao dono da conta
+  — seria a mesma promessa falsa de antes). Passo a passo do dono em
+  `docs/ATIVAR-EMAIL-DE-SENHA.md`.
+- **T17 — 1ª fatia (SOS).** Estado e ações do SOS saíram de
+  `KiteDataContext.tsx` para `context/useSosAtivo.ts`, sem mudar o corpo nem o
+  que o contexto expõe (1.547 → 1.390 linhas). Faltam chat, feed e logbook,
+  uma fatia por commit.
+- **APK.** Compilado nesta máquina (Capacitor 8.5.3, `BUILD SUCCESSFUL`) e
+  instalado por USB no Samsung A07 do dono por cima do de 31/08, mantendo os
+  dados. Cópia em `Downloads/KiteNinja-2026-11-13.apk`. O processo subiu sem
+  crash no logcat; **a tela estava bloqueada, então não houve conferência
+  visual.** É APK de debug assinado com a chave desta máquina: outro aparelho
+  com APK do CI precisa desinstalar antes.
+- **Verificado:** tsc; eslint 0 erros, 39 avisos (igual ao anterior); vitest
+  1.359 testes, 1.358 passando e 1 que só falha no fuso desta máquina (abaixo);
+  verify-sql 319/0; verify-sos 59/0; build exit 0. Os 8 testes novos da T08
+  rodam as rotas reais com o Resend simulado; contraprova: sem o envio na
+  rota, 4 falham.
+- **Achado, não corrigido:** `lib/datasNasRotas.test.ts` falha em máquina fora
+  de UTC (espera `2026-10-04`, recebe `2026-10-03` em UTC−3) e passa com
+  `TZ=UTC`, que é o fuso do CI e da Vercel. Produção não é afetada; quem roda
+  a suíte no Brasil vê um vermelho que não é regressão.
+- **Aviso de ambiente:** nesta máquina, hoje, cada hash de senha levou ~1 s
+  (CPU a 100% com outros programas) e os testes de rota estouram o limite
+  padrão de 5 s. Rodar com `--testTimeout=180000`. Não é do código.
+- **Não feito, e por quê:**
+  - **T03** — o conector da Vercel não respondeu; o GitHub confirma que
+    `kiteninja1` ainda constrói cada commit. Apagar projeto é ação do dono.
+  - **T11** — fica com o dono. A opção A mexe em quem conta no quórum e no
+    fluxo que já quebrou quatro vezes; "faça tudo" não escolhe entre A e B.
+  - **Migração das fotos** — exige o token do Blob, que não existe nesta
+    máquina.
+  - **T16** — domínio é do dono (e pré-requisito para ligar a T08).

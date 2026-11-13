@@ -29,13 +29,13 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 | ID | Prio | Tarefa | Esforço | Quem | Estado |
 |---|---|---|---|---|---|
 | T01 | 🔴 P0 | Escalada do SOS roda a cada 3–6 h, não a cada 5 min | M | agente + dono | ✅ `a928a56` — T01b: ver aviso do Neon abaixo |
-| T02 | 🔴 P0 | CI vermelho: job Android quebrou com a depreciação do Node 20 | P | agente | ⏳ `5ee5317` — CI ainda não validou (falha de runner do GitHub) |
+| T02 | 🔴 P0 | CI vermelho: job Android quebrou com a depreciação do Node 20 | P | agente | ✅ `5ee5317` — CI verde em `main` (conferido em 13/11: três runs seguidos, Android incluído) |
 | T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** | ⬜ dono |
 | T04 | 🟠 P1 | Posições do link de apoio em terra guardadas para sempre | P | agente | ✅ `994ea33` |
 | T05 | 🟠 P1 | Nenhum cabeçalho de segurança HTTP | P | agente | ✅ `6343780` + `305f78b` |
 | T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente | ✅ `0d2fd06` `8f63782` — altas 4→0; resta 1 crítica no `@capacitor/android` (**dono decide**, ver `docs/DEPENDENCIAS-ALERTAS.md`) |
 | T07 | 🟠 P1 | Ações do admin não deixam rastro (`audit_logs` só no SOS) | M | agente | ✅ `e907b17` |
-| T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente | ⬜ dono primeiro |
+| T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente | ⏳ código pronto e **desligado** (13/11); liga quando o dono criar `RESEND_API_KEY` e `EMAIL_FROM` — `docs/ATIVAR-EMAIL-DE-SENHA.md` |
 | T09 | 🟡 P2 | Painel admin: polling de 12 s que não pausa, apaga erros e mantém o banco acordado | P | agente | ✅ `3bc716d` |
 | T10 | 🟡 P2 | Painel admin: falhas engolidas em silêncio (Erros, Convites) | P | agente | ✅ `ee56790` |
 | T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente | ⬜ dono decide |
@@ -44,7 +44,7 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 | T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ✅ `a0d4140` `90f5dd4` — avisos 138→39; `<img>` ficaram (todos dinâmicos) |
 | T15 | 🔵 P3 | `data/mockSpots` é o catálogo real — nome engana | P | agente | ✅ `91e1f42` |
 | T16 | 🔵 P3 | Domínio `app.kiteninja.ct.ws` pendente de verificação desde a criação | P | **dono** | ⬜ dono |
-| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⬜ (T13 feita: liberada) |
+| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⏳ 1ª fatia (SOS) em `context/useSosAtivo.ts`, 13/11 — 1.547 → 1.390 linhas; faltam chat, feed, logbook |
 
 Prioridade: 🔴 alguém pode se machucar ou a casa está pegando fogo ·
 🟠 segurança/privacidade/dado · 🟡 o dono ou o velejador sentem ·

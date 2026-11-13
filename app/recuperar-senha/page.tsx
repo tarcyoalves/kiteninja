@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { ArrowLeft, KeyRound, MessageCircle, ShieldCheck } from 'lucide-react';
+import { RecuperarSenhaForm } from '@/components/RecuperarSenhaForm';
+import { emailConfigurado } from '@/lib/email';
 
 /**
  * "Esqueci minha senha" — dizendo a verdade sobre como a recuperação funciona.
@@ -21,8 +23,17 @@ import { ArrowLeft, KeyRound, MessageCircle, ShieldCheck } from 'lucide-react';
  * diz isso, e não chama rota nenhuma. Quando houver envio de e-mail de
  * verdade, o formulário volta — a rota continua lá esperando (e já não mata
  * mais o link de ninguém: ver `createPasswordResetToken` em lib/auth.ts).
+ *
+ * T08 — O FORMULÁRIO VOLTOU, CONDICIONADO. Com `RESEND_API_KEY` e `EMAIL_FROM`
+ * definidas (lib/email.ts) a tela pede o e-mail e a rota envia o link. Sem
+ * elas, continua valendo o texto de sempre: a tela só promete e-mail quando
+ * existe quem o entregue. `force-dynamic` para a decisão ser tomada com as
+ * variáveis do servidor em execução, não com as do momento do build.
  */
+export const dynamic = 'force-dynamic';
+
 export default function RecuperarSenhaPage() {
+  const porEmail = emailConfigurado();
   return (
     <main className="min-h-screen bg-[#0F172A] text-slate-100 flex flex-col items-center justify-center p-4">
       <div className="w-full max-w-md bg-[#1E293B] rounded-3xl border border-slate-700/80 shadow-2xl p-6 sm:p-8 space-y-6">
@@ -43,9 +54,19 @@ export default function RecuperarSenhaPage() {
             <span>Esqueceu a senha?</span>
           </h1>
           <p className="text-xs text-slate-400 leading-relaxed">
-            A recuperação de acesso é feita pelo administrador do KiteNinja.
+            {porEmail
+              ? 'Informe o e-mail da sua conta e enviamos um link para escolher uma senha nova.'
+              : 'A recuperação de acesso é feita pelo administrador do KiteNinja.'}
           </p>
         </div>
+
+        {porEmail && <RecuperarSenhaForm />}
+
+        {porEmail && (
+          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            Sem acesso ao e-mail?
+          </p>
+        )}
 
         <ol className="space-y-3">
           <li className="flex gap-3 p-3 rounded-2xl bg-[#0F172A] border border-slate-700/80">
@@ -67,7 +88,11 @@ export default function RecuperarSenhaPage() {
 
         <Link
           href="/"
-          className="block w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/25 transition-all text-center"
+          className={
+            porEmail
+              ? 'block w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 font-black text-xs rounded-xl transition-all text-center'
+              : 'block w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-cyan-500/25 transition-all text-center'
+          }
         >
           Voltar ao login
         </Link>
