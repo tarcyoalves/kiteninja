@@ -4,6 +4,7 @@ import { HttpError, requireUser } from '@/lib/auth';
 import { num, str } from '@/lib/validation';
 import { instanteIso } from '@/lib/datas';
 import { fotoAceitaNaEntrada } from '@/lib/fotosNoBlob';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export async function GET(request: Request) {
   return handle(async () => {
@@ -104,6 +105,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.publicacao(user.id);
     const body = await readJson(request);
 
     const title = str(body, 'title', { max: 200 });

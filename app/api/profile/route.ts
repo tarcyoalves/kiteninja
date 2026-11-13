@@ -4,6 +4,7 @@ import { cookies } from 'next/headers';
 import { HttpError, SESSION_COOKIE, requireUser, verifyPassword } from '@/lib/auth';
 import { clampQuiverBoards, clampQuiverKites, num, oneOf, str } from '@/lib/validation';
 import type { Discipline, RiderLevel } from '@/types';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const LEVELS = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'] as const;
 const DISCIPLINES = [
@@ -31,6 +32,7 @@ function sent(body: unknown, field: string): boolean {
 export async function PATCH(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.perfil(user.id);
     const body = await readJson(request);
 
     const name = str(body, 'name', { min: 2, max: 120, optional: true });

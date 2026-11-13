@@ -1,6 +1,7 @@
 import { handleUpload, type HandleUploadBody } from '@vercel/blob/client';
 import { handle, readJson } from '@/lib/api';
 import { requireUser, HttpError } from '@/lib/auth';
+import { rateLimiters } from '@/lib/rateLimit';
 import {
   MAX_BYTES_BLOB,
   MENSAGEM_BLOB_NAO_CONFIGURADO,
@@ -23,7 +24,8 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(request: Request) {
   return handle(async () => {
-    await requireUser();
+    const user = await requireUser();
+    rateLimiters.uploadFoto(user.id);
 
     const body = await readJson(request);
 

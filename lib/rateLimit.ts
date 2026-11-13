@@ -407,4 +407,31 @@ export const rateLimiters = {
       60 * 60 * 1000,
       'Limite de convites de downwind atingido. Aguarde 1 hora.'
     ),
+
+  // Relato e anúncio criam linha e carregam foto: 20/h é muito mais que o uso real.
+  publicacao: (userId: string) =>
+    enforceRateLimit(
+      `publicacao:${userId}`,
+      20,
+      60 * 60 * 1000,
+      'Limite de publicações atingido. Tente novamente mais tarde.'
+    ),
+
+  // Editar perfil: 30/min cobre quem ajusta campo a campo; só pega o laço.
+  perfil: (userId: string) =>
+    enforceRateLimit(
+      `perfil:${userId}`,
+      30,
+      60 * 1000,
+      'Muitas alterações de perfil em pouco tempo. Aguarde um minuto.'
+    ),
+
+  // Token de upload de foto: cada um vira um arquivo no Blob (espaço é limitado no plano gratuito).
+  uploadFoto: (userId: string) =>
+    enforceRateLimit(
+      `upload_foto:${userId}`,
+      60,
+      60 * 60 * 1000,
+      'Limite de envio de fotos atingido. Tente novamente mais tarde.'
+    ),
 };

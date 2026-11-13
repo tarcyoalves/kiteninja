@@ -538,8 +538,13 @@ export const FeedView: React.FC = () => {
                     <div className="absolute bottom-3 left-3 bg-[#0F172A]/85 backdrop-blur-md px-3 py-1.5 rounded-full border border-cyan-500/40 text-white flex items-center gap-2 text-xs shadow-xl">
                       <Wind size={13} className="text-cyan-400" />
                       <span className="font-black text-cyan-300">{post.windReport.knots} nós</span>
-                      <span className="text-slate-400">&bull;</span>
-                      <span className="font-bold text-slate-200 text-[11px]">{post.windReport.kiteUsed}</span>
+                      {/* Pipa é opcional: sem ela ficava "20 nós •" com o ponto solto. */}
+                      {post.windReport.kiteUsed && (
+                        <>
+                          <span className="text-slate-400">&bull;</span>
+                          <span className="font-bold text-slate-200 text-[11px]">{post.windReport.kiteUsed}</span>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

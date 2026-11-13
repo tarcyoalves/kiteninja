@@ -13,6 +13,7 @@ import {
 } from '@/lib/marketplace';
 import type { Listing, ListingCategory, ListingCondition } from '@/types';
 import { instanteIso } from '@/lib/datas';
+import { rateLimiters } from '@/lib/rateLimit';
 
 const DEFAULT_LIMIT = 24;
 const MAX_LIMIT = 50;
@@ -184,6 +185,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handle(async () => {
     const user = await requireUser();
+    rateLimiters.publicacao(user.id);
     const body = await readJson(request);
 
     const title = str(body, 'title', { min: 4, max: 120 });

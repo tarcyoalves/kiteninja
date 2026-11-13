@@ -15,9 +15,17 @@ export const NewPostModal: React.FC = () => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [selectedSpotId, setSelectedSpotId] = useState(spots[0]?.id || 'ponta-do-mel');
-  const [knots, setKnots] = useState(20);
-  const [kiteUsed, setKiteUsed] = useState('9m² Twintip');
-  const [condition, setCondition] = useState('Side-Onshore Liso');
+  /*
+   * VENTO, PIPA E MAR COMEÇAM VAZIOS. O formulário nascia com 20 nós,
+   * "9m² Twintip" e "Side-Onshore Liso": quem publicava um aviso ou uma
+   * pergunta sem mexer nesses campos divulgava uma condição de vento que não
+   * informou — num app em que as pessoas decidem ir para a água pelo que leem
+   * aqui. Mesmo defeito corrigido no Registrar Velejo em 06/10. O vento só
+   * acompanha o relato se o velejador o preencher.
+   */
+  const [knots, setKnots] = useState<number | ''>('');
+  const [kiteUsed, setKiteUsed] = useState('');
+  const [condition, setCondition] = useState('');
   const [tag, setTag] = useState('Relato de Velejo');
   const [photoUrl, setPhotoUrl] = useState('');
   const [fotoErro, setFotoErro] = useState<string | null>(null);
@@ -50,11 +58,10 @@ export const NewPostModal: React.FC = () => {
       spotLocation: targetSpot?.location || 'Litoral',
       timestamp: 'Agora mesmo',
       photoUrl: photoUrl || undefined,
-      windReport: {
-        knots,
-        kiteUsed,
-        condition,
-      },
+      windReport:
+        knots === ''
+          ? undefined
+          : { knots, kiteUsed: kiteUsed.trim(), condition: condition.trim() },
       tag,
     });
 
@@ -67,6 +74,9 @@ export const NewPostModal: React.FC = () => {
     setTitle('');
     setContent('');
     setPhotoUrl('');
+    setKnots('');
+    setKiteUsed('');
+    setCondition('');
   };
 
   const TIPOS_ACEITOS = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -187,8 +197,12 @@ export const NewPostModal: React.FC = () => {
               <input
                 type="number"
                 value={knots}
-                onChange={e => setKnots(Number(e.target.value))}
-                className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-cyan-400 font-black text-sm focus:outline-hidden focus:border-cyan-400"
+                min={0}
+                max={80}
+                inputMode="decimal"
+                placeholder="opcional"
+                onChange={e => setKnots(e.target.value === '' ? '' : Number(e.target.value))}
+                className="w-full p-2.5 rounded-xl bg-[#1E293B] border border-slate-700 text-cyan-400 font-black text-sm placeholder:text-slate-500 placeholder:font-normal focus:outline-hidden focus:border-cyan-400"
               />
             </div>
           </div>

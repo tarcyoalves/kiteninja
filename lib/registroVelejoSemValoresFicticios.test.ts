@@ -38,3 +38,17 @@ describe('Registrar Velejo — medições começam vazias', () => {
     expect(fonte).toMatch(/if \(avgWindKnots === ''\) \{\s*setSaveError\(/);
   });
 });
+
+describe('Publicar Relato — vento, pipa e mar começam vazios', () => {
+  const post = readFileSync(join(__dirname, '..', 'components', 'NewPostModal.tsx'), 'utf-8');
+
+  it('nenhum dos três nasce preenchido', () => {
+    expect(post).toMatch(/const \[knots, setKnots\] = useState<number \| ''>\(''\);/);
+    expect(post).toMatch(/const \[kiteUsed, setKiteUsed\] = useState\(''\);/);
+    expect(post).toMatch(/const \[condition, setCondition\] = useState\(''\);/);
+  });
+
+  it('o vento só acompanha o relato se foi preenchido', () => {
+    expect(post).toMatch(/windReport:\s*knots === ''\s*\? undefined/);
+  });
+});
