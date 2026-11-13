@@ -420,3 +420,10 @@ free — GitHub, Neon, Vercel")
   - **Migração das fotos** — exige o token do Blob, que não existe nesta
     máquina.
   - **T16** — domínio é do dono (e pré-requisito para ligar a T08).
+- **Correção logo após publicar (revisão de segurança automática):** a rota
+  ainda caía no endereço da requisição quando `APP_URL` faltava — um Host
+  forjado poderia apontar o link do e-mail de outra pessoa para outro site.
+  Agora `APP_URL` é a terceira variável obrigatória (`urlDoApp` em
+  `lib/email.ts`): sem ela o envio fica desligado. Dois testes novos (sem
+  `APP_URL` nada sai; Host forjado não muda o link). O recurso estava
+  desligado em produção, então ninguém foi exposto.

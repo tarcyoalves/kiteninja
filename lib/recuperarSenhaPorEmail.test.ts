@@ -160,6 +160,29 @@ describe('recuperação de senha por e-mail (T08)', () => {
     expect(enviados).toHaveLength(0);
   });
 
+  it('sem APP_URL nada é enviado: o link nunca sai do Host da requisição', async () => {
+    vi.stubEnv('APP_URL', '');
+    const v = await criarUsuario({ senha: 'senha-que-esqueci-9' });
+    expect((await pedir(v.email)).status).toBe(200);
+    expect(enviados).toHaveLength(0);
+  });
+
+  it('Host forjado na requisição não muda o link do e-mail', async () => {
+    const v = await criarUsuario({ senha: 'senha-que-esqueci-10' });
+    trocarPessoa();
+    const { POST } = await import('@/app/api/auth/recover-password/route');
+    const forjada = new Request('https://site-do-atacante.example/api/auth/recover-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Host: 'site-do-atacante.example' },
+      body: JSON.stringify({ email: v.email }),
+    });
+    expect((await POST(forjada)).status).toBe(200);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].corpo.text).toContain('https://kiteninja.vercel.app/recuperar-senha/');
+    expect(enviados[0].corpo.text).not.toContain('atacante');
+    expect(enviados[0].corpo.html).not.toContain('atacante');
+  });
+
   it('em produção sem envio configurado não se cria token que ninguém vai receber', async () => {
     vi.stubEnv('RESEND_API_KEY', '');
     vi.stubEnv('NODE_ENV', 'production');

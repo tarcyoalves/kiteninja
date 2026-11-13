@@ -1,6 +1,6 @@
 # Ativar o e-mail de "esqueci minha senha" (T08)
 
-O código já está no ar e **desligado**. Enquanto as duas variáveis abaixo não
+O código já está no ar e **desligado**. Enquanto as três variáveis abaixo não
 existirem na Vercel, nada muda: a tela continua mandando pedir o link ao
 administrador, e o painel admin continua gerando o link como sempre.
 
@@ -30,7 +30,7 @@ liga; o caminho pelo administrador continua sendo o que funciona.
    |---|---|
    | `RESEND_API_KEY` | a chave copiada no passo 4 |
    | `EMAIL_FROM` | `KiteNinja <nao-responda@SEUDOMINIO>` |
-   | `APP_URL` | `https://kiteninja.vercel.app` (se ainda não existir) |
+   | `APP_URL` | `https://kiteninja.vercel.app` — **obrigatória**: o link do e-mail é montado só a partir dela |
 
 6. Vercel → **Deployments** → no último deploy, menu **⋯** → **Redeploy**.
    Variável nova só vale depois de um deploy.
@@ -43,7 +43,7 @@ liga; o caminho pelo administrador continua sendo o que funciona.
 3. O e-mail chega em até alguns minutos (olhe o spam na primeira vez). Abra o
    link, escolha a senha nova e entre.
 
-Se o campo não aparecer, uma das duas variáveis está faltando ou o redeploy
+Se o campo não aparecer, uma das três variáveis está faltando ou o redeploy
 não foi feito. Se o campo aparece mas o e-mail não chega, olhe **Logs** no
 Resend: domínio não verificado é a causa mais comum.
 

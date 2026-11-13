@@ -7,10 +7,11 @@
  * 3 por hora por e-mail em `rateLimiters.passwordReset` — não há como este
  * app estourar a cota em uso normal.
  *
- * DUAS VARIÁVEIS, E AS DUAS SÃO OBRIGATÓRIAS:
+ * TRÊS VARIÁVEIS, TODAS OBRIGATÓRIAS:
  *   RESEND_API_KEY  — a chave da conta.
  *   EMAIL_FROM      — remetente num domínio VERIFICADO no Resend, por exemplo
  *                     `KiteNinja <nao-responda@seudominio.com>`.
+ *   APP_URL         — endereço público do app, base dos links (ver `urlDoApp`).
  *
  * Sem qualquer uma delas, `emailConfigurado()` é falso: nada é enviado, nada
  * quebra, e a tela "Esqueci minha senha" continua dizendo a verdade (peça ao
@@ -24,7 +25,29 @@ const RESEND_URL = 'https://api.resend.com/emails';
 const TIMEOUT_MS = 8000;
 
 export function emailConfigurado(): boolean {
-  return Boolean(process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim());
+  return Boolean(
+    process.env.RESEND_API_KEY?.trim() && process.env.EMAIL_FROM?.trim() && urlDoApp()
+  );
+}
+
+/**
+ * Origem confiável para os links que vão por e-mail — só `APP_URL`.
+ *
+ * Nunca a requisição: a rota de recuperação é aberta, e montar o link a partir
+ * do cabeçalho Host deixaria um desconhecido escolher para onde vai o link que
+ * chega na caixa de outra pessoa (envenenamento de link de redefinição). Por
+ * isso `APP_URL` é a TERCEIRA variável obrigatória: sem ela o envio fica
+ * desligado, em vez de cair num endereço adivinhado.
+ */
+export function urlDoApp(): string | null {
+  const bruto = process.env.APP_URL?.trim();
+  if (!bruto) return null;
+  try {
+    const u = new URL(bruto);
+    return u.protocol === 'https:' || u.hostname === 'localhost' ? u.origin : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface Email {

@@ -1,6 +1,6 @@
 import { handle, readJson } from '@/lib/api';
 import { createPasswordResetToken } from '@/lib/auth';
-import { emailConfigurado, emailDeRecuperacao, enviarEmail } from '@/lib/email';
+import { emailConfigurado, emailDeRecuperacao, enviarEmail, urlDoApp } from '@/lib/email';
 import { rateLimiters } from '@/lib/rateLimit';
 import { email as parseEmail } from '@/lib/validation';
 
@@ -39,11 +39,9 @@ export async function POST(request: Request) {
     }
 
     if (token && enviar) {
-      // `APP_URL` primeiro: esta rota é aberta, e montar o link só a partir
-      // da requisição deixaria o cabeçalho Host de um desconhecido decidir
-      // para onde vai o link que chega no e-mail de outra pessoa.
-      const base = process.env.APP_URL?.trim() || request.url;
-      const url = new URL(`/recuperar-senha/${token}`, base).toString();
+      // A origem vem SÓ de `APP_URL` (ver `urlDoApp`), nunca da requisição:
+      // `emailConfigurado()` já garantiu que ela existe.
+      const url = new URL(`/recuperar-senha/${token}`, urlDoApp()!).toString();
       // `enviarEmail` não lança; se falhar, a resposta segue uniforme e a
       // pessoa ainda tem o caminho do administrador.
       await enviarEmail(emailDeRecuperacao(email, url, VALIDO_POR_HORAS));
