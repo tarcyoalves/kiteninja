@@ -30,6 +30,11 @@ export function instanteIso(v: unknown): string {
  * servidor; por isso os getters locais (e não os UTC) devolvem o dia certo
  * em qualquer fuso. Se já vier como texto 'AAAA-MM-DD', passa direto.
  */
+// FUSO: as rotas de velejo pedem a data já como texto ao banco
+// (`to_char(s.date, 'YYYY-MM-DD')`). Quando chegava como Date, o driver a
+// criava à meia-noite UTC e a leitura abaixo, em hora local, devolvia o DIA
+// ANTERIOR em servidor fora de UTC (medido: 2026-10-03 no lugar de 2026-10-04
+// em America/Sao_Paulo, 14/11/2026). O ramo de Date fica só como reserva.
 export function dataCalendario(v: unknown): string {
   if (v === null || v === undefined || v === '') return '';
   if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);

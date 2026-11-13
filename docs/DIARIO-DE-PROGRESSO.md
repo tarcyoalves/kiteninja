@@ -464,3 +464,29 @@ free — GitHub, Neon, Vercel")
   e a tela no celular.
 - **Fotos antigas — medido:** 2 relatos e 9 avatares em base64, 1,4 MB num
   banco de 14 MB (limite 1 GB). Sem urgência.
+
+---
+
+## 2026-11-14 — Conferência do `8e20155` (T11) e data do velejo fora de UTC
+**Quem:** Claude (Opus, sessão na nuvem) · **Tarefa:** fechar em 20 min o que
+a sessão anterior publicou sem a bateria completa
+**Commits:** o deste registro
+
+- **T11 (`8e20155`) conferida com a bateria inteira:** tsc ok; eslint 0 erros
+  (39 avisos); vitest 99 arquivos / 1377 testes; verify-sql 319/0; verify-sos
+  59/0; next build exit 0. Produção: `/` 200, `/api/events` e
+  `/api/sos/active` 401 sem login, `/api/version` servindo `8e20155`.
+  **Não conferido:** o resultado do CI do GitHub (sem acesso de leitura às
+  Actions nesta sessão) e o card no celular.
+- **Defeito real — data do velejo um dia antes fora de UTC:** a rota deixava
+  o driver criar um Date à meia-noite UTC e `dataCalendario` lia em hora
+  local. Em `TZ=America/Sao_Paulo`, `lib/datasNasRotas.test.ts` recebia
+  2026-10-03 para um velejo de 2026-10-04. Era a ROTA, não o teste. Correção:
+  `GET /api/sessions` e `GET /api/sessions/[id]` pedem
+  `to_char(s.date, 'YYYY-MM-DD')`, e a data nunca passa por Date. Produção
+  (Vercel, em UTC) não mostrava o erro; quem rodasse o app num servidor ou
+  máquina no fuso do Brasil, sim.
+- **Verificado:** o teste passa em São Paulo, UTC e Tóquio (antes falhava em
+  São Paulo — essa é a contraprova); suíte inteira verde em São Paulo e em
+  UTC (1377/1377); verify-sql 319/0; tsc ok.
+- **Ficou para a próxima sessão:** T17, fatias de chat, feed e logbook.

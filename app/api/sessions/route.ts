@@ -42,7 +42,7 @@ export async function GET() {
         s.spot_id,
         s.spot_name,
         s.spot_location,
-        s.date,
+        to_char(s.date, 'YYYY-MM-DD') AS date,
         s.start_time,
         s.duration_minutes,
         s.discipline,

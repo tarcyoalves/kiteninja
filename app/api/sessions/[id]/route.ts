@@ -83,7 +83,7 @@ export async function GET(_request: Request, ctx: { params: Promise<{ id: string
     // — nunca email/password_hash/last_ip/last_user_agent/emergency_contact_*.
     const rows = (await sql`
       SELECT
-        s.id, s.user_id, s.spot_name, s.spot_location, s.date, s.start_time,
+        s.id, s.user_id, s.spot_name, s.spot_location, to_char(s.date, 'YYYY-MM-DD') AS date, s.start_time,
         s.duration_minutes, s.discipline, s.kite_size_m2, s.board_model,
         s.avg_wind_knots, s.max_gust_knots, s.wind_direction, s.tide_condition,
         s.water_condition, s.rating, s.distance_km, s.max_speed_knots,
