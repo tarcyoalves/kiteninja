@@ -34,6 +34,24 @@ import { DownwindResumoModal } from '../components/DownwindResumoModal';
 import { ParticipantesEventoSheet } from '../components/activity/ParticipantesEventoSheet';
 import { devePuxarAtualizar, progressoPull } from '../lib/pullToRefresh';
 import { formatRelativeTime } from '../lib/chat';
+import { acoesDoCardDownwind } from '../lib/cardDownwind';
+
+/** Botões do card de downwind para quem está olhando — regra em lib/cardDownwind.ts. */
+function acoesDe(event: {
+  downwindStatus?: string | null;
+  downwindMeuPapel?: string | null;
+  downwindMeuEstado?: string | null;
+  downwindVisibilidade?: string | null;
+  downwindCriadoPorMim?: boolean;
+}) {
+  return acoesDoCardDownwind({
+    status: event.downwindStatus,
+    meuPapel: event.downwindMeuPapel,
+    meuEstado: event.downwindMeuEstado,
+    podeVerSemParticipar:
+      event.downwindVisibilidade === 'comunidade' || Boolean(event.downwindCriadoPorMim),
+  });
+}
 
 export const EventsAndAlertsView: React.FC = () => {
   const {
@@ -1134,10 +1152,54 @@ export const EventsAndAlertsView: React.FC = () => {
                 {/* Entrada no mapa ao vivo do downwind — só em eventos tipo
                     Downwind com downwind vinculado (ver GET /api/events) e
                     ainda não encerrado/cancelado. */}
+                {/*
+                  * T11 — QUEM JÁ ENCERROU SÓ ASSISTE.
+                  *
+                  * Para quem terminou o próprio velejo com o grupo ainda na
+                  * água, o botão de cima era "Downwind AO VIVO — entrar", e
+                  * entrar devolvia a pessoa ao quórum: o grupo chegava na
+                  * praia e não conseguia fechar o downwind. Agora o botão
+                  * principal abre o mapa ao vivo sem mudar estado nenhum, e
+                  * voltar para a água é um gesto separado que diz o que custa.
+                  * A regra mora em lib/cardDownwind.ts.
+                  */}
+                {event.type === 'Downwind' && event.downwindId && acoesDe(event).jaEncerrei && (
+                  <div className="space-y-2">
+                    <p className="flex items-center justify-center gap-1.5 text-[11px] text-emerald-300/90 font-bold">
+                      <CheckCircle2 size={12} />
+                      Você já encerrou seu velejo nesta travessia
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => abrirDownwindAoVivo(event.downwindId as string)}
+                      className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-slate-950 text-xs font-black active:scale-95 transition-all shadow-md shadow-cyan-500/20"
+                    >
+                      <Eye size={15} className="stroke-[3]" />
+                      <span>Assistir a travessia ao vivo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEntrarDownwind(event.downwindId!)}
+                      disabled={entrandoEmId === event.downwindId}
+                      className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all disabled:opacity-60"
+                    >
+                      {entrandoEmId === event.downwindId ? (
+                        <Loader2 size={14} className="animate-spin" />
+                      ) : (
+                        <Waves size={14} className="text-cyan-400" />
+                      )}
+                      <span>Voltar para a água</span>
+                    </button>
+                    <p className="text-[10px] leading-snug text-slate-500 text-center">
+                      Assistir não muda nada. Voltar para a água faz o grupo esperar por você de
+                      novo para encerrar o downwind.
+                    </p>
+                  </div>
+                )}
+
                 {event.type === 'Downwind' &&
                   event.downwindId &&
-                  event.downwindStatus !== 'encerrado' &&
-                  event.downwindStatus !== 'cancelado' && (
+                  acoesDe(event).principal === 'entrar' && (
                     <button
                       type="button"
                       onClick={() => handleEntrarDownwind(event.downwindId!)}
@@ -1176,10 +1238,7 @@ export const EventsAndAlertsView: React.FC = () => {
                   * de apoio nem como socorrista no SOS — ver
                   * lib/downwindAcesso.ts e lib/sosCandidates.ts.
                   */}
-                {event.downwindId &&
-                  (event.downwindStatus === 'aberto' ||
-                    event.downwindStatus === 'em_andamento') &&
-                  event.downwindMeuPapel !== 'espectador' && (
+                {event.downwindId && acoesDe(event).virarEspectador && (
                     <button
                       onClick={() => handleAssistirDownwind(event.downwindId as string)}
                       disabled={assistindoEmId === event.downwindId}
@@ -1205,11 +1264,7 @@ export const EventsAndAlertsView: React.FC = () => {
                   * pode ver continua sem o botão, porque a rota devolve 404 e
                   * mandar alguém para um 404 é pior que não oferecer.
                   */}
-                {event.downwindId &&
-                  event.downwindStatus === 'em_andamento' &&
-                  (event.downwindVisibilidade === 'comunidade' ||
-                    event.downwindCriadoPorMim ||
-                    event.downwindMeuPapel != null) && (
+                {event.downwindId && acoesDe(event).mapaAoVivo && (
                     <button
                       onClick={() => abrirDownwindAoVivo(event.downwindId as string)}
                       className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-black active:scale-95 transition-all"

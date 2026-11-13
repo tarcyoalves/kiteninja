@@ -10,6 +10,7 @@ import {
   podeVerReplayAoVivo,
 } from './downwindAcesso';
 import { determinarAtividadeAtual, mapaMostraDownwind, souParticipanteDaAgua } from './activity';
+import { acoesDoCardDownwind } from './cardDownwind';
 
 const semComentarios = (texto: string) =>
   texto
@@ -200,7 +201,17 @@ describe('espectador de downwind', () => {
   it('participante de downwind PRIVADO enxerga o botão do mapa ao vivo', () => {
     // A trava antiga exigia visibilidade 'comunidade' e escondia o botão de
     // quem participa — inclusive de quem criou o downwind.
+    // A condição saiu do JSX para lib/cardDownwind.ts (T11). O teste passou a
+    // exercitar a regra em vez de procurar o texto dela na tela.
+    const a = acoesDoCardDownwind({
+      status: 'em_andamento',
+      meuPapel: 'velejador',
+      meuEstado: 'navegando',
+      podeVerSemParticipar: false, // privado, e não fui eu que criei
+    });
+    expect(a.mapaAoVivo).toBe(true);
+    // E a tela usa essa regra para o botão.
     const view = semComentarios(readFileSync('views/EventsAndAlertsView.tsx', 'utf8'));
-    expect(view).toContain('event.downwindMeuPapel != null');
+    expect(view).toContain('acoesDe(event).mapaAoVivo');
   });
 });

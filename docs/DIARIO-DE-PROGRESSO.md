@@ -429,3 +429,38 @@ free — GitHub, Neon, Vercel")
   desligado em produção, então ninguém foi exposto.
 - **T03 — feita pelo dono (13/11):** projeto `kiteninja1` apagado na Vercel.
   Conferência: os status do commit deste registro no GitHub.
+
+---
+
+## 2026-11-13 (fim de tarde) — T11: quem já encerrou reabre só para assistir
+**Quem:** Claude (Fable) · **Tarefa:** T11, opção A, escolhida pelo dono
+**Commits:** o deste registro
+
+- **O defeito:** quem encerrava o próprio velejo e abria o card via um botão
+  grande "Downwind AO VIVO — entrar". Entrar levava `encerrado` de volta para
+  `confirmado`: a pessoa só queria olhar e voltava a contar no quórum, e o
+  grupo não conseguia fechar o downwind. O botão ao lado ("Só assistir")
+  trocava o papel dela para espectador.
+- **Feito:** `GET /api/events` devolve `downwindMeuEstado`; a regra dos botões
+  do card saiu do JSX para `lib/cardDownwind.ts`. Para quem já encerrou com o
+  grupo na água: botão principal **Assistir a travessia ao vivo** (abre
+  `/dw-live/[id]`, não muda estado), **Voltar para a água** como gesto
+  separado com o custo escrito, e "Só assistir" some.
+- **Desvio do plano, de propósito:** o plano sugeria `/api/downwind/ativo`
+  servir participante em qualquer estado. Não foi feito: o beacon web e o
+  Wake Lock em `context/DownwindContext.tsx` ligam por "travessia em
+  andamento" sem olhar o estado da pessoa — servir `encerrado` ali faria quem
+  assiste do carro voltar a transmitir posição. O mapa de leitura já existia
+  e já aceitava participante.
+- **Verificado:** `lib/cardDownwind.test.ts` (regra) e
+  `lib/cardDownwindFluxo.test.ts` (rotas reais: encerra, o card recebe
+  `encerrado`, assistir não muda o estado, o grupo fecha sem esperar; e o
+  contraste — "entrar" de novo deixa o downwind preso em andamento). tsc,
+  eslint 0 erros, verify-sql 319/0, e os testes de downwind/espectador/
+  atividade (103). Um guarda de texto de `espectadorDownwind.test.ts` foi
+  trocado por teste da regra.
+- **NÃO verificado:** suíte completa, verify-sos e build local (a máquina do
+  dono estava lenta e o tempo era curto — fica por conta do CI deste commit);
+  e a tela no celular.
+- **Fotos antigas — medido:** 2 relatos e 9 avatares em base64, 1,4 MB num
+  banco de 14 MB (limite 1 GB). Sem urgência.

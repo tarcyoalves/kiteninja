@@ -425,6 +425,14 @@ export interface KiteEvent {
    * (`podeVerReplayAoVivo`) mas não tinha botão nenhum para chegar lá.
    */
   downwindMeuPapel?: 'velejador' | 'apoio_terra' | 'espectador' | null;
+  /**
+   * Meu estado neste downwind, ou `null` se não entrei.
+   *
+   * O card precisa dele para não oferecer "entrar" a quem já encerrou o
+   * próprio velejo e só quer ver o grupo chegar — entrar de novo devolvia a
+   * pessoa ao quórum e travava o encerramento. Ver lib/cardDownwind.ts.
+   */
+  downwindMeuEstado?: 'confirmado' | 'navegando' | 'encerrado' | 'desistiu' | null;
   /** Visibilidade do downwind vinculado. Mostrada no card de propósito: "criei
    * e não apareceu para ninguém" foi um relato real, e a resposta estava
    * escondida nesta escolha. Ver lib/downwindVisibilidade.ts. */

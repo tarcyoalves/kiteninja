@@ -38,7 +38,7 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 | T08 | 🟠 P1 | Recuperação de senha por e-mail não existe | M | dono + agente | ⏳ código pronto e **desligado** (13/11); liga quando o dono criar `RESEND_API_KEY` e `EMAIL_FROM` — `docs/ATIVAR-EMAIL-DE-SENHA.md` |
 | T09 | 🟡 P2 | Painel admin: polling de 12 s que não pausa, apaga erros e mantém o banco acordado | P | agente | ✅ `3bc716d` |
 | T10 | 🟡 P2 | Painel admin: falhas engolidas em silêncio (Erros, Convites) | P | agente | ✅ `ee56790` |
-| T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente | ⬜ dono decide |
+| T11 | 🟡 P2 | Downwind: "terceira porta" é código morto (decisão do dono) | M | dono decide → agente | ✅ dono escolheu A (13/11); entregue pelo card do evento — `lib/cardDownwind.ts`. `/ativo` NÃO foi alterada (religaria o envio de posição de quem encerrou) |
 | T12 | 🟡 P2 | Sessões expiradas nunca são apagadas | P | agente | ✅ `e8fbfbc` |
 | T13 | 🔵 P3 | Trocar guardas de texto por testes de comportamento nos fluxos críticos | M | agente | ✅ `9e7c682`…`df6f30a` — +116 testes; achou 2 defeitos, corrigidos em `333f57f` |
 | T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ✅ `a0d4140` `90f5dd4` — avisos 138→39; `<img>` ficaram (todos dinâmicos) |

@@ -66,6 +66,7 @@ export async function GET(request: Request) {
         d.notificado_em AS downwind_notificado_em,
         (d.criado_por = ${user.id}) AS downwind_criado_por_mim,
         meu_dp.papel AS downwind_meu_papel,
+        meu_dp.estado AS downwind_meu_estado,
         (SELECT COUNT(*) FROM event_registrations er WHERE er.event_id = e.id) AS participants_count,
         CASE WHEN EXISTS (
           SELECT 1 FROM event_registrations er
@@ -125,6 +126,9 @@ export async function GET(request: Request) {
         downwindCriadoPorMim: Boolean(r.downwind_criado_por_mim),
         downwindMeuPapel: r.downwind_meu_papel
           ? (String(r.downwind_meu_papel) as 'velejador' | 'apoio_terra' | 'espectador')
+          : null,
+        downwindMeuEstado: r.downwind_meu_estado
+          ? (String(r.downwind_meu_estado) as 'confirmado' | 'navegando' | 'encerrado' | 'desistiu')
           : null,
         downwindVisibilidade: r.downwind_visibilidade
           ? (String(r.downwind_visibilidade) as 'privado' | 'comunidade')
