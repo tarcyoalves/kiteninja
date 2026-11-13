@@ -9,6 +9,7 @@ corrigido e qual a exposição real. Medido em 06/10/2026 (tarefa T06).
 | Depois | 1 | 0 | 2 | 3 |
 | 12/11/2026, antes | 2 | 1 | 7 | 11 (+1 baixa) |
 | 12/11/2026, depois (`b7af607`) | 1 | 0 | 7 | 8 |
+| 13/11/2026, Capacitor 8.5.3 (`23ffc31`) | 0 | 0 | 7 | 7 |
 
 **Atualização de 12/11/2026.** Em um mês surgiram alertas novos, entre eles
 dois críticos no próprio `next` (execução remota de código pelo otimizador
@@ -33,7 +34,12 @@ Nota de ferramenta: o npm 10.9.7 do contêiner quebra no `npm audit fix`
 `packageManager` (`npx npm@11.17.0 audit fix`). O `npm ci` com npm 10 lê o
 lock gerado pelo 11 sem problema.
 
-## Pendente 1 — `@capacitor/android` 8.5.0 (CRÍTICA) — decisão do dono
+## RESOLVIDO no código em 13/11 (`23ffc31`, 8.5.3) — falta o dono publicar um APK novo
+
+O texto abaixo fica como registro. Quem já tem o app instalado só fica
+protegido ao instalar o APK gerado depois desta atualização.
+
+### (histórico) `@capacitor/android` 8.5.0 (CRÍTICA)
 
 - **Advisory:** GHSA-rvm3-566m-v7fv (CVSS 9.3). Afeta `>=8.5.0 <8.5.1`; corrigido
   em 8.5.1. O guarda de navegação do WebView olhava host e esquema, mas não o

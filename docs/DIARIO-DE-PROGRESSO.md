@@ -286,3 +286,52 @@ o código, todas as páginas, funcionalidades, brechas, falhas, bugs")
   limite de requisições.
 - **Para o dono:** `@capacitor/android` crítico segue pendente (precisa de
   autorização e APK novo); T02, T03, T08, T11, T16 seguem como estavam.
+
+---
+
+## 2026-11-13 — "Corrija tudo": Capacitor, V01, V02, V04, V05
+**Quem:** Claude (Fable, orquestrador) + agente Sonnet (V01, V02) + agente
+Haiku (V05) · **Tarefa:** pedido do dono, com subagentes mais baratos
+**Commits:** `23ffc31` (Capacitor) · `273230e` (V04) · `e5b9ef8` (V05) ·
+`3476fa2` `e90ad37` (V01) · `40b4aa0` (V02) · integração e relato no commit
+seguinte a esses
+
+- **Capacitor 8.5.0 → 8.5.3:** fecha a falha crítica do WebView. `npm audit
+  --omit=dev` agora: 0 críticas, 0 altas. **Só protege quem instalar um APK
+  novo** — gerar e publicar é com o dono; este ambiente não compila Android.
+- **V01 — fotos fora do banco (Sonnet):** foto de relato, avatar e fotos de
+  anúncio agora sobem do celular direto para o Vercel Blob e o banco guarda só
+  o endereço. Rota nova `/api/fotos/token` (login exigido, só três pastas, só
+  JPEG/PNG/WebP, tamanho limitado pelo token). Relato e anúncio só aceitam
+  endereço do próprio Blob — antes o relato aceitava qualquer texto como foto.
+  Fotos antigas continuam aparecendo. Para tirá-las do banco há
+  `scripts/migrar-fotos-para-blob.ts` (modo de simulação por padrão), com
+  passo a passo em `docs/MIGRAR-FOTOS-PARA-BLOB.md`. Diário do agente:
+  `docs/diario/2026-11-12-V01-V02.md`.
+- **V02 — apagar campo do perfil (Sonnet):** bio, spot de casa e contato de
+  emergência agora podem ser apagados; campo não enviado continua mantido.
+- **V04 — troca de senha obrigatória (orquestrador):** cobrada no servidor
+  (403 até trocar), não só pela tela.
+- **V05 — limites de envio (Haiku + orquestrador):** teto por usuário em 16
+  rotas que gravam. Nada de SOS nem de leitura. Diário:
+  `docs/diario/2026-11-12-V05.md`.
+- **Achado ao conferir na tela:** Publicar Relato nascia com "20 nós, 9m²
+  Twintip, Side-Onshore Liso". Corrigido como o Registrar Velejo.
+- **Revisão da integração:** diffs dos dois agentes lidos antes de juntar
+  (rota de upload, validação de URL, SQL do perfil, núcleo da migração,
+  posição de cada limite). Um susto que não era defeito: o app local entrou
+  em laço de recarga — era o cache do servidor de desenvolvimento, que ficou
+  no ar enquanto dezenas de arquivos mudavam ("HMR hash mismatch"); sumiu ao
+  reiniciar com `.next/dev` limpo. Produção não usa esse mecanismo.
+- **Verificado no conjunto:** tsc, eslint 0 erros (39 avisos), vitest 96
+  arquivos / 1349 testes, verify-sql 319/0, verify-sos 59/0, build exit 0,
+  todas as rotas de leitura sem erro, roteiro de 44 passos no celular sem
+  erro de tela.
+- **Não verificado:** upload de foto de ponta a ponta (o ambiente local não
+  tem o token do Blob — a tela mostra o aviso certo); o script de migração
+  contra banco e Blob reais; a compilação do APK.
+- **Planos gratuitos:** o banco Neon para de crescer com fotos. O Blob passa
+  a receber relato/avatar/anúncio além dos velejos — conferir o limite do
+  plano no painel da Vercel.
+- **Para o dono:** (1) gerar e publicar o APK novo; (2) rodar a migração das
+  fotos antigas; (3) pendências anteriores T02, T03, T08, T11, T16.
