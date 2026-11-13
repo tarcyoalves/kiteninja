@@ -30,7 +30,7 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 |---|---|---|---|---|---|
 | T01 | 🔴 P0 | Escalada do SOS roda a cada 3–6 h, não a cada 5 min | M | agente + dono | ✅ `a928a56` — T01b: ver aviso do Neon abaixo |
 | T02 | 🔴 P0 | CI vermelho: job Android quebrou com a depreciação do Node 20 | P | agente | ✅ `5ee5317` — CI verde em `main` (conferido em 13/11: três runs seguidos, Android incluído) |
-| T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** | ⬜ dono |
+| T03 | 🔴 P0 | Projeto Vercel duplicado (`kiteninja1`): 6 builds por commit e 2ª "produção" no ar | P | **dono** | ✅ dono apagou o projeto `kiteninja1` em 13/11 |
 | T04 | 🟠 P1 | Posições do link de apoio em terra guardadas para sempre | P | agente | ✅ `994ea33` |
 | T05 | 🟠 P1 | Nenhum cabeçalho de segurança HTTP | P | agente | ✅ `6343780` + `305f78b` |
 | T06 | 🟠 P1 | 3 vulnerabilidades altas + 6 moderadas em dependências | P–M | agente | ✅ `0d2fd06` `8f63782` — altas 4→0; resta 1 crítica no `@capacitor/android` (**dono decide**, ver `docs/DEPENDENCIAS-ALERTAS.md`) |

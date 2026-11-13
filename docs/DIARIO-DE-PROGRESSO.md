@@ -427,3 +427,5 @@ free — GitHub, Neon, Vercel")
   `lib/email.ts`): sem ela o envio fica desligado. Dois testes novos (sem
   `APP_URL` nada sai; Host forjado não muda o link). O recurso estava
   desligado em produção, então ninguém foi exposto.
+- **T03 — feita pelo dono (13/11):** projeto `kiteninja1` apagado na Vercel.
+  Conferência: os status do commit deste registro no GitHub.
