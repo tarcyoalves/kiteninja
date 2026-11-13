@@ -231,4 +231,38 @@ describe('rota do token de upload (/api/fotos/token)', () => {
       else process.env.BLOB_READ_WRITE_TOKEN = guardado;
     }
   });
+
+  /*
+   * PLANO GRATUITO DO BLOB: 2.000 envios por mês; passou, a Vercel bloqueia o
+   * armazenamento por 30 dias e TODAS as fotos somem. O app para de emitir
+   * token em 1.500 (contado no banco), com aviso, em vez de chegar lá.
+   */
+  it('teto mensal do app: no 1.500º envio do mês o token é recusado (429) com aviso; abaixo disso, emite e conta', async () => {
+    const guardado = process.env.BLOB_READ_WRITE_TOKEN;
+    process.env.BLOB_READ_WRITE_TOKEN = 'vercel_blob_rw_teste_falso_0000000000';
+    try {
+      const pessoa = await novaPessoa({ nome: 'Teto Mensal' });
+      await entrarComo(pessoa);
+      const { POST } = await import('@/app/api/fotos/token/route');
+      await db.query(`DELETE FROM rate_limit_tentativas WHERE chave = 'blob_upload_app'`);
+      await db.query(
+        `INSERT INTO rate_limit_tentativas (chave, expira_em)
+         SELECT 'blob_upload_app', NOW() + INTERVAL '10 days' FROM generate_series(1, 1499)`
+      );
+      const ok = await ler(await POST(req('POST', '/api/fotos/token', corpo('relatos/a.jpg'))));
+      expect(ok.status, JSON.stringify(ok.body)).toBe(200);
+      const n = await db.query<{ n: number }>(
+        `SELECT COUNT(*)::int AS n FROM rate_limit_tentativas WHERE chave = 'blob_upload_app'`
+      );
+      expect(n.rows[0].n).toBe(1500);
+
+      const barrado = await ler(await POST(req('POST', '/api/fotos/token', corpo('relatos/b.jpg'))));
+      expect(barrado.status).toBe(429);
+      expect(String(barrado.body.error)).toMatch(/limite mensal de fotos/i);
+    } finally {
+      await db.query(`DELETE FROM rate_limit_tentativas WHERE chave = 'blob_upload_app'`);
+      if (guardado === undefined) delete process.env.BLOB_READ_WRITE_TOKEN;
+      else process.env.BLOB_READ_WRITE_TOKEN = guardado;
+    }
+  });
 });

@@ -28,6 +28,12 @@ export interface OpcoesMigracao {
   subir: Subir;
   /** Linhas lidas por vez. */
   tamanhoLote?: number;
+  /**
+   * Máximo de fotos enviadas nesta execução. Cada envio gasta uma das 2.000
+   * operações mensais do Blob no plano gratuito (ver lib/rateLimit.ts); sem
+   * teto, uma migração grande bloquearia o Blob por 30 dias.
+   */
+  maximo?: number;
   log?: (msg: string) => void;
 }
 
@@ -150,6 +156,8 @@ export async function migrarFotos(o: OpcoesMigracao): Promise<ResumoTabela[]> {
   const { sql, aplicar, subir } = o;
   const lote = Math.max(1, Math.min(o.tamanhoLote ?? 5, 50));
   const log = o.log ?? (() => undefined);
+  const maximo = Math.max(1, o.maximo ?? 200);
+  let enviadas = 0;
   const resumos: ResumoTabela[] = [];
 
   for (const alvo of ALVOS) {
@@ -162,10 +170,14 @@ export async function migrarFotos(o: OpcoesMigracao): Promise<ResumoTabela[]> {
     // Paginação por id (e não "as primeiras N que ainda são data:"): uma foto
     // que falha continuaria sendo a primeira da fila para sempre.
     let ultimo = ID_ZERO;
-    for (;;) {
+    laco: for (;;) {
       const linhas = await alvo.proximas(sql, ultimo, lote);
       if (linhas.length === 0) break;
       for (const linha of linhas) {
+        if (enviadas >= maximo) {
+          log(`  teto de ${maximo} envios desta execução atingido; rode de novo para continuar`);
+          break laco;
+        }
         ultimo = linha.id;
         const dados = lerDataUrl(String(linha.foto));
         if (!dados) {
@@ -174,6 +186,7 @@ export async function migrarFotos(o: OpcoesMigracao): Promise<ResumoTabela[]> {
           continue;
         }
         let url: string;
+        enviadas += 1;
         try {
           url = await subir(`${alvo.prefixo}migrado-${linha.id}.${dados.extensao}`, dados.corpo, dados.contentType);
         } catch (e) {

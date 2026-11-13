@@ -4,7 +4,7 @@
 
 Até 12/11/2026 o app guardava a foto de **relato**, o **avatar** e a foto de
 **anúncio** como um texto enorme (base64) dentro do banco Neon, até 1,5 MB cada.
-O Neon gratuito tem só 0,5 GB: cerca de 300 fotos enchem o banco. Daqui para a
+O espaço do Neon gratuito é pequeno (1 GB em 11/2026) e cada foto ocupa até 1,5 MB. Daqui para a
 frente as fotos novas já vão para o Vercel Blob e o banco guarda só o endereço
 (a URL). Este script faz o mesmo com as fotos **que já estão no banco**.
 
@@ -66,15 +66,29 @@ segue para a próxima. No fim ele mostra um resumo e, havendo falhas, avisa.
 - Rode o Passo 1 de novo: o número de fotos pendentes deve ser 0 (ou só as
   ignoradas, como SVG).
 
-## Limite do Blob no plano gratuito (Hobby)
+## Limite do Blob no plano gratuito (Hobby) — LEIA ANTES DO PASSO 2
 
-Não consegui confirmar o número atual nas páginas de documentação a que tive
-acesso, e ele muda com o tempo. **Confira o limite atual no painel da Vercel**
-(Storage, Blob, e a página de uso/limites do plano) e compare com o total de MB
-mostrado no Passo 1. Atenção: os MB do dry-run são do texto base64, que é cerca
-de 33% maior que o arquivo real; o espaço usado no Blob será um pouco menor.
-Como as fotos novas já são comprimidas no celular (algumas centenas de KB), a
-conta do dia a dia costuma ser bem menor que a das fotos antigas.
+Conferido na documentação da Vercel em 13/11/2026:
+
+- **2.000 envios de arquivo por mês**, 1 GB de espaço, 10 GB de tráfego.
+- Passou de qualquer um, **a Vercel bloqueia o Blob por 30 dias** — todas as
+  fotos do app param de carregar.
+
+**Cada foto migrada gasta 1 envio.** Por isso o script sobe no máximo **200
+fotos por execução** e para sozinho. Olhe o total do Passo 1 e faça a conta:
+
+- **no máximo duas execuções por mês** (400 fotos). A conta: o app pode usar
+  até 1.500 envios no mês para fotos novas; 1.500 + 400 = 1.900, abaixo dos
+  2.000. Três execuções no mesmo mês já arriscam o bloqueio;
+- mais de 400 fotos antigas: continue no mês seguinte. O app funciona
+  normalmente com as fotos antigas no banco enquanto isso; não há pressa.
+
+Para mudar o teto de uma execução: `--max 100` (ou outro número). Não passe de
+200 por vez: o próprio app precisa dos envios do mês para as fotos novas, e
+ele para de aceitar foto em 1.500 (ver `docs/LIMITES-PLANOS-GRATUITOS.md`).
+
+Sobre o espaço: os MB mostrados no Passo 1 são do texto, cerca de 33% maior
+que o arquivo real. Se o total passar de ~700 MB, não migre tudo — fale antes.
 
 ## Se algo der errado
 

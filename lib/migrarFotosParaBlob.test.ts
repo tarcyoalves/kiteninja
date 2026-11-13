@@ -148,3 +148,18 @@ describe('migrarFotos', () => {
     expect(await coluna('users', 'avatar_url', u2.id)).toBe(NOVA);
   });
 });
+
+describe('teto de envios por execução (plano gratuito do Blob: 2.000 operações/mês)', () => {
+  it('com `maximo: 2` sobe só 2 fotos e deixa o resto para a próxima rodada', async () => {
+    for (let i = 0; i < 3; i++) {
+      await db.query(`INSERT INTO posts (user_id, title, content, photo_url) VALUES ($1, 'teto', 'c', $2)`, [u2.id, JPG]);
+    }
+    const { subidos, subir } = blobFalso();
+    await migrarFotos({ sql, aplicar: true, subir, maximo: 2 });
+    expect(subidos.length).toBe(2);
+    const restam = await db.query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n FROM posts WHERE title = 'teto' AND photo_url LIKE 'data:image/%'`
+    );
+    expect(restam.rows[0].n).toBe(1);
+  });
+});

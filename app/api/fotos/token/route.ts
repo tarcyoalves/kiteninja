@@ -42,6 +42,9 @@ export async function POST(request: Request) {
 
         const tipo = tipoDoCaminho(pathname);
         if (!tipo) throw new HttpError(400, 'Caminho de upload inválido.');
+        // Só aqui, depois de tudo validado: cada token emitido vira uma foto
+        // no Blob e conta no teto mensal do plano gratuito.
+        await rateLimiters.orcamentoMensalDoBlob();
 
         return {
           allowedContentTypes: [...TIPOS_ACEITOS_NO_BLOB],

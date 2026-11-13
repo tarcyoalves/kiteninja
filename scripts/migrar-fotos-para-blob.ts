@@ -22,6 +22,8 @@ async function main() {
   const aplicar = args.includes('--aplicar');
   const iLote = args.indexOf('--lote');
   const lote = iLote >= 0 ? Number(args[iLote + 1]) : 5;
+  const iMax = args.indexOf('--max');
+  const maximo = iMax >= 0 ? Number(args[iMax + 1]) : 200;
 
   const url = process.env.DATABASE_URL;
   if (!url) {
@@ -40,6 +42,7 @@ async function main() {
     sql: neon(url) as unknown as SqlTag,
     aplicar,
     tamanhoLote: lote,
+    maximo,
     log: (m) => console.log(m),
     subir: async (pathname, corpo, contentType) => {
       const r = await put(pathname, corpo, {

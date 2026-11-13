@@ -149,7 +149,10 @@ O app roda inteiro em plano gratuito. Toda mudança respeita isto:
   projetos × três branches, ver T03). Agente **não faz push**: commita no
   próprio worktree e quem orquestra junta tudo num push só. Crons do
   `vercel.json` só rodam uma vez por dia neste plano; não crie cron novo lá.
-- **Neon Free.** 0,5 GB de armazenamento e computação limitada; o banco
+- **Números conferidos e o que o código faz para ficar dentro:**
+  `docs/LIMITES-PLANOS-GRATUITOS.md` (13/11/2026). Leia antes de mexer em foto,
+  consulta em laço ou deploy.
+- **Neon Free.** 1 GB de armazenamento (era 0,5 GB) e computação limitada; o banco
   hiberna quando ninguém o usa. Então: nenhum polling novo; consulta nova em
   rota chamada com frequência tem que ser barata e usar índice; tabela nova que
   cresce precisa nascer com expurgo; nada de manter o banco acordado. Agente

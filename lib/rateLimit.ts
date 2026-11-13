@@ -426,12 +426,38 @@ export const rateLimiters = {
       'Muitas alterações de perfil em pouco tempo. Aguarde um minuto.'
     ),
 
-  // Token de upload de foto: cada um vira um arquivo no Blob (espaço é limitado no plano gratuito).
+  /*
+   * ENVIO DE FOTO — dois tetos, por causa do plano gratuito do Vercel Blob.
+   *
+   * O plano Hobby inclui 2.000 "operações avançadas" por mês, e cada foto
+   * enviada é uma. Passando do limite, a Vercel BLOQUEIA o Blob por 30 dias:
+   * não é só deixar de enviar — todas as fotos do app param de carregar.
+   * (Conferido em vercel.com/docs/vercel-blob/usage-and-pricing, 13/11/2026.)
+   *
+   * Por usuário: 40 por dia. Um velejo leva até 4 fotos; 40 cobre um dia de
+   * uso intenso e impede que uma conta sozinha consuma o mês.
+   */
   uploadFoto: (userId: string) =>
     enforceRateLimit(
       `upload_foto:${userId}`,
-      60,
-      60 * 60 * 1000,
-      'Limite de envio de fotos atingido. Tente novamente mais tarde.'
+      40,
+      24 * 60 * 60 * 1000,
+      'Limite diário de envio de fotos atingido. Tente novamente amanhã.'
+    ),
+
+  /*
+   * Do app inteiro: 1.500 a cada 30 dias, contado no BANCO (as instâncias da
+   * Vercel não dividem memória). Fica abaixo dos 2.000 de propósito: mexer no
+   * painel do Blob e rodar a migração das fotos antigas também gastam
+   * operações. Recusar um envio com aviso é muito melhor que perder todas as
+   * fotos por um mês. Custo: uma consulta por foto enviada, e no máximo 1.500
+   * linhas pequenas em rate_limit_tentativas, que expiram sozinhas.
+   */
+  orcamentoMensalDoBlob: () =>
+    enforceRateLimitCompartilhado(
+      'blob_upload_app',
+      1500,
+      30 * 24 * 60 * 60 * 1000,
+      'O limite mensal de fotos do app foi atingido (plano gratuito do armazenamento). O envio de fotos volta em alguns dias; o restante do app segue normal.'
     ),
 };

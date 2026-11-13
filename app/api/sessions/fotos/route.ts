@@ -6,6 +6,7 @@ import {
   PREFIXO_BLOB_VELEJO,
   TIPOS_DE_FOTO_ACEITOS,
 } from '@/lib/fotosDoVelejo';
+import { rateLimiters } from '@/lib/rateLimit';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,11 +50,15 @@ export async function POST(request: Request) {
       body: body as HandleUploadBody,
       request,
       onBeforeGenerateToken: async (pathname) => {
-        await requireUser();
+        const user = await requireUser();
+        // Tetos do plano gratuito do Blob — ver `uploadFoto` e
+        // `orcamentoMensalDoBlob` em lib/rateLimit.ts.
+        rateLimiters.uploadFoto(user.id);
 
         if (!pathname.startsWith(PREFIXO_BLOB_VELEJO)) {
           throw new HttpError(400, 'Caminho de upload inválido.');
         }
+        await rateLimiters.orcamentoMensalDoBlob();
 
         return {
           allowedContentTypes: [...TIPOS_DE_FOTO_ACEITOS],

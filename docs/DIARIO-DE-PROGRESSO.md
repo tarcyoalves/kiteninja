@@ -335,3 +335,40 @@ seguinte a esses
   plano no painel da Vercel.
 - **Para o dono:** (1) gerar e publicar o APK novo; (2) rodar a migração das
   fotos antigas; (3) pendências anteriores T02, T03, T08, T11, T16.
+
+---
+
+## 2026-11-13 — Planos gratuitos: teto mensal de fotos e limites conferidos
+**Quem:** Claude (Fable) · **Tarefa:** lembrete do dono ("estamos nos planos
+free — GitHub, Neon, Vercel")
+**Commits:** o deste registro
+
+- **O que motivou:** a V01 passou mais fotos para o Vercel Blob e eu tinha
+  deixado o limite do plano como "confira no painel". Conferido na
+  documentação: o plano Hobby inclui **2.000 envios de arquivo por mês**, e ao
+  estourar a Vercel **bloqueia o Blob por 30 dias** (todas as fotos somem).
+  O teto por usuário que eu tinha posto (60 por hora) não protegia disso.
+- **Corrigido:**
+  - teto do app inteiro: 1.500 envios a cada 30 dias, contado no banco
+    (`orcamentoMensalDoBlob`); passou, o envio de foto é recusado com aviso e o
+    resto do app segue;
+  - teto por usuário: 40 fotos por dia (era 60 por hora);
+  - as fotos de velejo, que não tinham teto nenhum, entram nos dois;
+  - script de migração: no máximo 200 fotos por execução (`--max`), porque
+    cada foto migrada também gasta um envio; guia reescrito com a conta.
+- **Novo:** `docs/LIMITES-PLANOS-GRATUITOS.md` — números de Vercel, Neon e
+  GitHub conferidos na documentação em 13/11, o que acontece ao estourar cada
+  um e o que no código impede isso.
+- **Correção de informação:** o Neon Free hoje dá 1 GB por projeto, não
+  0,5 GB como este diário e o plano vinham dizendo. A cota que mais aperta no
+  Neon é a de computação (≈ 400 h/mês: o banco não pode ficar sempre acordado).
+- **Erro meu pego na revisão:** o guia dizia "200 fotos por semana é seguro";
+  somado aos 1.500 do app passaria dos 2.000. Ficou "no máximo duas execuções
+  por mês".
+- **Verificado:** dois testes novos pelas rotas (teto mensal; teto da
+  migração), contraprovados — sem o teto, os dois falham. tsc, eslint 0 erros,
+  vitest 1351/1351, verify-sql 319/0, verify-sos 59/0, build exit 0.
+- **Custo desta mudança nos planos:** uma consulta leve ao banco por foto
+  enviada e até 1.500 linhas pequenas que expiram sozinhas. Um push.
+- **Para o dono:** a T03 (projeto Vercel duplicado) continua fazendo cada push
+  virar seis deploys; resolvê-la é o maior alívio disponível no plano Hobby.
