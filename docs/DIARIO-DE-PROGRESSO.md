@@ -609,8 +609,11 @@ Testes: `lib/revisaoLogicaFluxo.test.ts` (11, pelas rotas reais).
   depois da T17.
 
 ### Não verificado
-- **No celular do dono.** O aparelho estava conectado, mas bloqueou a tela
-  antes do teste e não há como desbloquear por fora.
+- **No celular do dono — feito depois, em 16/11 à tarde** (Samsung A07, APK de
+  13/11, conta de teste): Spots, Mapa, Feed, Diário, Chat, menu lateral,
+  Perfil (com "Trocar minha senha" e "Excluir minha conta") e Eventos abrem
+  sem erro de tela; logcat sem crash nem erro de JavaScript. Foi só navegação:
+  nenhum formulário foi enviado pelo aparelho.
 - **O início do downwind com dois aparelhos na praia** — a correção nº 1 está
   provada pelas rotas, não por duas pessoas tocando "Iniciar" de verdade.
 - Aba Mapa e criação de alerta/comentário no preview (cobertos só por tipo e
