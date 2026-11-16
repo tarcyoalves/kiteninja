@@ -4,6 +4,9 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { UserProfile } from '../types';
 import { FCM_TOKEN_STORAGE_KEY } from '../lib/usePushNotifications';
 
+/** `heightCm: null` apaga a altura — ver PATCH em app/api/profile/route.ts. */
+type DadosDePerfil = Omit<Partial<UserProfile>, 'heightCm'> & { heightCm?: number | null };
+
 interface AuthContextType {
   user: UserProfile | null;
   isAuthenticated: boolean;
@@ -24,7 +27,7 @@ interface AuthContextType {
     currentPassword: string,
     newPassword: string
   ) => Promise<{ ok: boolean; error?: string }>;
-  updateProfile: (data: Partial<UserProfile>) => Promise<{ ok: boolean; error?: string }>;
+  updateProfile: (data: DadosDePerfil) => Promise<{ ok: boolean; error?: string }>;
   refresh: () => Promise<void>;
   isAuthModalOpen: boolean;
   openAuthModal: () => void;
@@ -132,6 +135,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         body: JSON.stringify({ fcmToken }),
       });
       localStorage.removeItem(FCM_TOKEN_STORAGE_KEY);
+    } catch {
+      // Sem rede o pedido de saída não chega ao servidor. A tela sai do mesmo
+      // jeito (o `finally` abaixo), em vez de estourar uma exceção solta.
     } finally {
       setUser(null);
       setIsAdmin(false);
@@ -166,10 +172,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 
   const updateProfile = useCallback(
-    async (data: Partial<UserProfile>) => {
+    async (data: DadosDePerfil) => {
       // Atualização otimista: a UI responde na hora, e o servidor confirma.
       const previous = user;
-      setUser((prev) => (prev ? { ...prev, ...data } : prev));
+      // `heightCm: null` (apagar) vira `undefined` no estado local, que é como
+      // o perfil representa "sem altura".
+      setUser((prev) => (prev ? { ...prev, ...data, heightCm: data.heightCm === null ? undefined : (data.heightCm ?? prev.heightCm) } : prev));
 
       try {
         const res = await fetch('/api/profile', {

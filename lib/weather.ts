@@ -587,7 +587,10 @@ export async function getSpotWeather(
   const currentKnots = Math.round(nowGfs);
   const nowGust = Math.round(num(gusts[now]) * (1 - minuteFraction) + num(gusts[nowNext]) * minuteFraction);
   const gustKnots = Math.max(nowGust, currentKnots);
-  const avgKnots = Math.max(8, Math.round(currentKnots * 0.92));
+  // Sem piso: havia um `Math.max(8, ...)` aqui, e com 3 nós de vento a tela
+  // mostrava "média 8" — maior que o vento atual, num app em que esse número
+  // decide se alguém vai para a água.
+  const avgKnots = Math.round(currentKnots * 0.92);
 
   const nowDirDeg = Math.round(num(dirs[now]));
   let currentSafety: WindSafety = 'Side-Onshore';

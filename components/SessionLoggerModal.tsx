@@ -10,6 +10,7 @@ import { compressImage } from '../lib/imageCompress';
 import { MAX_FOTOS_POR_VELEJO, PREFIXO_BLOB_VELEJO } from '../lib/fotosDoVelejo';
 import { MSG_DESCARTAR_FORMULARIO, temTrabalhoNaoSalvo } from '../lib/descarteFormulario';
 import { kmhParaNos, nosParaKmh } from '../lib/velocidadeVelejo';
+import { hojeLocal } from '../lib/dataLocal';
 
 const MAX_PHOTO_BYTES = 12 * 1024 * 1024; // 12MB — limite antes de processar, para não travar o navegador com arquivos gigantes
 const ALLOWED_PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/heic'];
@@ -27,7 +28,7 @@ export const SessionLoggerModal: React.FC = () => {
 
   const [selectedSpotId, setSelectedSpotId] = useState(spots[0]?.id || 'ponta-do-mel');
   const [customSpotName, setCustomSpotName] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(() => hojeLocal());
   const [startTime, setStartTime] = useState('15:30');
   const [durationMinutes, setDurationMinutes] = useState(90);
   const [discipline, setDiscipline] = useState<Discipline>('Kitesurf Twintip');
@@ -188,7 +189,7 @@ export const SessionLoggerModal: React.FC = () => {
     // permanece intacto para o velejador corrigir ou tentar novamente.
     setSelectedSpotId(spots[0]?.id || 'ponta-do-mel');
     setCustomSpotName('');
-    setDate(new Date().toISOString().split('T')[0]);
+    setDate(hojeLocal());
     setStartTime('15:30');
     setDurationMinutes(90);
     setDiscipline('Kitesurf Twintip');

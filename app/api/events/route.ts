@@ -224,6 +224,9 @@ async function createDownwindEvent(body: unknown) {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
+    // Sem fuso, o servidor (UTC na Vercel) escrevia o dia seguinte para um
+    // downwind marcado depois das 21h de Brasília.
+    timeZone: 'America/Fortaleza',
   });
 
   const insertedEvent = await sql`

@@ -53,11 +53,13 @@ interface KiteDataContextType {
   ) => Promise<{ ok: boolean; error?: string }>;
   toggleLikePost: (postId: string) => void;
   // userName não é usado: o autor do comentário vem da sessão no servidor.
-  addComment: (postId: string, text: string, userName: string) => void;
+  addComment: (postId: string, text: string, userName: string) => Promise<{ ok: boolean; error?: string }>;
 
   // Safety & Events
   safetyAlerts: SafetyOccurrence[];
-  addSafetyAlert: (alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => void;
+  addSafetyAlert: (
+    alert: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>
+  ) => Promise<{ ok: boolean; error?: string }>;
   events: KiteEvent[];
   /** Downwinds visíveis para este velejador — ver GET /api/downwind. */
   toggleEventRegistration: (eventId: string) => void;
@@ -754,8 +756,16 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     return { value: Math.round(knots), unitStr: 'nós' };
   };
 
-  const addSafetyAlert = (alertData: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => {
-    api<{ id: string }>('/api/alerts', {
+  /*
+   * Devolve o resultado em vez de engolir a falha. Antes era `.catch(() => {})`
+   * e a tela mostrava "Ocorrência enviada" sem esperar resposta: um alerta de
+   * segurança que não chegou ao servidor (sem rede, texto longo demais) era
+   * dado como enviado, e o que a pessoa tinha escrito se perdia.
+   */
+  const addSafetyAlert = (
+    alertData: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>
+  ): Promise<{ ok: boolean; error?: string }> => {
+    return api<{ id: string }>('/api/alerts', {
       method: 'POST',
       body: JSON.stringify({
         title: alertData.title,
@@ -764,8 +774,14 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         description: alertData.description,
       }),
     })
-      .then(() => loadFeedAndEvents())
-      .catch(() => {});
+      .then(() => {
+        loadFeedAndEvents();
+        return { ok: true as const };
+      })
+      .catch((err) => ({
+        ok: false as const,
+        error: err instanceof Error ? err.message : 'Não foi possível enviar o alerta.',
+      }));
   };
 
   /**

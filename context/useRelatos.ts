@@ -76,13 +76,21 @@ export function useRelatos(api: Api) {
       .catch(() => recarregarPosts());
   };
 
-  const addComment = (postId: string, text: string) => {
-    api<{ id: string }>(`/api/posts/${postId}/comments`, {
+  // Devolve o resultado: a tela precisa saber se o comentário entrou para não
+  // apagar o que a pessoa escreveu quando o envio falha.
+  const addComment = (postId: string, text: string): Promise<{ ok: boolean; error?: string }> => {
+    return api<{ id: string }>(`/api/posts/${postId}/comments`, {
       method: 'POST',
       body: JSON.stringify({ text }),
     })
-      .then(() => recarregarPosts())
-      .catch(() => {});
+      .then(() => {
+        recarregarPosts();
+        return { ok: true as const };
+      })
+      .catch((err) => ({
+        ok: false as const,
+        error: err instanceof Error ? err.message : 'Não foi possível comentar.',
+      }));
   };
 
   return { posts, carregarPosts, addPost, toggleLikePost, addComment };

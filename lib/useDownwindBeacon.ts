@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  CHAVE_FILA_POSICOES,
+  chaveDaFila,
   descartarVencidas,
   desserializarFila,
   enfileirar,
@@ -16,20 +16,20 @@ import {
  * anônima) ou cota estourada não podem derrubar o beacon de quem está na
  * água. Perder o backup é ruim; parar de reportar posição é muito pior.
  */
-function lerFila(): PosicaoPendente[] {
+function lerFila(downwindId: string): PosicaoPendente[] {
   if (typeof window === 'undefined') return [];
   try {
-    return desserializarFila(window.localStorage.getItem(CHAVE_FILA_POSICOES));
+    return desserializarFila(window.localStorage.getItem(chaveDaFila(downwindId)));
   } catch {
     return [];
   }
 }
 
-function gravarFila(fila: PosicaoPendente[]): void {
+function gravarFila(downwindId: string, fila: PosicaoPendente[]): void {
   if (typeof window === 'undefined') return;
   try {
-    if (fila.length === 0) window.localStorage.removeItem(CHAVE_FILA_POSICOES);
-    else window.localStorage.setItem(CHAVE_FILA_POSICOES, serializarFila(fila));
+    if (fila.length === 0) window.localStorage.removeItem(chaveDaFila(downwindId));
+    else window.localStorage.setItem(chaveDaFila(downwindId), serializarFila(fila));
   } catch {
     // idem
   }
@@ -144,7 +144,7 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
            * silêncio, e numa praia com 4G oscilante cada falha virava um
            * buraco permanente na trilha — de alguém que está na água.
            */
-          gravarFila(enfileirar(lerFila(), atual));
+          gravarFila(downwindId, enfileirar(lerFila(downwindId), atual));
           return;
         }
 
@@ -155,9 +155,9 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
          * mais novo, em lotes que cabem no rate limit (120/min) sem sufocar
          * o envio normal. Um ponto recusado volta para a fila.
          */
-        const pendentes = descartarVencidas(lerFila(), Date.now());
+        const pendentes = descartarVencidas(lerFila(downwindId), Date.now());
         if (pendentes.length === 0) {
-          if (lerFila().length > 0) gravarFila([]);
+          if (lerFila(downwindId).length > 0) gravarFila(downwindId, []);
           return;
         }
 
@@ -174,7 +174,7 @@ export function useDownwindBeacon(downwindId: string | null, ativo: boolean): Do
             break;
           }
         }
-        gravarFila([...naoEntregues, ...resto]);
+        gravarFila(downwindId, [...naoEntregues, ...resto]);
       } catch {
         // Best-effort: nunca deve estourar na UI de quem está na água.
       } finally {

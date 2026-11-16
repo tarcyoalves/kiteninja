@@ -10,6 +10,20 @@ import { buscarParticipacao } from '@/lib/downwindDb';
 import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
 
 /**
+ * Instante ISO COM milissegundos.
+ *
+ * O driver devolve `Date`, e a conversão antiga (`new Date(String(valor))`)
+ * passava por `String(date)`, que não tem milissegundos: o horário saía
+ * cortado no SEGUNDO. O cliente usa esse valor como cursor (`since`), então a
+ * última mensagem voltava como "nova" a cada consulta — selo de não lidas
+ * subindo sozinho e notificação repetida a cada 8 s. Medido em produção:
+ * banco `20:56:38.077762`, cursor do cliente `20:56:38.000Z`.
+ */
+function instanteIso(valor: unknown): string {
+  return (valor instanceof Date ? valor : new Date(String(valor))).toISOString();
+}
+
+/**
  * Resolve o usuário da requisição, aceitando a sessão de convidado do link
  * de 12h (lib/auth.ts, `SessionUser.guestDownwindId`) — `requireUser()`
  * rejeitaria de cara. O escopo do convidado (só a sala `dw:<seu downwind>`)
@@ -19,6 +33,12 @@ import { MSG_DOWNWIND_NAO_ENCONTRADO } from '@/lib/downwindAcesso';
 async function resolverUsuarioChat(): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw new HttpError(401, 'Não autenticado.');
+  // Mesma trava de `requireUser`: esta rota não passa por ele (para aceitar o
+  // convidado de downwind) e por isso ficava de fora da cobrança da troca de
+  // senha — quem tinha uma senha provisória lia e escrevia no chat sem trocar.
+  if (user.mustChangePassword) {
+    throw new HttpError(403, 'Troque sua senha provisória para continuar usando o app.');
+  }
   return user;
 }
 
@@ -48,7 +68,7 @@ function toMessage(row: unknown) {
     userAvatar: r.author_avatar ? String(r.author_avatar) : undefined,
     userRiderId: String(r.author_rider_id),
     text: String(r.text),
-    createdAt: new Date(String(r.created_at)).toISOString(),
+    createdAt: instanteIso(r.created_at),
   };
 }
 
@@ -148,7 +168,9 @@ export async function GET(request: Request) {
           u.rider_id  AS author_rider_id
         FROM chat_messages cm
         JOIN users u ON u.id = cm.user_id
-        WHERE cm.room = ${room} AND cm.created_at > ${since}
+        -- O cursor do cliente tem milissegundos; a coluna, microssegundos.
+        -- Sem truncar, .077762 > .077000 e a mesma mensagem voltava sempre.
+        WHERE cm.room = ${room} AND date_trunc('milliseconds', cm.created_at) > ${since}
         ORDER BY cm.created_at ASC
         LIMIT ${limit}
       `;
@@ -295,7 +317,7 @@ export async function POST(request: Request) {
         id: String(r.id),
         userId: String(r.user_id),
         text: String(r.text),
-        createdAt: new Date(String(r.created_at)).toISOString(),
+        createdAt: instanteIso(r.created_at),
       },
       maxLength: CHAT_TEXT_MAX,
     };

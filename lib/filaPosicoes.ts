@@ -30,6 +30,23 @@ export interface PosicaoPendente {
 export const CHAVE_FILA_POSICOES = 'kiteninja:posicoes-pendentes';
 
 /**
+ * A fila é POR DOWNWIND.
+ *
+ * Era uma chave só, e os pontos não diziam de qual travessia eram. Quem ficava
+ * com posições pendentes do downwind A (sem sinal) e entrava no B em menos de
+ * 9 horas despejava os pontos de A no B no primeiro envio bem-sucedido: o
+ * rastro de B ganhava um salto até o lugar de A, e a distância e a velocidade
+ * máxima do resumo saíam corrompidas.
+ *
+ * Com o id na chave, os pontos de uma travessia só podem ser enviados para
+ * ela. O que sobrar de uma travessia que já acabou fica órfão e vence sozinho
+ * (o servidor recusa ponto com mais de 9 h de qualquer forma).
+ */
+export function chaveDaFila(downwindId: string): string {
+  return `${CHAVE_FILA_POSICOES}:${downwindId}`;
+}
+
+/**
  * Teto da fila.
  *
  * 240 pontos = 3 horas de beacon a cada 45 s, que cobre uma travessia longa

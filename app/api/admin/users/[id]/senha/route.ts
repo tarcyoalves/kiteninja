@@ -43,6 +43,14 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     const { id } = await ctx.params;
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw new HttpError(400, 'ID de usuário inválido.');
 
+    // Gerar o link para a PRÓPRIA conta derrubava a sessão do admin no meio do
+    // painel (`invalidateAllUserSessions` logo abaixo apaga também o cookie
+    // dele), e o link ficava numa tela que já não carregava. Para si mesmo o
+    // caminho é Perfil → "Trocar minha senha".
+    if (id === admin.id) {
+      throw new HttpError(400, 'Para a sua própria conta, use Perfil → "Trocar minha senha".');
+    }
+
     const rows = await sql`SELECT email, name, is_active FROM users WHERE id = ${id} LIMIT 1`;
     if (rows.length === 0) throw new HttpError(404, 'Usuário não encontrado.');
     const u = rows[0] as Record<string, unknown>;

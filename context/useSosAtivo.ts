@@ -118,7 +118,13 @@ export function useSosAtivo(args: {
         (a) =>
           a.userId !== userId &&
           (a.status === 'ativo' || a.status === 'em_atendimento') &&
-          !dismissedSosIdsRef.current.has(a.id)
+          !dismissedSosIdsRef.current.has(a.id) &&
+          // Quem já respondeu ("a caminho", "não posso", "no local") não é
+          // interrompido de novo. A lista de dispensados vive em memória e
+          // some ao reabrir o app; sem olhar a resposta gravada no servidor, o
+          // alerta de tela cheia voltava a cada abertura para um SOS que a
+          // pessoa já tinha respondido.
+          !(a.responders ?? []).some((r) => r.userId === userId && r.state !== 'notificado')
       );
       setIncomingSosAlert(incoming || null);
     } catch {

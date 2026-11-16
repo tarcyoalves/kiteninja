@@ -68,6 +68,7 @@ export const SosPanel: React.FC<SosPanelProps> = ({
   onCancel,
 }) => {
   const [canceling, setCanceling] = useState(false);
+  const [erroCancelar, setErroCancelar] = useState<string | null>(null);
 
   const aCaminho = sos.responders.filter(r => r.state === 'a_caminho' || r.state === 'no_local');
   const notificados = sos.responders.filter(r => r.state === 'notificado');
@@ -75,14 +76,26 @@ export const SosPanel: React.FC<SosPanelProps> = ({
   const handleCancel = async () => {
     setCanceling(true);
     try {
-      await fetch(`/api/sos/${sos.id}`, {
+      const res = await fetch(`/api/sos/${sos.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelado', resolutionNote: 'Cancelado pelo autor' }),
       });
+      /*
+       * `fetch` só rejeita em falha de rede: um 401/403/500 chegava aqui como
+       * "deu certo". O painel fechava a ação sem cancelar nada, o SOS seguia
+       * ativo no servidor e gente continuava vindo socorrer — sem a pessoa
+       * saber que o cancelamento não tinha valido.
+       */
+      if (!res.ok) {
+        const corpo = (await res.json().catch(() => null)) as { error?: string } | null;
+        setErroCancelar(corpo?.error ?? 'Não foi possível cancelar o SOS. Tente de novo.');
+        return;
+      }
+      setErroCancelar(null);
       onCancel();
     } catch {
-      // Falha silenciosa — o velejador pode fechar e tentar de novo
+      setErroCancelar('Sem conexão: o SOS continua ATIVO. Tente cancelar de novo.');
     } finally {
       setCanceling(false);
     }
@@ -235,6 +248,11 @@ export const SosPanel: React.FC<SosPanelProps> = ({
             {canceling ? <Loader2 size={14} className="animate-spin" /> : null}
             {canceling ? 'Cancelando...' : 'Cancelar SOS (falso alarme)'}
           </button>
+          {erroCancelar && (
+            <p role="alert" className="text-xs font-bold text-rose-300 text-center">
+              {erroCancelar}
+            </p>
+          )}
         </div>
       </div>
     </div>

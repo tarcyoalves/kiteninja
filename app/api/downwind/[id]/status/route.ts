@@ -33,7 +33,37 @@ export async function POST(request: Request, ctx: Params) {
       const veredito = podeIniciarDownwind({ statusDownwind: status, participacao });
       if (!veredito.permitido) throw new HttpError(veredito.status, veredito.mensagem);
 
+      /*
+       * QUEM TOCA "INICIAR" VAI PARA A ÁGUA — TODOS, não só o primeiro.
+       *
+       * O DEFEITO: só o velejador que vencia a corrida do UPDATE abaixo saía
+       * de 'confirmado' para 'navegando'. Os outros tocavam o mesmo botão (é
+       * ele que trava a tela e abre o Modo Navegação de cada um), caíam no
+       * no-op e ficavam 'confirmado' a travessia inteira. Nenhuma outra linha
+       * do app leva alguém a 'navegando'. Consequências, todas de segurança:
+       *
+       *  - a faixa "sem sinal" e o "mais atrás" só olham quem está
+       *    'navegando' (lib/downwind.ts) — o grupo inteiro, menos um, ficava
+       *    fora do monitoramento;
+       *  - o botão deles virava "Sair do downwind", que grava 'desistiu' e
+       *    não abre o registro do velejo: 20 km de água sem diário;
+       *  - a varredura de silêncio alertava por push gente que, para o
+       *    banco, nem tinha entrado na água.
+       *
+       * O filtro `estado = 'confirmado'` no próprio UPDATE torna isto
+       * idempotente e à prova de corrida: tocar duas vezes, ou depois de já
+       * ter encerrado, não muda nada.
+       */
+      const entrarNaAgua = async () => {
+        if (participacao?.estado !== 'confirmado') return;
+        await sql`
+          UPDATE downwind_participantes SET estado = 'navegando'
+          WHERE downwind_id = ${id} AND user_id = ${user.id} AND estado = 'confirmado'
+        `;
+      };
+
       if (veredito.noOp) {
+        await entrarNaAgua();
         return { status: 'em_andamento', iniciadoEm: null, encerradoEm: null };
       }
 
@@ -49,18 +79,15 @@ export async function POST(request: Request, ctx: Params) {
       if (rows.length === 0) {
         // Corrida perdida: outro velejador iniciou um instante antes. Não é
         // erro do ponto de vista de quem chamou — o resultado desejado
-        // (downwind em andamento) já existe.
+        // (downwind em andamento) já existe. E quem perdeu a corrida também
+        // está indo para a água.
+        await entrarNaAgua();
         return { status: 'em_andamento', iniciadoEm: null, encerradoEm: null };
       }
 
       // O próprio velejador que iniciou também sai de 'confirmado' para
       // 'navegando' — ele está indo para a água agora.
-      if (participacao?.estado === 'confirmado') {
-        await sql`
-          UPDATE downwind_participantes SET estado = 'navegando'
-          WHERE downwind_id = ${id} AND user_id = ${user.id}
-        `;
-      }
+      await entrarNaAgua();
 
       /*
        * Avisa os seguidores. Este ponto é depois do `rows.length === 0`

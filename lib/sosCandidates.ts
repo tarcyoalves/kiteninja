@@ -262,6 +262,14 @@ async function candidatosPorDownwind(
      AND p.user_id != ${excludeUserId}
      AND p.papel != 'espectador'
      AND (p.papel = 'apoio_terra' OR p.estado IN ('confirmado', 'navegando'))
+    -- Conta de convidado (motorista que entrou pelo link de 12h) fica de fora.
+    -- Ela nao tem como receber o aviso nem responder: as rotas de push e de
+    -- SOS recusam convidado, e a tela do motorista nao tem SOS. Lista-la como
+    -- "apoio em terra - Notificado" fazia quem pediu socorro acreditar que o
+    -- carro tinha sido avisado. Lista curta e verdadeira vale mais.
+    JOIN users pu
+      ON pu.id = p.user_id
+     AND pu.downwind_guest_of IS NULL
     LEFT JOIN LATERAL (
       SELECT dp.lat, dp.lng
       FROM downwind_posicoes dp

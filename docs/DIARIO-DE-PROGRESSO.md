@@ -539,3 +539,63 @@ não funciona")
   vitest 100 arquivos / 1381 testes (também em TZ=America/Sao_Paulo),
   verify-sql 319/0, verify-sos 59/0, build exit 0.
 - **Planos gratuitos:** nenhum impacto (uma rota a mais, sem consulta em laço).
+
+---
+
+## 2026-11-16 — T17 concluída e revisão de lógica do app inteiro
+**Quem:** Claude (Fable), com três revisores Sonnet só de leitura
+**Tarefa:** "adiante tudo" + "revise toda a lógica e garanta que funciona"
+**Commits:** os quatro da T17 e o deste registro
+
+### T17 — fechada
+Mais três fatias, uma por commit: `context/useChatNaoLidas.ts` (vigias do chat
+geral e das DMs), `context/useRelatos.ts` e `context/useDiario.ts`.
+`KiteDataContext.tsx` foi de 1.547 para 1.053 linhas expondo os mesmos campos.
+Única mudança de comportamento, de propósito: publicar/comentar relato
+recarrega só os relatos (antes refazia também eventos e alertas).
+
+### Revisão de lógica
+Três revisores leram, cada um, uma área (SOS+downwind; conta+admin; uso do
+dia a dia) com ordem de reportar só defeito com cenário concreto. Vieram ~20
+achados. **Cada um foi conferido no código — e o do chat, em produção — antes
+de qualquer mudança.** Corrigidos:
+
+| # | Defeito | O que a pessoa via | Onde |
+|---|---|---|---|
+| 1 | Só o PRIMEIRO velejador a tocar "Iniciar" virava `navegando`; os outros ficavam `confirmado` a travessia toda | fora da faixa "sem sinal"/"mais atrás"; botão virava "Sair do downwind" (grava `desistiu`, sem diário); alerta de silêncio para quem "não entrou na água" | `app/api/downwind/[id]/status/route.ts` |
+| 2 | Motorista convidado (link de 12 h) entrava na lista de socorro do SOS sem poder receber push nem responder | "apoio em terra — Notificado" para alguém que nunca seria avisado | `lib/sosCandidates.ts` |
+| 3 | Cancelar SOS não conferia a resposta do servidor | painel dava por cancelado um SOS que seguia ativo | `components/SosPanel.tsx` |
+| 4 | Alerta de SOS recebido voltava a cada abertura do app, mesmo já respondido | modal de tela cheia repetido | `context/useSosAtivo.ts` |
+| 5 | Fila de posições pendentes era uma só para todos os downwinds | pontos de uma travessia despejados na seguinte: rastro com salto, distância errada | `lib/filaPosicoes.ts`, `lib/useDownwindBeacon.ts` |
+| 6 | Cursor do chat cortado no SEGUNDO (`new Date(String(date))`) | última mensagem voltava a cada consulta: selo de não lidas subindo sozinho, notificação repetida a cada 8 s. Medido em produção: banco `.077762`, cursor `.000Z` | `app/api/chat/messages/route.ts` |
+| 7 | Chat não cobrava a troca de senha provisória | quem tinha a provisória lia e escrevia sem trocar | idem |
+| 8 | Perfil não gravava remoção da última pipa, prancha ou da altura | "Perfil salvo" e o item voltava | `app/api/profile/route.ts`, `views/PerfilView.tsx` |
+| 9 | Não existia tela para trocar a própria senha; e o admin que gerava link para si mesmo era deslogado no meio do painel | — | `components/TrocarSenhaSecao.tsx`, rota `/senha` recusa a própria conta |
+| 10 | Sair do app sem rede lançava exceção solta | — | `context/AuthContext.tsx` |
+| 11 | Convite aceitava e-mail que o cadastro recusa (`joao@gmail`) | pessoa presa num campo travado com "Email inválido" | `app/api/admin/invites/route.ts` |
+| 12 | Alerta de segurança e comentário de relato "enviavam" mesmo falhando | "Ocorrência enviada!" sem ter enviado; texto perdido | contexto, `useRelatos`, `FeedView`, `EventsAndAlertsView` |
+| 13 | Data do velejo vinha em UTC | registrar depois das 21h preenchia o dia seguinte | `lib/dataLocal.ts`, `SessionLoggerModal` |
+| 14 | Data por extenso do downwind sem fuso no servidor | dia seguinte para downwind noturno | `app/api/events/route.ts` |
+| 15 | "Vento médio" tinha piso fixo de 8 nós | 3 nós agora, "média 8" | `lib/weather.ts` |
+
+Testes: `lib/revisaoLogicaFluxo.test.ts` (11, pelas rotas reais).
+**Contraprova:** com as correções de servidor desfeitas, 8 dos 11 falham.
+
+### Conferidos e NÃO corrigidos — decisão do dono
+- **SOS aberto nunca expira.** Um SOS esquecido aberto fica ativo para sempre
+  e um disparo novo só atualiza a posição (sem novo aviso). Expirar sozinho
+  pode encerrar o socorro de alguém que ainda precisa; re-avisar pode gerar
+  alarme repetido. É decisão de produto.
+- **Cancelar/resolver SOS não avisa quem está a caminho** — o alerta só some
+  no poll seguinte.
+- **Bloqueio de login é por e-mail:** quem souber o e-mail de alguém trava a
+  conta por 15 min errando a senha 5 vezes. Trocar para IP+e-mail tem custo.
+- **Nota do spot usa tabela de direção do Nordeste para todo spot** — hoje só
+  afeta Praia Seca (RJ), que sai "Side-Offshore" com vento ideal.
+- **Sair do app não remove a inscrição de Web Push** do aparelho (PWA/iPhone).
+- Dois admins se rebaixando ao mesmo tempo; convites do admin somem se ele
+  excluir a conta (CASCADE); velejo/anúncio duplicado se a resposta se perde;
+  `/dw-live` público mostra o último ponto de quem já saiu.
+
+### Não verificado
+Ver o fim deste registro (preenchido depois da bateria e do teste no aparelho).

@@ -1,6 +1,6 @@
 import { sql } from '@/lib/db';
 import { handle, readJson } from '@/lib/api';
-import { createInvite, requireAdmin } from '@/lib/auth';
+import { HttpError, createInvite, requireAdmin } from '@/lib/auth';
 import { str } from '@/lib/validation';
 import { registrarAcaoAdmin } from '@/lib/auditoriaAdmin';
 
@@ -60,6 +60,13 @@ export async function POST(request: Request) {
     const body = await readJson(request);
 
     const emailRaw = str(body, 'email', { optional: true, max: 254 });
+    // Mesmo formato que o aceite do convite exige. Sem isto o admin emitia um
+    // convite para "joao@gmail", a página do convite travava esse e-mail no
+    // campo (somente leitura) e o cadastro respondia "Email inválido" para
+    // sempre — a pessoa não tinha como corrigir.
+    if (emailRaw && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailRaw.trim())) {
+      throw new HttpError(400, 'E-mail do convite inválido. Confira o endereço (falta o ".com"?).');
+    }
     const note = str(body, 'note', { optional: true, max: 200 });
 
     const { token, expiresAt } = await createInvite(admin.id, {

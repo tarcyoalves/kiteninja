@@ -44,7 +44,7 @@ em memória com o `lib/schema.sql` de produção, com cookie de sessão real.
 | T14 | 🔵 P3 | 96 variáveis não usadas + 32 `<img>` (lint) | P | agente | ✅ `a0d4140` `90f5dd4` — avisos 138→39; `<img>` ficaram (todos dinâmicos) |
 | T15 | 🔵 P3 | `data/mockSpots` é o catálogo real — nome engana | P | agente | ✅ `91e1f42` |
 | T16 | 🔵 P3 | Domínio `app.kiteninja.ct.ws` pendente de verificação desde a criação | P | **dono** | ⬜ dono |
-| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ⏳ 1ª fatia (SOS) em `context/useSosAtivo.ts`, 13/11 — 1.547 → 1.390 linhas; faltam chat, feed, logbook |
+| T17 | ⚪ P4 | `KiteDataContext.tsx` com 1.547 linhas | G | agente, só depois de T13 | ✅ 16/11 — quatro fatias (`useSosAtivo`, `useChatNaoLidas`, `useRelatos`, `useDiario`); 1.547 → 1.053 linhas, mesmos campos expostos |
 
 Prioridade: 🔴 alguém pode se machucar ou a casa está pegando fogo ·
 🟠 segurança/privacidade/dado · 🟡 o dono ou o velejador sentem ·

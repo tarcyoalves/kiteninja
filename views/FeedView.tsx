@@ -351,14 +351,21 @@ export const FeedView: React.FC = () => {
   const [commentText, setCommentText] = useState('');
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
 
-  const handleSendComment = (postId: string) => {
+  const handleSendComment = async (postId: string) => {
     if (!commentText.trim()) return;
     if (!user) {
       openAuthModal();
       return;
     }
-    addComment(postId, commentText, user.name);
-    setCommentText('');
+    // O campo só é limpo quando o comentário entrou. Antes era limpo na hora
+    // e a falha era engolida: o comentário sumia sem aviso.
+    const texto = commentText;
+    const res = await addComment(postId, texto, user.name);
+    if (res.ok) {
+      setCommentText((atual) => (atual === texto ? '' : atual));
+    } else {
+      alert(res.error ?? 'Não foi possível comentar. Tente de novo.');
+    }
   };
 
   const handleShare = (post: CommunityPost) => {

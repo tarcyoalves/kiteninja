@@ -55,6 +55,22 @@ export async function PATCH(request: Request) {
      * outro chamador de updateProfile manda estes campos (a calculadora manda
      * só weightKg; JSON.stringify omite `undefined`).
      */
+    /*
+     * Altura, pipas e pranchas também precisam poder ser APAGADAS.
+     *
+     * A tela dizia "Perfil salvo" e a remoção não era gravada: lista vazia de
+     * pipas/pranchas virava "não enviado" (mantinha a antiga), e a altura só
+     * era mandada quando o campo tinha texto. Ao recarregar, o que a pessoa
+     * tinha tirado voltava.
+     *
+     *  - lista ENVIADA, mesmo vazia, substitui a atual; lista ausente mantém;
+     *  - `heightCm: null` explícito apaga a altura; campo ausente mantém.
+     */
+    const alturaApagada =
+      body !== null &&
+      typeof body === 'object' &&
+      'heightCm' in body &&
+      (body as Record<string, unknown>).heightCm === null;
     const homeSpotEnviado = sent(body, 'homeSpot');
     const bioEnviada = sent(body, 'bio');
     const contatoNomeEnviado = sent(body, 'emergencyContactName');
@@ -125,15 +141,15 @@ export async function PATCH(request: Request) {
       UPDATE users SET
         name                = COALESCE(${name || null}, name),
         weight_kg           = COALESCE(${weightKg}, weight_kg),
-        height_cm           = COALESCE(${heightCm}, height_cm),
+        height_cm           = CASE WHEN ${alturaApagada}::boolean THEN NULL ELSE COALESCE(${heightCm}, height_cm) END,
         home_spot           = CASE WHEN ${homeSpotEnviado}::boolean THEN ${homeSpot || null}::text ELSE home_spot END,
         bio                 = CASE WHEN ${bioEnviada}::boolean THEN ${bio || null}::text ELSE bio END,
         highest_jump_m      = COALESCE(${highestJumpM}, highest_jump_m),
         avatar_url          = COALESCE(${avatarUrl || null}, avatar_url),
         rider_level         = COALESCE(${riderLevel}, rider_level),
         disciplines         = COALESCE(${disciplines && disciplines.length > 0 ? disciplines : null}, disciplines),
-        quiver_kites        = COALESCE(${quiverKites && quiverKites.length > 0 ? quiverKites : null}, quiver_kites),
-        quiver_boards       = COALESCE(${quiverBoards && quiverBoards.length > 0 ? quiverBoards : null}, quiver_boards),
+        quiver_kites        = COALESCE(${quiverKites}::numeric[], quiver_kites),
+        quiver_boards       = COALESCE(${quiverBoards}::text[], quiver_boards),
         preferred_wind_unit = COALESCE(${preferredWindUnit || null}, preferred_wind_unit),
         emergency_contact_name  = CASE WHEN ${contatoNomeEnviado}::boolean THEN ${emergencyContactName || null}::text ELSE emergency_contact_name END,
         emergency_contact_phone = CASE WHEN ${contatoFoneEnviado}::boolean THEN ${emergencyContactPhone || null}::text ELSE emergency_contact_phone END,

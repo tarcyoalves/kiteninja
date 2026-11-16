@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Discipline, RiderLevel } from '../types';
 import { ExcluirContaSecao } from '../components/ExcluirContaSecao';
+import { TrocarSenhaSecao } from '../components/TrocarSenhaSecao';
 import { useAoMudar } from '@/lib/useAoMudar';
 
 const LEVELS: RiderLevel[] = ['Iniciante', 'Intermediário', 'Avançado', 'Profissional'];
@@ -133,7 +134,8 @@ export const PerfilView: React.FC = () => {
       return;
     }
 
-    let height: number | undefined;
+    // `null` = campo esvaziado de propósito: o servidor apaga a altura.
+    let height: number | null = null;
     if (heightCm.trim() !== '') {
       height = Number(heightCm.replace(',', '.'));
       if (!Number.isFinite(height) || height < 100 || height > 230) {
@@ -145,7 +147,7 @@ export const PerfilView: React.FC = () => {
     setSaving(true);
     const res = await updateProfile({
       weightKg: weight,
-      ...(height !== undefined ? { heightCm: height } : {}),
+      heightCm: height,
       riderLevel,
       homeSpot: homeSpot.trim(),
       disciplines,
@@ -506,6 +508,8 @@ export const PerfilView: React.FC = () => {
         {saving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
         <span>{saving ? 'Salvando...' : 'Salvar Perfil'}</span>
       </button>
+
+      <TrocarSenhaSecao />
 
       <ExcluirContaSecao />
     </div>

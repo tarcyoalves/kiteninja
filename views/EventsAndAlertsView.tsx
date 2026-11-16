@@ -302,20 +302,26 @@ export const EventsAndAlertsView: React.FC = () => {
   const [alertSeverity, setAlertSeverity] = useState<'alerta' | 'perigo' | 'informativo'>('alerta');
   const [alertDesc, setAlertDesc] = useState('');
 
-  const handleReportAlert = (e: React.FormEvent) => {
+  const handleReportAlert = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       openAuthModal();
       return;
     }
 
-    addSafetyAlert({
+    // Espera a resposta: o formulário só fecha (e o texto só é apagado) se o
+    // alerta entrou de verdade.
+    const res = await addSafetyAlert({
       title: alertTitle,
       spotName: alertSpotName,
       severity: alertSeverity,
       description: alertDesc,
       reportedBy: user.name,
     });
+    if (!res.ok) {
+      alert(`O alerta NÃO foi enviado. ${res.error ?? 'Verifique a conexão e tente de novo.'}`);
+      return;
+    }
 
     setIsReportingAlert(false);
     setAlertTitle('');
