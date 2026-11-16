@@ -11,6 +11,7 @@ import { PrefillLogbook } from '../lib/trilhaSessao';
 import { useAoMudar } from '../lib/useAoMudar';
 import { useSosAtivo } from './useSosAtivo';
 import { useChatNaoLidas } from './useChatNaoLidas';
+import { useRelatos } from './useRelatos';
 
 /**
  * Abas do app. Antes o union estava escrito por extenso em quatro lugares e
@@ -336,7 +337,8 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [selectedStateFilter, setSelectedStateFilter] = useState('ALL');
 
   const [sessions, setSessions] = useState<SessionLog[]>([]);
-  const [posts, setPosts] = useState<CommunityPost[]>([]);
+  // Relatos da comunidade vivem em context/useRelatos.ts (T17, 3ª fatia).
+  const { posts, carregarPosts, addPost, toggleLikePost, addComment } = useRelatos(api);
   const [safetyAlerts, setSafetyAlerts] = useState<SafetyOccurrence[]>([]);
   const [events, setEvents] = useState<KiteEvent[]>([]);
   /**
@@ -556,16 +558,17 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
      * A varredura de downwind abandonado, que pegava carona nessa rota,
      * mudou junto para GET /api/events — ver o comentário lá.
      */
-    const [postsR, eventsR, alertsR] = await Promise.allSettled([
-      api<{ posts: CommunityPost[] }>('/api/posts'),
+    const [, eventsR, alertsR] = await Promise.allSettled([
+      // A lista de relatos é preenchida pelo próprio hook; se a rota falhar,
+      // a promessa rejeita e a lista anterior fica como estava.
+      carregarPosts(),
       api<{ events: KiteEvent[] }>('/api/events'),
       api<{ alerts: SafetyOccurrence[] }>('/api/alerts'),
     ]);
-    if (postsR.status === 'fulfilled') setPosts(postsR.value.posts);
     if (eventsR.status === 'fulfilled') setEvents(eventsR.value.events);
     if (alertsR.status === 'fulfilled') setSafetyAlerts(alertsR.value.alerts);
     ultimoLoadFeedRef.current = Date.now();
-  }, []);
+  }, [carregarPosts]);
 
   const loadSessions = useCallback(async () => {
     try {
@@ -852,60 +855,6 @@ export const KiteDataProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       setSessions(anterior);
       return { ok: false, error: err instanceof Error ? err.message : 'Não foi possível excluir.' };
     }
-  };
-
-  const addPost = async (
-    postData: Omit<CommunityPost, 'id' | 'likes' | 'comments' | 'shares'>
-  ): Promise<{ ok: boolean; error?: string }> => {
-    try {
-      await api<{ id: string }>('/api/posts', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: postData.title,
-          content: postData.content,
-          spotName: postData.spotName,
-          spotLocation: postData.spotLocation,
-          photoUrl: postData.photoUrl,
-          windKnots: postData.windReport?.knots,
-          windKiteUsed: postData.windReport?.kiteUsed,
-          windCondition: postData.windReport?.condition,
-          tag: postData.tag,
-        }),
-      });
-      await loadFeedAndEvents();
-      return { ok: true };
-    } catch (err) {
-      return {
-        ok: false,
-        error: err instanceof Error ? err.message : 'Não foi possível publicar o relato.',
-      };
-    }
-  };
-
-  const toggleLikePost = (postId: string) => {
-    // Otimista, igual ao favorito: o toque muda a tela e o servidor confirma.
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (p.id !== postId) return p;
-        const isLiked = !p.isLiked;
-        return { ...p, isLiked, likes: isLiked ? p.likes + 1 : Math.max(0, p.likes - 1) };
-      })
-    );
-
-    api<{ isLiked: boolean; count: number }>(`/api/posts/${postId}/like`, { method: 'POST' })
-      .then((res) => {
-        setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, isLiked: res.isLiked, likes: res.count } : p)));
-      })
-      .catch(() => loadFeedAndEvents());
-  };
-
-  const addComment = (postId: string, text: string) => {
-    api<{ id: string }>(`/api/posts/${postId}/comments`, {
-      method: 'POST',
-      body: JSON.stringify({ text }),
-    })
-      .then(() => loadFeedAndEvents())
-      .catch(() => {});
   };
 
   const addSafetyAlert = (alertData: Omit<SafetyOccurrence, 'id' | 'timestamp' | 'status'>) => {
