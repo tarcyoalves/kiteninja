@@ -597,5 +597,21 @@ Testes: `lib/revisaoLogicaFluxo.test.ts` (11, pelas rotas reais).
   excluir a conta (CASCADE); velejo/anúncio duplicado se a resposta se perde;
   `/dw-live` público mostra o último ponto de quem já saiu.
 
+### Verificado
+- vitest 101 arquivos / 1392 testes; eslint 0 erros (39 avisos); verify-sql
+  319/0; verify-sos 59/0; build exit 0; CI e deploy do commit `f4aaefd`.
+- Produção sondada depois do deploy: páginas 200, rotas protegidas 401,
+  nenhum 500.
+- No app rodando (`npm run dev:preview`, tela de celular, conta fictícia):
+  trocar a senha (recusa a atual errada, aceita a certa); perfil grava a
+  remoção de pipas, pranchas e altura; pedir o chat "depois da última
+  mensagem" devolve zero; abas Spots, Feed, Diário e Chat carregam sem erro
+  depois da T17.
+
 ### Não verificado
-Ver o fim deste registro (preenchido depois da bateria e do teste no aparelho).
+- **No celular do dono.** O aparelho estava conectado, mas bloqueou a tela
+  antes do teste e não há como desbloquear por fora.
+- **O início do downwind com dois aparelhos na praia** — a correção nº 1 está
+  provada pelas rotas, não por duas pessoas tocando "Iniciar" de verdade.
+- Aba Mapa e criação de alerta/comentário no preview (cobertos só por tipo e
+  leitura de código).
