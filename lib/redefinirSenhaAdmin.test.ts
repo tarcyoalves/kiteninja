@@ -68,9 +68,17 @@ describe('redefinição de senha pelo admin', () => {
     expect(src).toMatch(/clipboard\.writeText/);
   });
 
-  it('o botão antigo diz que não serve para quem esqueceu a senha', () => {
-    // Os dois botões ficam lado a lado. Sem essa distinção no title, o dono
-    // volta a clicar no errado — foi exatamente o que aconteceu.
-    expect(painel()).toContain('não serve para quem esqueceu a senha');
+  it('o botão "Exigir troca" não volta: no lugar dele, a senha provisória', () => {
+    // A versão anterior desta trava exigia o botão "Exigir troca" com um aviso
+    // no `title` ("não serve para quem esqueceu a senha"). Não bastou: no
+    // celular não há `title` visível, e o dono seguiu usando o botão para
+    // redefinir senha — "só dá senha errada" (16/11/2026). O botão saiu; a
+    // senha provisória (com troca obrigatória) ocupa o lugar dele.
+    // Comportamento coberto pelas rotas em lib/senhaProvisoriaFluxo.test.ts.
+    const src = painel();
+    expect(src).not.toMatch(/\{\s*mustChangePassword:\s*true\s*\}/);
+    expect(src).not.toContain('Exigir troca');
+    expect(src).toContain('/senha-provisoria');
+    expect(src).toContain('Senha provisória');
   });
 });

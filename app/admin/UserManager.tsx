@@ -157,6 +157,16 @@ export function UserManager() {
   const [erroLinha, setErroLinha] = useState<{ userId: string; msg: string } | null>(null);
   const [gerandoLinkId, setGerandoLinkId] = useState<string | null>(null);
   const [linkCopiado, setLinkCopiado] = useState(false);
+  /*
+   * Senha provisória: substitui o botão "Exigir troca", que o dono usava para
+   * redefinir senha e não redefinia nada (o velejador seguia com "senha
+   * errada" — relato de 16/11/2026). Mostrada uma vez, na linha da pessoa.
+   */
+  const [provisoria, setProvisoria] = useState<
+    { userId: string; nome: string; email: string; senha: string } | null
+  >(null);
+  const [gerandoProvisoriaId, setGerandoProvisoriaId] = useState<string | null>(null);
+  const [provisoriaCopiada, setProvisoriaCopiada] = useState(false);
 
   /**
    * `silencioso` é a recarga de fundo (o relógio de 60 s): não liga o spinner
@@ -287,6 +297,7 @@ export function UserManager() {
   async function gerarLinkSenha(userId: string, nome: string) {
     setActionSuccess(null);
     setLinkSenha(null);
+    setProvisoria(null);
     setErroLinha(null);
     setLinkCopiado(false);
     setGerandoLinkId(userId);
@@ -302,6 +313,58 @@ export function UserManager() {
       setErroLinha({ userId, msg: 'Falha de conexão.' });
     } finally {
       setGerandoLinkId(null);
+    }
+  }
+
+  async function gerarSenhaProvisoria(userId: string, nome: string) {
+    if (
+      !window.confirm(
+        `Criar uma senha provisória para ${nome}?\n\nA senha atual dele deixa de funcionar na hora e ele sai dos aparelhos onde estava logado. No primeiro acesso, o app obriga a criar uma senha nova.`
+      )
+    ) {
+      return;
+    }
+    setActionSuccess(null);
+    setLinkSenha(null);
+    setProvisoria(null);
+    setErroLinha(null);
+    setProvisoriaCopiada(false);
+    setGerandoProvisoriaId(userId);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/senha-provisoria`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErroLinha({ userId, msg: data.error ?? 'Falha ao criar a senha provisória.' });
+        return;
+      }
+      setProvisoria({ userId, nome: data.nome ?? nome, email: data.email ?? '', senha: data.senhaProvisoria });
+    } catch {
+      setErroLinha({ userId, msg: 'Falha de conexão.' });
+    } finally {
+      setGerandoProvisoriaId(null);
+    }
+  }
+
+  const textoDaProvisoria = (nome: string, email: string, senha: string) =>
+    `Oi, ${nome}! Sua senha provisória no KiteNinja é: ${senha}\n` +
+    `Entre com seu e-mail (${email}) e essa senha. O app vai pedir para você criar uma senha nova na hora.`;
+
+  async function copiarProvisoria(p: { userId: string; nome: string; email: string; senha: string }) {
+    try {
+      await navigator.clipboard.writeText(textoDaProvisoria(p.nome, p.email, p.senha));
+      setProvisoriaCopiada(true);
+      setTimeout(() => setProvisoriaCopiada(false), 2500);
+    } catch {
+      setErroLinha({ userId: p.userId, msg: 'Não consegui copiar automaticamente — toque na senha e copie.' });
+    }
+  }
+
+  async function enviarProvisoria(p: { userId: string; nome: string; email: string; senha: string }) {
+    try {
+      await navigator.share({ title: 'KiteNinja — senha provisória', text: textoDaProvisoria(p.nome, p.email, p.senha) });
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') return;
+      setErroLinha({ userId: p.userId, msg: 'Não consegui abrir o compartilhamento — use Copiar.' });
     }
   }
 
@@ -701,9 +764,8 @@ export function UserManager() {
                     </button>
 
                     {/*
-                      Redefinir senha DE VERDADE. Separado do botao da chave
-                      logo abaixo, que so exige a troca no proximo login e nao
-                      serve para quem perdeu o acesso.
+                      Duas formas de redefinir: o link (o velejador escolhe a
+                      senha) e, ao lado, a senha provisória.
                     */}
                     {/*
                       Rótulo VISÍVEL, não só `title`: no celular não existe
@@ -725,20 +787,26 @@ export function UserManager() {
                       <span>Nova senha</span>
                     </button>
 
-                    {/* Force password change */}
+                    {/*
+                      Era "Exigir troca": só ligava a troca obrigatória, que é
+                      cobrada DEPOIS de entrar com a senha atual — inútil para
+                      quem esqueceu, e era justamente para isso que o dono o
+                      usava ("só dá senha errada", 16/11/2026). Agora cria uma
+                      senha provisória de verdade, com troca obrigatória no
+                      primeiro acesso (ver a rota senha-provisoria).
+                    */}
                     <button
-                      onClick={() =>
-                        updateUser(
-                          u.id,
-                          { mustChangePassword: true },
-                          `Foi exigida a troca de senha para ${u.name} no próximo login.`
-                        )
-                      }
-                      className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all active:scale-95 flex items-center gap-1.5"
-                      title="Exigir troca de senha no próximo login (não serve para quem esqueceu a senha)"
+                      onClick={() => gerarSenhaProvisoria(u.id, u.name)}
+                      disabled={gerandoProvisoriaId === u.id}
+                      className="px-2.5 py-2 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded-xl text-xs font-bold text-amber-200 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-1.5"
+                      title="Cria uma senha provisória; o velejador troca no primeiro acesso"
                     >
-                      <KeyRound size={15} />
-                      <span>Exigir troca</span>
+                      {gerandoProvisoriaId === u.id ? (
+                        <Loader2 size={15} className="animate-spin" />
+                      ) : (
+                        <KeyRound size={15} />
+                      )}
+                      <span>Senha provisória</span>
                     </button>
                   </div>
                 </div>
@@ -752,6 +820,49 @@ export function UserManager() {
                   >
                     <AlertTriangle size={14} className="shrink-0" />
                     <span>{erroLinha.msg}</span>
+                  </div>
+                )}
+
+                {/* Senha provisória, na linha de quem foi tocado. */}
+                {provisoria?.userId === u.id && (
+                  <div className="mt-3 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-2xl space-y-2.5">
+                    <p className="text-xs leading-relaxed text-amber-100">
+                      <strong className="text-white">Senha provisória de {provisoria.nome}.</strong>{' '}
+                      Mande para ele agora: ela aparece só esta vez. A senha antiga já não
+                      funciona; no primeiro acesso o app obriga a criar uma senha nova.
+                    </p>
+                    <input
+                      readOnly
+                      value={provisoria.senha}
+                      onFocus={(e) => e.currentTarget.select()}
+                      aria-label="Senha provisória"
+                      className="w-full px-3 py-2 bg-[#0F172A] border border-slate-700 rounded-xl text-base text-white font-mono tracking-wider focus:outline-hidden focus:border-amber-400"
+                    />
+                    <p className="text-[11px] text-slate-400">E-mail de acesso: {provisoria.email}</p>
+                    <div className="flex flex-wrap gap-2">
+                      {typeof navigator !== 'undefined' && 'share' in navigator && (
+                        <button
+                          onClick={() => enviarProvisoria(provisoria)}
+                          className="flex-1 px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 rounded-xl text-xs font-bold text-emerald-200 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                        >
+                          <Share2 size={14} />
+                          Enviar
+                        </button>
+                      )}
+                      <button
+                        onClick={() => copiarProvisoria(provisoria)}
+                        className="flex-1 px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded-xl text-xs font-bold text-amber-100 transition-all active:scale-95 flex items-center justify-center gap-1.5"
+                      >
+                        {provisoriaCopiada ? <Check size={14} /> : <Copy size={14} />}
+                        {provisoriaCopiada ? 'Copiado' : 'Copiar'}
+                      </button>
+                      <button
+                        onClick={() => setProvisoria(null)}
+                        className="px-3 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-bold text-slate-300 transition-all active:scale-95"
+                      >
+                        Fechar
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -50,6 +50,7 @@ export const ACOES_ADMIN = {
   'admin.usuario.troca_senha_exigida': 'user',
   'admin.usuario.troca_senha_dispensada': 'user',
   'admin.usuario.link_senha_gerado': 'user',
+  'admin.usuario.senha_provisoria': 'user',
   'admin.convite.criado': 'invite',
   'admin.convite.revogado': 'invite',
   'admin.chamado.status_alterado': 'chamado',

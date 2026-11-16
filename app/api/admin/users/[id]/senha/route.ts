@@ -86,7 +86,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
       nome: String(u.name),
       // Absoluto e montado a partir da requisição: o admin vai COLAR isto num
       // WhatsApp, e um caminho relativo não vira link clicável lá.
-      url: new URL(`/recuperar-senha/${token}`, request.url).toString(),
+      // APP_URL quando existir — o mesmo endereço dos convites e do e-mail de
+      // senha (T08); senão, o da requisição, como antes.
+      url: new URL(`/recuperar-senha/${token}`, process.env.APP_URL || request.url).toString(),
       validoPorHoras: 2,
     };
   });

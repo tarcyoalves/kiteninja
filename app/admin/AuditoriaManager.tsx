@@ -62,6 +62,10 @@ function descrever(a: AcaoLinha): string {
       return `dispensou a troca de senha de ${alvo}`;
     case 'admin.usuario.link_senha_gerado':
       return `gerou um link de nova senha para ${alvo}`;
+    case 'admin.usuario.senha_provisoria':
+      return `definiu uma senha provisória para ${alvo} (troca obrigatória no 1º acesso)`;
+    case 'admin.usuario.senha_provisoria':
+      return 'Definiu senha provisória (troca obrigatória no 1º acesso)';
     case 'admin.convite.criado':
       return d.restritoAoEmail ? 'criou um convite restrito a um e-mail' : 'criou um convite aberto';
     case 'admin.convite.revogado':

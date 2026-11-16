@@ -490,3 +490,52 @@ a sessão anterior publicou sem a bateria completa
   São Paulo — essa é a contraprova); suíte inteira verde em São Paulo e em
   UTC (1377/1377); verify-sql 319/0; tsc ok.
 - **Ficou para a próxima sessão:** T17, fatias de chat, feed e logbook.
+
+---
+
+## 2026-11-16 — Painel admin: "redefinir senha não funciona" (senha provisória)
+**Quem:** Claude (Opus, sessão na nuvem) · **Tarefa:** pedido do dono
+("Analise a parte de admin total. A parte de resetar senha para um usuário
+não funciona")
+**Commits:** o deste registro
+
+- **Como foi investigado:** o fluxo "Nova senha" (link) foi percorrido de ponta
+  a ponta no navegador, no tamanho de celular: o admin gera o link, o velejador
+  abre, cria a senha nova e entra; a senha antiga é recusada. Funcionou.
+  Produção: nenhum erro de servidor em 7 dias (Vercel), rota de redefinição
+  respondendo certo. Sem defeito técnico, a pergunta foi ao dono: em que ponto
+  falha. Resposta: **"No app diz que vai exigir nova senha ao usuário, porém
+  não funciona, só dá senha errada"**, usando o painel pelo navegador do
+  celular.
+- **Causa:** o dono usava o botão **"Exigir troca"** (o da chave). Ele só liga
+  `must_change_password`, que é cobrado DEPOIS de entrar com a senha atual — e
+  quem esqueceu não sabe a senha atual. O painel dizia "Foi exigida a troca de
+  senha", e o velejador continuava com "senha errada". A trava antiga
+  (`lib/redefinirSenhaAdmin.test.ts`) só exigia um aviso no `title` do botão,
+  que no celular nem aparece. Reproduzido pelas rotas em
+  `lib/senhaProvisoriaFluxo.test.ts` (primeiro bloco).
+- **Correção:** o botão virou **"Senha provisória"** (rota nova
+  `POST /api/admin/users/[id]/senha-provisoria`): sorteia uma senha, grava o
+  hash, liga a troca obrigatória (cobrada no servidor desde 13/11), invalida
+  links de senha pendentes, derruba as sessões e zera o bloqueio de login de
+  quem errou demais. A senha aparece uma vez na linha do velejador, com
+  Copiar/Enviar e o texto pronto para o WhatsApp; a auditoria registra o ato,
+  nunca a senha. Não vale para a própria conta nem para conta suspensa.
+  O "Nova senha" (link) continua ao lado.
+- **Outros achados do admin, corrigidos:** (1) admin com troca de senha
+  pendente abria o painel, mas toda ação dava 403 — agora vai para a tela de
+  troca; (2) o link "Nova senha" passa a usar `APP_URL` quando existir, como
+  convites e o e-mail de senha (T08).
+- **Revisado e sem defeito:** todas as rotas `/api/admin/*` exigem admin;
+  admin não suspende nem rebaixa a própria conta; suspender derruba as
+  sessões; convites guardados só como hash e de uso único; chamados, erros,
+  vídeo de abertura e diagnóstico de push só leem/alteram o que dizem.
+- **Verificado:** 4 testes novos pelas rotas, com contraprova de cada proteção
+  (sem troca obrigatória, sem invalidar o link pendente, sem zerar o bloqueio,
+  sem derrubar sessões, sem recusar a própria conta — cada um deixa um teste
+  vermelho); trava nova do painel reprovada contra o painel antigo; fluxo
+  completo no celular (admin cria a provisória → velejador entra → tela
+  "Troque sua senha" → troca → entra no app). tsc, eslint 0 erros (39 avisos),
+  vitest 100 arquivos / 1381 testes (também em TZ=America/Sao_Paulo),
+  verify-sql 319/0, verify-sos 59/0, build exit 0.
+- **Planos gratuitos:** nenhum impacto (uma rota a mais, sem consulta em laço).
